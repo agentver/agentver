@@ -52,7 +52,7 @@ RUN bun run turbo build --filter=@agentver/website
 # ---------------------------------------------------------------------------
 # Stage 4: runner — slim production image
 # ---------------------------------------------------------------------------
-FROM node:24-slim AS runner
+FROM node:25-slim AS runner
 
 WORKDIR /app
 
