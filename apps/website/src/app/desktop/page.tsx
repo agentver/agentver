@@ -410,7 +410,11 @@ function TechDetails() {
   )
 }
 
-function DownloadSection({ detectedPlatform }: { detectedPlatform: DetectedPlatform }) {
+function DownloadSection({
+  detectedPlatform: _detectedPlatform,
+}: {
+  detectedPlatform: DetectedPlatform
+}) {
   const linuxDownload = LATEST_RELEASE.downloads.linux
   const allPlatforms = Object.entries(LATEST_RELEASE.downloads) as [
     DownloadPlatform,
