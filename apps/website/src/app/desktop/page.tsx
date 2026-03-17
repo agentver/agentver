@@ -28,17 +28,37 @@ const LATEST_RELEASE = {
       label: 'macOS (Apple Silicon)',
       filename: 'Agentver_0.1.0_aarch64.dmg',
       size: '~8 MB',
+      comingSoon: true,
     },
-    'macos-intel': { label: 'macOS (Intel)', filename: 'Agentver_0.1.0_x64.dmg', size: '~8 MB' },
-    windows: { label: 'Windows', filename: 'Agentver_0.1.0_x64-setup.exe', size: '~5 MB' },
-    linux: { label: 'Linux (AppImage)', filename: 'Agentver_0.1.0_amd64.AppImage', size: '~8 MB' },
+    'macos-intel': {
+      label: 'macOS (Intel)',
+      filename: 'Agentver_0.1.0_x64.dmg',
+      size: '~8 MB',
+      comingSoon: true,
+    },
+    windows: {
+      label: 'Windows',
+      filename: 'Agentver_0.1.0_x64-setup.exe',
+      size: '~5 MB',
+      comingSoon: true,
+    },
+    linux: {
+      label: 'Linux (AppImage)',
+      filename: 'Agentver_0.1.0_amd64.AppImage',
+      size: '~8 MB',
+      comingSoon: false,
+    },
   },
 } as const
 
 type DownloadPlatform = keyof typeof LATEST_RELEASE.downloads
 
 function downloadUrl(filename: string): string {
-  return `https://github.com/agentver/platform/releases/download/desktop-v${LATEST_RELEASE.version}/${filename}`
+  return `https://github.com/agentver/agentver/releases/download/desktop-v${LATEST_RELEASE.version}/${filename}`
+}
+
+function isAvailable(platform: DownloadPlatform): boolean {
+  return !LATEST_RELEASE.downloads[platform].comingSoon
 }
 
 const FEATURES = [
@@ -170,20 +190,23 @@ const SYSTEM_REQUIREMENTS = [
   { platform: 'Linux', requirement: 'Ubuntu 20.04+, Fedora 36+, or any distro with WebKitGTK 4.1' },
 ]
 
-const INSTALL_INSTRUCTIONS: Record<string, { label: string; steps: string }> = {
-  macOS: {
-    label: 'macOS',
-    steps: 'Open the .dmg, drag Agentver to Applications',
-  },
-  Windows: {
-    label: 'Windows',
-    steps: 'Run the installer, follow the prompts',
-  },
-  Linux: {
-    label: 'Linux',
-    steps: 'Make the AppImage executable and run it:',
-  },
-}
+const INSTALL_INSTRUCTIONS: Record<string, { label: string; steps: string; comingSoon?: boolean }> =
+  {
+    macOS: {
+      label: 'macOS',
+      steps: 'Open the .dmg, drag Agentver to Applications',
+      comingSoon: true,
+    },
+    Windows: {
+      label: 'Windows',
+      steps: 'Run the installer, follow the prompts',
+      comingSoon: true,
+    },
+    Linux: {
+      label: 'Linux',
+      steps: 'Make the AppImage executable and run it:',
+    },
+  }
 
 export default async function DesktopPage() {
   const detectedPlatform = await detectPlatform()
@@ -199,8 +222,12 @@ export default async function DesktopPage() {
 }
 
 function DesktopHero({ detectedPlatform }: { detectedPlatform: DetectedPlatform }) {
-  const primaryDownload =
-    detectedPlatform !== 'unknown' ? LATEST_RELEASE.downloads[detectedPlatform] : null
+  const canDownload = detectedPlatform !== 'unknown' && isAvailable(detectedPlatform)
+  const primaryDownload = canDownload ? LATEST_RELEASE.downloads[detectedPlatform] : null
+  const comingSoonPlatform =
+    detectedPlatform !== 'unknown' && !isAvailable(detectedPlatform)
+      ? LATEST_RELEASE.downloads[detectedPlatform]
+      : null
 
   return (
     <section className="pt-32 pb-20 md:pt-40 md:pb-28">
@@ -243,14 +270,18 @@ function DesktopHero({ detectedPlatform }: { detectedPlatform: DetectedPlatform 
               <span className="text-muted text-xs">
                 v{LATEST_RELEASE.version} &middot; {primaryDownload.size}
               </span>
-              {detectedPlatform === 'macos-arm' && (
-                <a
-                  href={downloadUrl(LATEST_RELEASE.downloads['macos-intel'].filename)}
-                  className="text-primary text-xs transition-colors hover:text-primary-bright"
-                >
-                  On an Intel Mac? Download for Intel &rarr;
-                </a>
-              )}
+            </div>
+          ) : comingSoonPlatform ? (
+            <div className="mt-8 flex flex-col items-center gap-3">
+              <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-7 py-3.5 font-medium text-muted text-sm">
+                {comingSoonPlatform.label} — coming soon
+              </span>
+              <a
+                href="#downloads"
+                className="text-primary text-xs transition-colors hover:text-primary-bright"
+              >
+                Linux available now &darr;
+              </a>
             </div>
           ) : (
             <div className="mt-8">
@@ -380,9 +411,7 @@ function TechDetails() {
 }
 
 function DownloadSection({ detectedPlatform }: { detectedPlatform: DetectedPlatform }) {
-  const primaryKey: DownloadPlatform =
-    detectedPlatform !== 'unknown' ? detectedPlatform : 'macos-arm'
-  const primaryDownload = LATEST_RELEASE.downloads[primaryKey]
+  const linuxDownload = LATEST_RELEASE.downloads.linux
   const allPlatforms = Object.entries(LATEST_RELEASE.downloads) as [
     DownloadPlatform,
     (typeof LATEST_RELEASE.downloads)[DownloadPlatform],
@@ -398,13 +427,13 @@ function DownloadSection({ detectedPlatform }: { detectedPlatform: DetectedPlatf
               Download Agentver Desktop
             </h2>
             <p className="mx-auto mt-4 max-w-md text-dark-muted leading-relaxed">
-              Available for macOS, Windows, and Linux. Lightweight, fast, and built with Tauri.
+              Currently available for Linux. macOS and Windows coming soon.
             </p>
 
-            {/* Primary download */}
+            {/* Primary download — always Linux for now */}
             <div className="mt-10 flex flex-col items-center gap-3">
               <a
-                href={downloadUrl(primaryDownload.filename)}
+                href={downloadUrl(linuxDownload.filename)}
                 className="inline-flex items-center gap-2.5 rounded-full bg-primary px-8 py-4 font-medium text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary-bright hover:shadow-xl"
               >
                 <svg
@@ -421,19 +450,11 @@ function DownloadSection({ detectedPlatform }: { detectedPlatform: DetectedPlatf
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
-                Download for {primaryDownload.label}
+                Download for {linuxDownload.label}
               </a>
               <span className="text-dark-muted text-xs">
-                v{LATEST_RELEASE.version} &middot; {primaryDownload.size}
+                v{LATEST_RELEASE.version} &middot; {linuxDownload.size}
               </span>
-              {detectedPlatform === 'macos-arm' && (
-                <a
-                  href={downloadUrl(LATEST_RELEASE.downloads['macos-intel'].filename)}
-                  className="text-primary text-xs transition-colors hover:text-primary-bright"
-                >
-                  On an Intel Mac? Download for Intel &rarr;
-                </a>
-              )}
             </div>
           </div>
         </FadeIn>
@@ -445,40 +466,56 @@ function DownloadSection({ detectedPlatform }: { detectedPlatform: DetectedPlatf
               All platforms
             </h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              {allPlatforms.map(([key, download]) => (
-                <a
-                  key={key}
-                  href={downloadUrl(download.filename)}
-                  className="group flex items-center justify-between rounded-xl border border-dark-border bg-dark-surface px-5 py-4 transition-all hover:border-primary/40 hover:shadow-lg"
-                >
-                  <div>
-                    <div className="font-medium text-dark-text text-sm group-hover:text-primary">
-                      {download.label}
+              {allPlatforms.map(([key, download]) => {
+                const available = isAvailable(key)
+                return available ? (
+                  <a
+                    key={key}
+                    href={downloadUrl(download.filename)}
+                    className="group flex items-center justify-between rounded-xl border border-dark-border bg-dark-surface px-5 py-4 transition-all hover:border-primary/40 hover:shadow-lg"
+                  >
+                    <div>
+                      <div className="font-medium text-dark-text text-sm group-hover:text-primary">
+                        {download.label}
+                      </div>
+                      <div className="mt-0.5 font-mono text-dark-muted text-xs">
+                        {download.filename}
+                      </div>
                     </div>
-                    <div className="mt-0.5 font-mono text-dark-muted text-xs">
-                      {download.filename}
+                    <div className="flex items-center gap-2 text-dark-muted text-xs">
+                      <span>{download.size}</span>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="group-hover:text-primary"
+                      >
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
                     </div>
+                  </a>
+                ) : (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between rounded-xl border border-dark-border bg-dark-surface px-5 py-4 opacity-60"
+                  >
+                    <div>
+                      <div className="font-medium text-dark-text text-sm">{download.label}</div>
+                      <div className="mt-0.5 text-dark-muted text-xs">Coming soon</div>
+                    </div>
+                    <span className="rounded-full border border-dark-border px-2.5 py-0.5 font-mono text-dark-muted text-[10px]">
+                      Soon
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 text-dark-muted text-xs">
-                    <span>{download.size}</span>
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="group-hover:text-primary"
-                    >
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                  </div>
-                </a>
-              ))}
+                )
+              })}
             </div>
           </div>
         </FadeIn>
@@ -491,13 +528,29 @@ function DownloadSection({ detectedPlatform }: { detectedPlatform: DetectedPlatf
             </h3>
             <div className="grid gap-4 md:grid-cols-3">
               {Object.entries(INSTALL_INSTRUCTIONS).map(([key, instruction]) => (
-                <div key={key} className="rounded-xl border border-dark-border bg-dark-surface p-5">
-                  <div className="mb-3 font-medium text-dark-text text-sm">{instruction.label}</div>
-                  <p className="text-dark-muted text-xs leading-relaxed">{instruction.steps}</p>
-                  {key === 'Linux' && (
-                    <code className="mt-2 block rounded-lg bg-dark-bg px-3 py-2 font-mono text-[11px] text-dark-muted leading-relaxed">
-                      chmod +x Agentver*.AppImage && ./Agentver*.AppImage
-                    </code>
+                <div
+                  key={key}
+                  className={`rounded-xl border border-dark-border bg-dark-surface p-5${instruction.comingSoon ? ' opacity-60' : ''}`}
+                >
+                  <div className="mb-3 flex items-center gap-2 font-medium text-dark-text text-sm">
+                    {instruction.label}
+                    {instruction.comingSoon && (
+                      <span className="rounded-full border border-dark-border px-2 py-0.5 font-mono text-dark-muted text-[10px]">
+                        Soon
+                      </span>
+                    )}
+                  </div>
+                  {instruction.comingSoon ? (
+                    <p className="text-dark-muted text-xs leading-relaxed">Coming soon</p>
+                  ) : (
+                    <>
+                      <p className="text-dark-muted text-xs leading-relaxed">{instruction.steps}</p>
+                      {key === 'Linux' && (
+                        <code className="mt-2 block rounded-lg bg-dark-bg px-3 py-2 font-mono text-[11px] text-dark-muted leading-relaxed">
+                          chmod +x Agentver*.AppImage && ./Agentver*.AppImage
+                        </code>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
