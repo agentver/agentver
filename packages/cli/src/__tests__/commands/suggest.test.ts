@@ -7,6 +7,7 @@ import {
   createManifest,
   createManifestPackage,
   createSharedGitSource,
+  createWellKnownSource,
 } from '../helpers/fixtures'
 import type { PlatformMockHandle } from '../helpers/mock-platform'
 import { mockFetchResponse, setupPlatformMock } from '../helpers/mock-platform'
@@ -355,6 +356,254 @@ describe('commands/suggest', () => {
       )
     })
   })
+
+  // -----------------------------------------------------------------------
+  // suggest --name flag
+  // -----------------------------------------------------------------------
+
+  describe('suggest --name flag', () => {
+    it('only submits the named package when --name is specified', async () => {
+      const sourceA = createSharedGitSource({ uri: 'github.com/org/repo-a' })
+      const sourceB = createSharedGitSource({ uri: 'github.com/org/repo-b' })
+
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'skill-a': createManifestPackage({ source: sourceA }),
+            'skill-b': createManifestPackage({ source: sourceB }),
+          },
+        })
+      )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'skill-a': createLockfilePackage({ source: sourceA, integrity: 'sha256-originalA' }),
+            'skill-b': createLockfilePackage({ source: sourceB, integrity: 'sha256-originalB' }),
+          },
+        })
+      )
+      // Both packages are modified
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test')
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Modified', size: 10 },
+      ])
+
+      const postedPackages: string[] = []
+      platformMock.addRoute({
+        method: 'POST',
+        path: /\/suggestions$/,
+        handler: (url) => {
+          // Extract package name from URL: /skills/@org/<package>/suggestions
+          const match = url.match(/\/skills\/@[^/]+\/([^/]+)\/suggestions/)
+          if (match) postedPackages.push(match[1]!)
+          return mockFetchResponse(200, { id: 'sug-a', title: 'Fix typo' })
+        },
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggest', '--json']
+
+      await runSuggest(['suggest', 'Fix typo', '--name', 'skill-a'])
+
+      expect(postedPackages).toEqual(['skill-a'])
+    })
+
+    it('outputs NOT_FOUND when --name does not match any modified package', async () => {
+      setupSuggestMocks()
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggest', '--json']
+
+      await runSuggest(['suggest', 'Fix typo', '--name', 'nonexistent'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('nonexistent')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // suggest — well-known source rejection
+  // -----------------------------------------------------------------------
+
+  describe('suggest well-known source rejection', () => {
+    it('rejects well-known source packages as unsupported', async () => {
+      const wkSource = createWellKnownSource()
+
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'wk-skill': createManifestPackage({ source: wkSource }),
+          },
+        })
+      )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'wk-skill': createLockfilePackage({
+              source: wkSource,
+              integrity: 'sha256-originalHash',
+            }),
+          },
+        })
+      )
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/wk-skill')
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Modified well-known skill', size: 28 },
+      ])
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggest', '--json']
+
+      await runSuggest(['suggest', 'Improve docs'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'UNSUPPORTED_SOURCE',
+        expect.stringContaining('well-known source')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // suggest — multiple modified packages
+  // -----------------------------------------------------------------------
+
+  describe('suggest multiple modified packages', () => {
+    function setupMultiPackageMocks() {
+      const sourceA = createSharedGitSource({ uri: 'github.com/org/repo-a' })
+      const sourceB = createSharedGitSource({ uri: 'github.com/org/repo-b' })
+
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'skill-a': createManifestPackage({ source: sourceA }),
+            'skill-b': createManifestPackage({ source: sourceB }),
+          },
+        })
+      )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'skill-a': createLockfilePackage({ source: sourceA, integrity: 'sha256-originalA' }),
+            'skill-b': createLockfilePackage({ source: sourceB, integrity: 'sha256-originalB' }),
+          },
+        })
+      )
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test')
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Modified', size: 10 },
+      ])
+    }
+
+    it('submits suggestions for all modified packages', async () => {
+      setupMultiPackageMocks()
+
+      platformMock.addRoute({
+        method: 'POST',
+        path: /\/suggestions$/,
+        handler: (url) => {
+          const match = url.match(/\/skills\/@[^/]+\/([^/]+)\/suggestions/)
+          const pkg = match?.[1] ?? 'unknown'
+          return mockFetchResponse(200, {
+            id: `sug-${pkg}`,
+            title: 'Fix typo',
+            url: `https://app.agentver.com/suggestions/sug-${pkg}`,
+          })
+        },
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggest', '--json']
+
+      await runSuggest(['suggest', 'Fix typo'])
+
+      expect(outputModule.outputSuccess).toHaveBeenCalled()
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typed = data as Array<{ package: string; success: boolean }>
+      expect(typed).toHaveLength(2)
+      expect(typed.every((o) => o.success)).toBe(true)
+      const packageNames = typed.map((o) => o.package).sort()
+      expect(packageNames).toEqual(['skill-a', 'skill-b'])
+    })
+
+    it('reports mixed outcomes when some submissions fail', async () => {
+      setupMultiPackageMocks()
+
+      platformMock.addRoute({
+        method: 'POST',
+        path: /\/suggestions$/,
+        handler: (url) => {
+          if (url.includes('skill-a')) {
+            return mockFetchResponse(200, {
+              id: 'sug-a',
+              title: 'Fix typo',
+              url: 'https://app.agentver.com/suggestions/sug-a',
+            })
+          }
+          // skill-b fails
+          return mockFetchResponse(500, 'Internal server error')
+        },
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggest', '--json']
+
+      await runSuggest(['suggest', 'Fix typo'])
+
+      expect(outputModule.outputSuccess).toHaveBeenCalled()
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typed = data as Array<{ package: string; success: boolean; error?: string }>
+      expect(typed).toHaveLength(2)
+
+      const succeeded = typed.filter((o) => o.success)
+      const failed = typed.filter((o) => !o.success)
+      expect(succeeded).toHaveLength(1)
+      expect(failed).toHaveLength(1)
+      expect(failed[0]!.error).toBeDefined()
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // suggest — platform POST failure (single target)
+  // -----------------------------------------------------------------------
+
+  describe('suggest platform POST failure', () => {
+    it('reports SUGGEST_FAILED when platform POST throws', async () => {
+      setupSuggestMocks()
+
+      platformMock.addRoute({
+        method: 'POST',
+        path: /\/suggestions$/,
+        handler: () => mockFetchResponse(500, 'Internal server error'),
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggest', '--json']
+
+      await runSuggest(['suggest', 'Fix typo'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'SUGGEST_FAILED',
+        expect.stringContaining('500')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -542,6 +791,90 @@ describe('commands/suggestions', () => {
         expect.stringContaining('Not connected')
       )
       expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // suggestions — platform fetch error
+  // -----------------------------------------------------------------------
+
+  describe('suggestions platform fetch error', () => {
+    it('outputs FETCH_FAILED when platform request fails', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
+
+      platformMock.addRoute({
+        method: 'GET',
+        path: /\/proposals/,
+        handler: () => mockFetchResponse(500, 'Internal server error'),
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggestions', '--json']
+
+      await runSuggestions(['suggestions'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'FETCH_FAILED',
+        expect.stringContaining('500')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // suggestions --status all filter
+  // -----------------------------------------------------------------------
+
+  describe('suggestions --status all filter', () => {
+    it('does not send status filter when --status is all', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
+
+      let capturedUrl = ''
+      platformMock.addRoute({
+        method: 'GET',
+        path: /\/proposals/,
+        handler: (url) => {
+          capturedUrl = url
+          return mockFetchResponse(200, { suggestions: [] })
+        },
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggestions', '--json']
+
+      await runSuggestions(['suggestions', '--status', 'all'])
+
+      expect(capturedUrl).not.toContain('status=')
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // suggestions — package name filter
+  // -----------------------------------------------------------------------
+
+  describe('suggestions package name filter', () => {
+    it('sends package filter when name argument is provided', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
+
+      let capturedUrl = ''
+      platformMock.addRoute({
+        method: 'GET',
+        path: /\/proposals/,
+        handler: (url) => {
+          capturedUrl = url
+          return mockFetchResponse(200, { suggestions: [] })
+        },
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'suggestions', '--json']
+
+      await runSuggestions(['suggestions', 'my-skill'])
+
+      expect(capturedUrl).toContain('package=my-skill')
     })
   })
 })
