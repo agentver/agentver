@@ -2,7 +2,7 @@
 
 import { Button } from '@agentver/ui/components/button'
 import { cn } from '@agentver/ui-utils'
-import { Building2, Check, Github, Package, Terminal, X } from 'lucide-react'
+import { Building2, Check, GitBranch, Github, Package, Terminal, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { PackageManagerTabs } from '@/components/ui/package-manager-tabs'
@@ -11,6 +11,7 @@ const DISMISSED_KEY = 'agentver:getting-started-dismissed'
 
 type GettingStartedProgress = {
   hasOrg: boolean
+  hasSkillsRepo: boolean
   hasPackage: boolean
   hasApiKey: boolean
   hasConnectedGitHub: boolean
@@ -29,12 +30,17 @@ export function GettingStarted({ progress }: GettingStartedProps) {
   }, [])
 
   const allComplete =
-    progress.hasOrg && progress.hasPackage && progress.hasApiKey && progress.hasConnectedGitHub
+    progress.hasOrg &&
+    progress.hasSkillsRepo &&
+    progress.hasPackage &&
+    progress.hasApiKey &&
+    progress.hasConnectedGitHub
 
   if (dismissed || allComplete) return null
 
   const completedCount = [
     progress.hasOrg,
+    progress.hasSkillsRepo,
     progress.hasPackage,
     progress.hasApiKey,
     progress.hasConnectedGitHub,
@@ -51,6 +57,14 @@ export function GettingStarted({ progress }: GettingStartedProps) {
       label: 'Create an organisation',
       description: 'Set up your team or personal workspace to publish packages under',
       done: progress.hasOrg,
+      href: '/settings/organisation',
+    },
+    {
+      key: 'repo',
+      label: 'Connect a package repository',
+      description:
+        'A package repository is required to store, version, and manage your skills. Choose built-in storage or connect GitHub.',
+      done: progress.hasSkillsRepo,
       href: '/settings/organisation',
     },
     {
@@ -108,11 +122,13 @@ export function GettingStarted({ progress }: GettingStartedProps) {
           const icon =
             step.key === 'org'
               ? Building2
-              : step.key === 'package'
-                ? Package
-                : step.key === 'cli'
-                  ? Terminal
-                  : Github
+              : step.key === 'repo'
+                ? GitBranch
+                : step.key === 'package'
+                  ? Package
+                  : step.key === 'cli'
+                    ? Terminal
+                    : Github
 
           const StepIcon = icon
 

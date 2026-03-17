@@ -106,36 +106,79 @@ function InstallationsLoading() {
   )
 }
 
-const QUICK_ACTIONS = [
-  {
-    label: 'Create Package',
-    href: '/skills/new',
-    icon: Plus,
-    primary: true,
-    external: false,
-  },
-  {
-    label: 'Explore Registry',
-    href: '/explore',
-    icon: Compass,
-    primary: false,
-    external: false,
-  },
-  {
-    label: 'Import from Source',
-    href: '/sources',
-    icon: Download,
-    primary: false,
-    external: false,
-  },
-  {
-    label: 'View Documentation',
-    href: 'https://agentver.com/docs',
-    icon: BookOpen,
-    primary: false,
-    external: true,
-  },
-] as const
+type QuickAction = {
+  label: string
+  href: string
+  icon: typeof Plus
+  primary: boolean
+  external: boolean
+}
+
+function getQuickActions(hasSkillsRepo: boolean): QuickAction[] {
+  if (!hasSkillsRepo) {
+    return [
+      {
+        label: 'Connect Repository',
+        href: '/settings/organisation',
+        icon: GitBranch,
+        primary: true,
+        external: false,
+      },
+      {
+        label: 'Create Package',
+        href: '/skills/new',
+        icon: Plus,
+        primary: false,
+        external: false,
+      },
+      {
+        label: 'Explore Registry',
+        href: '/explore',
+        icon: Compass,
+        primary: false,
+        external: false,
+      },
+      {
+        label: 'View Documentation',
+        href: 'https://agentver.com/docs',
+        icon: BookOpen,
+        primary: false,
+        external: true,
+      },
+    ]
+  }
+
+  return [
+    {
+      label: 'Create Package',
+      href: '/skills/new',
+      icon: Plus,
+      primary: true,
+      external: false,
+    },
+    {
+      label: 'Explore Registry',
+      href: '/explore',
+      icon: Compass,
+      primary: false,
+      external: false,
+    },
+    {
+      label: 'Import from Source',
+      href: '/sources',
+      icon: Download,
+      primary: false,
+      external: false,
+    },
+    {
+      label: 'View Documentation',
+      href: 'https://agentver.com/docs',
+      icon: BookOpen,
+      primary: false,
+      external: true,
+    },
+  ]
+}
 
 export default function DashboardPage() {
   const { data: session } = useSession()
@@ -167,7 +210,7 @@ export default function DashboardPage() {
       {/* Quick actions */}
       <FadeIn delay={50}>
         <div className="flex flex-wrap gap-3">
-          {QUICK_ACTIONS.map((action) => {
+          {getQuickActions(progress?.hasSkillsRepo ?? true).map((action) => {
             const ActionIcon = action.icon
             const classes = cn(
               'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md',
