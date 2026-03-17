@@ -90,7 +90,7 @@ export default function DocsPage() {
             CLI reference
           </a>
           <a
-            href="https://github.com/agentver/platform"
+            href="https://github.com/agentver/agentver"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-full border border-border px-5 py-2.5 text-muted text-sm transition-colors hover:border-foreground/20 hover:text-foreground"

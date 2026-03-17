@@ -10,7 +10,7 @@ const NAV_LINKS: { href: string; label: string; external?: boolean }[] = [
   { href: '/agents', label: 'Agents' },
   { href: 'https://app.agentver.com', label: 'Platform' },
   { href: '/docs', label: 'Docs' },
-  { href: 'https://github.com/agentver/platform', label: 'GitHub', external: true },
+  { href: 'https://github.com/agentver/agentver', label: 'GitHub', external: true },
 ]
 
 export function MobileNav() {
