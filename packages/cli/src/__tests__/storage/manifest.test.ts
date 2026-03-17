@@ -178,5 +178,34 @@ describe('storage/manifest', () => {
       const zIdx = written.indexOf('z-skill')
       expect(aIdx).toBeLessThan(zIdx)
     })
+
+    it('crash during write does not corrupt the manifest — rename never fires', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      vi.mocked(fs.writeFileSync).mockImplementationOnce(() => {
+        throw new Error('disk full')
+      })
+
+      expect(() => manifestModule.writeManifest('/project', { version: 2, packages: {} })).toThrow(
+        'disk full'
+      )
+
+      // The rename should never execute, so the original manifest is preserved
+      expect(fs.renameSync).not.toHaveBeenCalled()
+    })
+
+    it('rename target is manifest.json, not the tmp file', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      manifestModule.writeManifest('/project', { version: 2, packages: {} })
+
+      const renameCall = vi.mocked(fs.renameSync).mock.calls[0]!
+      const sourcePath = renameCall[0] as string
+      const targetPath = renameCall[1] as string
+
+      expect(sourcePath).toContain('.tmp')
+      expect(targetPath).toContain('manifest.json')
+      expect(targetPath).not.toContain('.tmp')
+    })
   })
 })

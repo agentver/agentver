@@ -45,6 +45,11 @@ describe('output', () => {
       process.argv = ['node', 'agentver', '--json-output']
       expect(outputModule.isJSONMode()).toBe(false)
     })
+
+    it('should not match --json= variations', () => {
+      process.argv = ['node', 'agentver', '--json=true']
+      expect(outputModule.isJSONMode()).toBe(false)
+    })
   })
 
   // ---------------------------------------------------------------------------

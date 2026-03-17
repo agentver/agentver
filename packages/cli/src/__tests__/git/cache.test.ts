@@ -84,5 +84,47 @@ describe('git/cache', () => {
       expect(fs.mkdirSync).toHaveBeenCalled()
       expect(fs.writeFileSync).toHaveBeenCalledWith(expect.stringContaining('index.md'), '# Hello')
     })
+
+    it('creates nested directories for files in subdirectories', () => {
+      cacheModule.cacheFiles(mockSource, 'sha-456', [
+        { path: 'docs/guide/intro.md', content: '# Intro', size: 7 },
+      ])
+
+      expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('docs/guide'), {
+        recursive: true,
+      })
+    })
+
+    it('uses commit SHA in the cache path for isolation', () => {
+      cacheModule.cacheFiles(mockSource, 'unique-sha', [
+        { path: 'file.md', content: 'content', size: 7 },
+      ])
+
+      const writePath = vi.mocked(fs.writeFileSync).mock.calls[0]![0] as string
+      expect(writePath).toContain('unique-sha')
+    })
+
+    it('does not throw when write fails (graceful failure)', () => {
+      vi.mocked(fs.mkdirSync).mockImplementation(() => {
+        throw new Error('EACCES: permission denied')
+      })
+
+      // Should not throw — cacheFiles swallows errors
+      expect(() =>
+        cacheModule.cacheFiles(mockSource, 'sha-fail', [
+          { path: 'index.md', content: '#', size: 1 },
+        ])
+      ).not.toThrow()
+    })
+  })
+
+  describe('getCachedFiles with source.path', () => {
+    it('returns null when path-specific subdirectory does not exist', () => {
+      const sourceWithPath: GitSource = { ...mockSource, path: 'skills/my-skill' }
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      const result = cacheModule.getCachedFiles(sourceWithPath, 'some-sha')
+      expect(result).toBeNull()
+    })
   })
 })

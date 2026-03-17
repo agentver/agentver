@@ -4,6 +4,11 @@ vi.mock('../../registry/auth', () => ({
   getCredentials: vi.fn().mockResolvedValue(null),
 }))
 
+vi.mock('../../utils/retry', async () => {
+  const actual = await vi.importActual<typeof import('../../utils/retry')>('../../utils/retry')
+  return actual
+})
+
 describe('registry/client', () => {
   let clientModule: typeof import('../../registry/client')
   let authModule: typeof import('../../registry/auth')
@@ -119,6 +124,63 @@ describe('registry/client', () => {
 
       expect(mockFetch.mock.calls[0]![1]!.body).toBe(JSON.stringify({ key: 'value' }))
       expect(mockFetch.mock.calls[0]![1]!.method).toBe('POST')
+    })
+
+    it('retries on 500 errors with increasing delays', async () => {
+      vi.useFakeTimers()
+
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          text: vi.fn().mockResolvedValue('Internal Server Error'),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          text: vi.fn().mockResolvedValue('Internal Server Error'),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue({ recovered: true }),
+        })
+
+      vi.stubGlobal('fetch', mockFetch)
+      vi.mocked(authModule.getCredentials).mockResolvedValue(null)
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+      const resultPromise = clientModule.registryFetch('/test')
+
+      // Advance past the first retry delay (1s)
+      await vi.advanceTimersByTimeAsync(1_000)
+      // Advance past the second retry delay (2s)
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      const result = await resultPromise
+      expect(result).toEqual({ recovered: true })
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+
+      vi.useRealTimers()
+    })
+
+    it('retries 401 responses — onAuthExpired throw is caught as retryable (no response in catch)', async () => {
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'expired-token' })
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 401,
+          text: vi.fn().mockResolvedValue('Unauthorised'),
+        })
+      )
+
+      await expect(clientModule.registryFetch('/test')).rejects.toThrow('Authentication expired')
+
+      // onAuthExpired() throws before lastResponse is assigned, so the catch block
+      // sees lastResponse = undefined → isRetryable returns true → all 3 attempts run
+      expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(3)
     })
   })
 })

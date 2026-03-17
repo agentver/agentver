@@ -55,5 +55,25 @@ describe('utils/network', () => {
         })
       )
     })
+
+    it('returns false on abort/timeout error', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockRejectedValue(new DOMException('signal timed out', 'AbortError'))
+      )
+
+      expect(await networkModule.checkOnline()).toBe(false)
+    })
+
+    it('passes an AbortSignal for timeout control', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true })
+      vi.stubGlobal('fetch', mockFetch)
+
+      await networkModule.checkOnline()
+
+      const callOptions = mockFetch.mock.calls[0]![1]
+      expect(callOptions).toHaveProperty('signal')
+      expect(callOptions.signal).toBeInstanceOf(AbortSignal)
+    })
   })
 })

@@ -91,6 +91,16 @@ describe('registry/platform', () => {
       expect(result).toBeNull()
     })
 
+    it('returns null on network error (not just HTTP errors)', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://platform.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
+
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
+
+      const result = await platformModule.platformFetchSilent('/test')
+      expect(result).toBeNull()
+    })
+
     it('returns data on success', async () => {
       vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://platform.com')
       vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
@@ -137,6 +147,28 @@ describe('registry/platform', () => {
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')))
 
       expect(await platformModule.isPlatformAvailable()).toBe(false)
+    })
+
+    it('returns false when the health check times out (AbortError)', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://platform.com')
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockRejectedValue(new DOMException('signal timed out', 'AbortError'))
+      )
+
+      expect(await platformModule.isPlatformAvailable()).toBe(false)
+    })
+
+    it('calls the correct health endpoint URL', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://my-platform.example.com')
+
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true })
+      vi.stubGlobal('fetch', mockFetch)
+
+      await platformModule.isPlatformAvailable()
+
+      expect(mockFetch.mock.calls[0]![0]).toBe('https://my-platform.example.com/api/v1/health')
     })
   })
 })

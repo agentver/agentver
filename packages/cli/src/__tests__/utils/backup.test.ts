@@ -147,6 +147,80 @@ describe('utils/backup', () => {
       expect(lockfileModule.writeLockfile).toHaveBeenCalled()
     })
 
+    it('restores the original manifest entry, not a new one', () => {
+      const originalEntry = {
+        source: {
+          type: 'git' as const,
+          uri: 'original',
+          path: '',
+          ref: 'v1.0',
+          commit: 'original-sha',
+        },
+        agents: ['claude'],
+        installedAt: '2024-01-01T00:00:00.000Z',
+        modified: false,
+      }
+
+      // Simulate post-failed-install state: manifest has a partial new entry
+      vi.mocked(manifestModule.readManifest).mockReturnValue({
+        version: 2,
+        packages: {
+          'my-skill': {
+            source: { type: 'git', uri: 'new-broken', path: '', ref: 'main', commit: 'broken-sha' },
+            agents: ['claude'],
+            installedAt: '2024-06-01T00:00:00.000Z',
+            modified: false,
+          },
+        },
+      })
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue({ version: 2, packages: {} })
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      backupModule.restoreBackup({
+        packageName: 'my-skill',
+        projectRoot: '/project',
+        tempDir: '/tmp/backup',
+        skillDir: null,
+        manifestEntry: originalEntry,
+        lockfileEntry: null,
+      })
+
+      const writtenManifest = vi.mocked(manifestModule.writeManifest).mock.calls[0]![1]
+      const source = writtenManifest.packages['my-skill']!.source
+      expect(source.type).toBe('git')
+      if (source.type === 'git') {
+        expect(source.commit).toBe('original-sha')
+      }
+    })
+
+    it('removes the package from manifest when backup had no entry (new install rollback)', () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue({
+        version: 2,
+        packages: {
+          'my-skill': {
+            source: { type: 'git', uri: 'test', path: '', ref: 'main', commit: 'abc' },
+            agents: ['claude'],
+            installedAt: '2024-01-01T00:00:00.000Z',
+            modified: false,
+          },
+        },
+      })
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue({ version: 2, packages: {} })
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      backupModule.restoreBackup({
+        packageName: 'my-skill',
+        projectRoot: '/project',
+        tempDir: '/tmp/backup',
+        skillDir: null,
+        manifestEntry: null,
+        lockfileEntry: null,
+      })
+
+      const writtenManifest = vi.mocked(manifestModule.writeManifest).mock.calls[0]![1]
+      expect(writtenManifest.packages['my-skill']).toBeUndefined()
+    })
+
     it('restores skill files from backup', () => {
       vi.mocked(manifestModule.readManifest).mockReturnValue({ version: 2, packages: {} })
       vi.mocked(lockfileModule.readLockfile).mockReturnValue({ version: 2, packages: {} })

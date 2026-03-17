@@ -420,18 +420,47 @@ describe.skipIf(!CLI_AVAILABLE)('CLI --json output integration', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Commands requiring network — skipped
+  // Error output structure
   // -------------------------------------------------------------------------
 
-  describe.skip('search --json (requires network)', () => {
-    it('should return search results', () => {
-      // Would need: runCLI('search --json --query "testing"')
-    })
-  })
+  describe('error output structure', () => {
+    it('should return valid JSON error for unknown command', () => {
+      const { parsed } = runCLI('nonexistent-command --json', {
+        cwd: tempDir,
+        expectFailure: true,
+      })
 
-  describe.skip('install --json (requires git source)', () => {
-    it('should install a package from a git source', () => {
-      // Would need: runCLI('install --json github.com/org/repo@main')
+      expect(parsed.success).toBe(false)
+      expect(parsed).toHaveProperty('error')
+      expect(parsed).not.toHaveProperty('data')
+
+      const error = parsed.error as Record<string, unknown>
+      expect(typeof error.code).toBe('string')
+      expect(typeof error.message).toBe('string')
+    })
+
+    it('should return VALIDATION_ERROR for install with no source argument', () => {
+      const { parsed } = runCLI('install --json', {
+        cwd: tempDir,
+        expectFailure: true,
+      })
+
+      expect(parsed.success).toBe(false)
+
+      const error = parsed.error as Record<string, unknown>
+      expect(error.code).toBe('VALIDATION_ERROR')
+    })
+
+    it('should return VALIDATION_ERROR for remove with no package name', () => {
+      const { parsed } = runCLI('remove --json', {
+        cwd: tempDir,
+        expectFailure: true,
+      })
+
+      expect(parsed.success).toBe(false)
+
+      const error = parsed.error as Record<string, unknown>
+      expect(error.code).toBe('VALIDATION_ERROR')
     })
   })
 })

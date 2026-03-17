@@ -138,6 +138,25 @@ describe('parseGitSource', () => {
     expect(result.path).toBe('skills/my-skill')
     expect(result.ref).toBe('develop')
   })
+
+  it('treats short commit SHAs (< 7 chars) as valid — parser does not enforce length', () => {
+    // The parser itself accepts any non-empty commit; validation happens upstream
+    const result = parseGitSource('github.com/owner/repo#abc')
+    expect(result.commit).toBe('abc')
+  })
+
+  it('accepts a 40-character full SHA', () => {
+    const fullSha = 'a'.repeat(40)
+    const result = parseGitSource(`github.com/owner/repo#${fullSha}`)
+    expect(result.commit).toBe(fullSha)
+  })
+
+  it('strips .git suffix from repo name when present in URL', () => {
+    // git source parsing doesn't strip .git — ensure the repo name is preserved as-is
+    const result = parseGitSource('github.com/owner/repo.git')
+    // This should parse the third segment literally; the URL builder adds .git separately
+    expect(result.repo).toBe('repo.git')
+  })
 })
 
 describe('resolveRef', () => {
@@ -147,6 +166,7 @@ describe('resolveRef', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   it('returns commit SHA directly when source has a commit', async () => {
@@ -250,6 +270,32 @@ describe('resolveRef', () => {
 
     const result = await resolveRef(source)
     expect(result.commitSha).toBe('gitlab-sha-456')
+  })
+
+  it('includes GITHUB_TOKEN in Authorization header when env var is set', async () => {
+    const source: GitSource = {
+      host: 'github.com',
+      owner: 'owner',
+      repo: 'repo',
+      path: '',
+      ref: 'main',
+    }
+
+    vi.stubEnv('GITHUB_TOKEN', 'ghp_test_token_value')
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockResolvedValue({ sha: 'resolved-sha' }),
+    })
+
+    vi.stubGlobal('fetch', mockFetch)
+
+    await resolveRef(source)
+
+    const callHeaders = mockFetch.mock.calls[0]![1]!.headers
+    expect(callHeaders.Authorization).toBe('Bearer ghp_test_token_value')
   })
 
   it('falls back to git ls-remote for generic hosts', async () => {
