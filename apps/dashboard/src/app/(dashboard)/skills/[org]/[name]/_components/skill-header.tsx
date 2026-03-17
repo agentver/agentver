@@ -21,6 +21,8 @@ import { Input } from '@agentver/ui/components/input'
 import { Label } from '@agentver/ui/components/label'
 import { cn } from '@agentver/ui-utils'
 import {
+  AlertTriangle,
+  Archive,
   Check,
   ClipboardCopy,
   ExternalLink,
@@ -76,6 +78,8 @@ type SkillHeaderProps = {
       organisation: { slug: string }
     } | null
     starCount: number
+    status: string
+    deprecationNote: string | null
     _count: { installationReports: number; forks: number }
   }
   org: string
@@ -307,6 +311,29 @@ export function SkillHeader({ pkg, org, name, canManage }: SkillHeaderProps) {
           )}
         </div>
       </div>
+
+      {pkg.status === 'DEPRECATED' && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="text-sm">
+            <p className="font-medium text-amber-800 dark:text-amber-200">
+              This package has been deprecated.
+            </p>
+            {pkg.deprecationNote && (
+              <p className="mt-1 text-amber-700 dark:text-amber-300">{pkg.deprecationNote}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {pkg.status === 'ARCHIVED' && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-4">
+          <Archive className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <p className="text-muted-foreground text-sm">
+            This package has been archived and is no longer listed publicly.
+          </p>
+        </div>
+      )}
 
       {/* Install Dialog */}
       <Dialog open={installDialogOpen} onOpenChange={setInstallDialogOpen}>

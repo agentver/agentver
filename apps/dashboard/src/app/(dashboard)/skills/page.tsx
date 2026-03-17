@@ -32,6 +32,7 @@ import {
   Search as SearchIcon,
   Settings,
   Terminal,
+  Trash2,
   X,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -839,6 +840,8 @@ function SkillsPageContent() {
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false)
   const [installDialogOpen, setInstallDialogOpen] = useState(false)
   const [importUrlDialogOpen, setImportUrlDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
 
   const { data, isLoading } = trpc.skills.list.useQuery({
@@ -864,6 +867,30 @@ function SkillsPageContent() {
       setCollectionDialogOpen(false)
       setSelectedIds(new Set())
       setSelectedCollectionId('')
+    },
+  })
+
+  const bulkDeleteMutation = trpc.skills.bulkDelete.useMutation({
+    onSuccess: (result) => {
+      utils.skills.list.invalidate()
+      setDeleteDialogOpen(false)
+      setDeleteConfirmation('')
+      setSelectedIds(new Set())
+
+      if (result.errors.length === 0) {
+        toast.success(`Deleted ${result.deleted} ${result.deleted === 1 ? 'package' : 'packages'}`)
+      } else if (result.deleted > 0) {
+        toast.warning(
+          `Deleted ${result.deleted} ${result.deleted === 1 ? 'package' : 'packages'}. ${result.errors.length} could not be deleted.`
+        )
+      } else {
+        toast.error('No packages could be deleted', {
+          description: result.errors.map((e) => `${e.name}: ${e.error}`).join(', '),
+        })
+      }
+    },
+    onError: (error) => {
+      toast.error('Failed to delete packages', { description: error.message })
     },
   })
 
@@ -913,6 +940,11 @@ function SkillsPageContent() {
       collectionId: selectedCollectionId,
       packageIds: Array.from(selectedIds),
     })
+  }
+
+  const handleBulkDelete = () => {
+    if (deleteConfirmation !== 'DELETE' || selectedIds.size === 0) return
+    bulkDeleteMutation.mutate({ ids: Array.from(selectedIds) })
   }
 
   const selectedPackages = packages.filter((pkg) => selectedIds.has(pkg.id))
@@ -1067,6 +1099,9 @@ function SkillsPageContent() {
               <Button variant="outline" size="sm" onClick={() => setInstallDialogOpen(true)}>
                 <Terminal className="mr-1 h-4 w-4" /> Install Selected
               </Button>
+              <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>
+                <Trash2 className="mr-1 h-4 w-4" /> Delete Selected
+              </Button>
             </div>
           </div>
         </div>
@@ -1153,6 +1188,76 @@ function SkillsPageContent() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Selected Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setDeleteConfirmation('')
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Delete {selectedIds.size} {selectedIds.size === 1 ? 'package' : 'packages'}?
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete the selected packages, all their versions, and
+              installation records. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border bg-muted/50 p-3">
+              <ul className="space-y-1 text-sm">
+                {selectedPackages.slice(0, 5).map((pkg) => (
+                  <li key={pkg.id} className="font-mono text-foreground">
+                    {pkg.organisation.slug}/{pkg.name}
+                  </li>
+                ))}
+                {selectedPackages.length > 5 && (
+                  <li className="text-muted-foreground">
+                    ...and {selectedPackages.length - 5} more
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-delete-confirmation">
+                Type <strong>DELETE</strong> to confirm
+              </Label>
+              <Input
+                id="bulk-delete-confirmation"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder="DELETE"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false)
+                setDeleteConfirmation('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBulkDelete}
+              disabled={deleteConfirmation !== 'DELETE' || bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

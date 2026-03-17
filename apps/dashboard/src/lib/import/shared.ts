@@ -267,9 +267,17 @@ export async function resolveOrgWithRepo(orgId: string, userId: string): Promise
 /**
  * Get a connected account token for a specific provider.
  */
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  GITHUB: 'GitHub',
+  GITLAB: 'GitLab',
+  BITBUCKET: 'Bitbucket',
+  GOOGLE: 'Google',
+  MICROSOFT: 'Microsoft',
+}
+
 export async function getProviderToken(
   userId: string,
-  provider: 'GITHUB' | 'GOOGLE' | 'MICROSOFT'
+  provider: 'GITHUB' | 'GITLAB' | 'BITBUCKET' | 'GOOGLE' | 'MICROSOFT'
 ): Promise<string> {
   const account = await prisma.connectedAccount.findUnique({
     where: {
@@ -281,9 +289,9 @@ export async function getProviderToken(
     select: { accessToken: true, refreshToken: true },
   })
 
+  const providerName = PROVIDER_DISPLAY_NAMES[provider] ?? provider
+
   if (!account?.accessToken) {
-    const providerName =
-      provider === 'GITHUB' ? 'GitHub' : provider === 'GOOGLE' ? 'Google' : 'Microsoft'
     throw new ImportError(
       `No connected ${providerName} account. Please connect your ${providerName} account first.`,
       400
@@ -294,8 +302,6 @@ export async function getProviderToken(
     return decryptToken(account.accessToken)
   } catch (error) {
     if (error instanceof TokenDecryptionError) {
-      const providerName =
-        provider === 'GITHUB' ? 'GitHub' : provider === 'GOOGLE' ? 'Google' : 'Microsoft'
       throw new ImportError(
         `Connected ${providerName} account credentials are invalid. Please reconnect your account.`,
         400

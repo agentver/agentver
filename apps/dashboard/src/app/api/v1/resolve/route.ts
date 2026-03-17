@@ -33,6 +33,7 @@ export async function GET(request: Request) {
     include: {
       organisation: { select: { slug: true } },
       versions: {
+        where: { status: { not: 'YANKED' } },
         orderBy: { createdAt: 'desc' },
         take: 1,
         select: { version: true, gitRef: true },

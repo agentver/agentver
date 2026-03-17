@@ -1,3 +1,4 @@
+import type { PackageStatus, Prisma } from '@agentver/database'
 import { prisma } from '@agentver/database'
 import { createLogger, parseFrontmatter } from '@agentver/shared'
 import { TRPCError } from '@trpc/server'
@@ -649,6 +650,7 @@ export const skillsRouter = router({
       z.object({
         organisationId: z.string().optional(),
         type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']).optional(),
+        status: z.enum(['ACTIVE', 'ARCHIVED', 'DEPRECATED']).optional(),
         search: z.string().optional(),
         compatibility: z.string().optional(),
         limit: z.number().min(1).max(100).default(50),
@@ -656,6 +658,22 @@ export const skillsRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
+      const archivedStatus: PackageStatus = 'ARCHIVED'
+      const statusFilter: Prisma.PackageWhereInput = input.status
+        ? { status: input.status as PackageStatus }
+        : {
+            // By default, exclude archived packages unless the user is a member of the org
+            OR: [
+              { status: { not: archivedStatus } },
+              {
+                status: archivedStatus,
+                organisation: {
+                  members: { some: { userId: ctx.user.id } },
+                },
+              },
+            ],
+          }
+
       const where = {
         ...(input.organisationId && { organisationId: input.organisationId }),
         ...(input.type && { type: input.type }),
@@ -671,6 +689,7 @@ export const skillsRouter = router({
           },
         }),
         AND: [
+          statusFilter,
           {
             OR: [
               { visibility: 'PUBLIC' as const },
@@ -1005,6 +1024,7 @@ export const skillsRouter = router({
               id: true,
               version: true,
               changelog: true,
+              status: true,
               createdAt: true,
               gitRef: true,
               gitCommitSha: true,
@@ -1706,6 +1726,147 @@ export const skillsRouter = router({
       return updated
     }),
 
+  archive: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const pkg = await prisma.package.findUnique({
+        where: { id: input.id },
+        include: {
+          organisation: {
+            include: {
+              members: { where: { userId: ctx.user.id } },
+            },
+          },
+        },
+      })
+
+      if (!pkg) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Package not found' })
+      }
+
+      const membership = pkg.organisation.members[0]
+      const isAuthor = pkg.authorId === ctx.user.id
+      const isAdminOrOwner = membership?.role === 'ADMIN' || membership?.role === 'OWNER'
+
+      if (!isAuthor && !isAdminOrOwner) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the package author or organisation admins can archive packages',
+        })
+      }
+
+      const updated = await prisma.package.update({
+        where: { id: input.id },
+        data: { status: 'ARCHIVED' },
+      })
+
+      logAudit({
+        userId: ctx.user.id,
+        action: 'PACKAGE_ARCHIVED',
+        resource: 'Package',
+        resourceId: input.id,
+        metadata: { name: pkg.name, slug: pkg.slug },
+      })
+
+      return updated
+    }),
+
+  deprecate: protectedProcedure
+    .input(z.object({ id: z.string(), note: z.string().max(500).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const pkg = await prisma.package.findUnique({
+        where: { id: input.id },
+        include: {
+          organisation: {
+            include: {
+              members: { where: { userId: ctx.user.id } },
+            },
+          },
+        },
+      })
+
+      if (!pkg) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Package not found' })
+      }
+
+      const membership = pkg.organisation.members[0]
+      const isAuthor = pkg.authorId === ctx.user.id
+      const isAdminOrOwner = membership?.role === 'ADMIN' || membership?.role === 'OWNER'
+
+      if (!isAuthor && !isAdminOrOwner) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the package author or organisation admins can deprecate packages',
+        })
+      }
+
+      const updated = await prisma.package.update({
+        where: { id: input.id },
+        data: {
+          status: 'DEPRECATED',
+          deprecationNote: input.note ?? null,
+        },
+      })
+
+      logAudit({
+        userId: ctx.user.id,
+        action: 'PACKAGE_DEPRECATED',
+        resource: 'Package',
+        resourceId: input.id,
+        metadata: { name: pkg.name, slug: pkg.slug, deprecationNote: input.note },
+      })
+
+      return updated
+    }),
+
+  activate: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const pkg = await prisma.package.findUnique({
+        where: { id: input.id },
+        include: {
+          organisation: {
+            include: {
+              members: { where: { userId: ctx.user.id } },
+            },
+          },
+        },
+      })
+
+      if (!pkg) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Package not found' })
+      }
+
+      const membership = pkg.organisation.members[0]
+      const isAuthor = pkg.authorId === ctx.user.id
+      const isAdminOrOwner = membership?.role === 'ADMIN' || membership?.role === 'OWNER'
+
+      if (!isAuthor && !isAdminOrOwner) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the package author or organisation admins can restore packages',
+        })
+      }
+
+      const updated = await prisma.package.update({
+        where: { id: input.id },
+        data: {
+          status: 'ACTIVE',
+          deprecationNote: null,
+        },
+      })
+
+      logAudit({
+        userId: ctx.user.id,
+        action: 'PACKAGE_ACTIVATED',
+        resource: 'Package',
+        resourceId: input.id,
+        metadata: { name: pkg.name, slug: pkg.slug },
+      })
+
+      return updated
+    }),
+
   fork: protectedProcedure
     .input(
       z.object({
@@ -1881,5 +2042,286 @@ export const skillsRouter = router({
       )
 
       return { success: true }
+    }),
+
+  deprecateVersion: protectedProcedure
+    .input(
+      z.object({
+        packageId: z.string(),
+        versionId: z.string(),
+        message: z.string().max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const version = await prisma.packageVersion.findUnique({
+        where: { id: input.versionId },
+        include: {
+          package: {
+            include: {
+              organisation: {
+                include: {
+                  members: { where: { userId: ctx.user.id } },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!version || version.packageId !== input.packageId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' })
+      }
+
+      const isAuthor = version.package.authorId === ctx.user.id
+      const membership = version.package.organisation.members[0]
+      const isAdminOrOwner = membership?.role === 'ADMIN' || membership?.role === 'OWNER'
+
+      if (!isAuthor && !isAdminOrOwner) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the package author or organisation admins can deprecate versions',
+        })
+      }
+
+      await prisma.packageVersion.update({
+        where: { id: input.versionId },
+        data: {
+          status: 'DEPRECATED',
+          ...(input.message && { changelog: input.message }),
+        },
+      })
+
+      logAudit({
+        userId: ctx.user.id,
+        action: 'VERSION_DEPRECATED',
+        resource: 'PackageVersion',
+        resourceId: input.versionId,
+        metadata: {
+          packageId: input.packageId,
+          version: version.version,
+          message: input.message,
+        },
+      })
+
+      return { success: true }
+    }),
+
+  yankVersion: protectedProcedure
+    .input(
+      z.object({
+        packageId: z.string(),
+        versionId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const version = await prisma.packageVersion.findUnique({
+        where: { id: input.versionId },
+        include: {
+          package: {
+            include: {
+              organisation: {
+                include: {
+                  members: { where: { userId: ctx.user.id } },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!version || version.packageId !== input.packageId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' })
+      }
+
+      const isAuthor = version.package.authorId === ctx.user.id
+      const membership = version.package.organisation.members[0]
+      const isAdminOrOwner = membership?.role === 'ADMIN' || membership?.role === 'OWNER'
+
+      if (!isAuthor && !isAdminOrOwner) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the package author or organisation admins can yank versions',
+        })
+      }
+
+      await prisma.packageVersion.update({
+        where: { id: input.versionId },
+        data: { status: 'YANKED' },
+      })
+
+      logAudit({
+        userId: ctx.user.id,
+        action: 'VERSION_YANKED',
+        resource: 'PackageVersion',
+        resourceId: input.versionId,
+        metadata: {
+          packageId: input.packageId,
+          version: version.version,
+        },
+      })
+
+      return { success: true }
+    }),
+
+  restoreVersion: protectedProcedure
+    .input(
+      z.object({
+        packageId: z.string(),
+        versionId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const version = await prisma.packageVersion.findUnique({
+        where: { id: input.versionId },
+        include: {
+          package: {
+            include: {
+              organisation: {
+                include: {
+                  members: { where: { userId: ctx.user.id } },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!version || version.packageId !== input.packageId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' })
+      }
+
+      const isAuthor = version.package.authorId === ctx.user.id
+      const membership = version.package.organisation.members[0]
+      const isAdminOrOwner = membership?.role === 'ADMIN' || membership?.role === 'OWNER'
+
+      if (!isAuthor && !isAdminOrOwner) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the package author or organisation admins can restore versions',
+        })
+      }
+
+      await prisma.packageVersion.update({
+        where: { id: input.versionId },
+        data: { status: 'PUBLISHED' },
+      })
+
+      logAudit({
+        userId: ctx.user.id,
+        action: 'VERSION_RESTORED',
+        resource: 'PackageVersion',
+        resourceId: input.versionId,
+        metadata: {
+          packageId: input.packageId,
+          version: version.version,
+        },
+      })
+
+      return { success: true }
+    }),
+
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      const packages = await prisma.package.findMany({
+        where: { id: { in: input.ids } },
+        include: {
+          organisation: {
+            include: {
+              members: {
+                where: { userId: ctx.user.id, role: { in: ['OWNER', 'ADMIN'] } },
+              },
+            },
+          },
+        },
+      })
+
+      const deletable: typeof packages = []
+      const errors: Array<{ id: string; name: string; error: string }> = []
+
+      for (const pkg of packages) {
+        if (pkg.organisation.members.length === 0) {
+          errors.push({
+            id: pkg.id,
+            name: `${pkg.organisation.slug}/${pkg.name}`,
+            error: 'You do not have permission to delete this package',
+          })
+        } else {
+          deletable.push(pkg)
+        }
+      }
+
+      // Report any IDs that were not found
+      const foundIds = new Set(packages.map((p) => p.id))
+      for (const id of input.ids) {
+        if (!foundIds.has(id)) {
+          errors.push({ id, name: 'unknown', error: 'Package not found' })
+        }
+      }
+
+      // Best-effort git file cleanup for each deletable package
+      for (const pkg of deletable) {
+        const org = pkg.organisation
+        try {
+          if (isAgentverProvider(org)) {
+            await getGitProvider().deleteSkill(org.slug, pkg.name, `Deleted package: ${pkg.name}`)
+          } else if (
+            org.skillsRepoProvider === 'github' &&
+            org.skillsRepoOwner &&
+            org.skillsRepoName
+          ) {
+            const token = await getGitHubToken(ctx.user.id)
+            if (token) {
+              await deleteSkillFromGitHub(
+                org.skillsRepoOwner,
+                org.skillsRepoName,
+                `skills/${pkg.name}`,
+                `Deleted package: ${pkg.name}`,
+                token
+              )
+            } else {
+              logger.warn('Skipping GitHub file cleanup — no connected account', {
+                userId: ctx.user.id,
+                packageName: pkg.name,
+              })
+            }
+          }
+        } catch (error) {
+          logger.warn('Git file cleanup failed during bulk package deletion', {
+            packageName: pkg.name,
+            orgSlug: org.slug,
+            provider: org.skillsRepoProvider,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+
+      // Delete all permitted packages in a single transaction
+      const deletableIds = deletable.map((p) => p.id)
+      if (deletableIds.length > 0) {
+        await prisma.package.deleteMany({ where: { id: { in: deletableIds } } })
+      }
+
+      // Audit, cache invalidation, and webhook delivery for each deleted package
+      for (const pkg of deletable) {
+        logAudit({
+          userId: ctx.user.id,
+          action: 'PACKAGE_DELETED',
+          resource: 'Package',
+          resourceId: pkg.id,
+          metadata: { name: pkg.name, slug: pkg.slug },
+        })
+
+        invalidateOnSkillWrite(pkg.organisation.slug, pkg.name).catch(() => {})
+
+        void deliverEvent(
+          pkg.organisationId,
+          'skill.deleted',
+          { id: ctx.user.id, username: ctx.user.name ?? ctx.user.email },
+          { skill: { name: pkg.name, slug: pkg.slug } }
+        )
+      }
+
+      return { deleted: deletable.length, errors }
     }),
 })

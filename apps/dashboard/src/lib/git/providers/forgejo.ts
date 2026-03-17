@@ -101,6 +101,11 @@ type ForgejoFileResponse = {
   commit: ForgejoCommit
 }
 
+type ForgejoFileDeleteResponse = {
+  commit: ForgejoCommit
+  content: null
+}
+
 type ForgejoPullRequest = {
   number: number
   title: string
@@ -341,7 +346,7 @@ class ForgejoClient {
     sha: string,
     message: string,
     branch?: string
-  ): Promise<void> {
+  ): Promise<ForgejoFileDeleteResponse> {
     const encodedPath = path
       .split('/')
       .map((s) => encodeURIComponent(s))
@@ -352,7 +357,7 @@ class ForgejoClient {
       body.branch = branch
     }
 
-    await this.request<void>(
+    return this.request<ForgejoFileDeleteResponse>(
       'DELETE',
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`,
       body
@@ -709,6 +714,35 @@ export class ForgejoGitProvider implements GitProvider {
     }
 
     logger.info('Skill deleted', { namespace, skillName, fileCount: allFiles.length })
+  }
+
+  async removeSkillFile(
+    namespace: string,
+    skillName: string,
+    filePath: string,
+    message: string
+  ): Promise<{ commitSha: string }> {
+    const fullPath = `${skillName}/${filePath}`
+
+    const existing = await this.client.getFileContent(namespace, SKILLS_REPO, fullPath)
+    if (!existing) {
+      throw new ForgejoApiError(
+        `File not found: ${filePath}`,
+        `${namespace}/${SKILLS_REPO}/${fullPath}`,
+        404
+      )
+    }
+
+    const result = await this.client.deleteFile(
+      namespace,
+      SKILLS_REPO,
+      fullPath,
+      existing.sha,
+      message
+    )
+
+    logger.info('Skill file removed', { namespace, skillName, filePath })
+    return { commitSha: result.commit.sha }
   }
 
   // -------------------------------------------------------------------------

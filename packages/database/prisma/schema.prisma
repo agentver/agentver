@@ -146,32 +146,46 @@ enum PackageType {
   BUNDLE
 }
 
+enum VersionStatus {
+  PUBLISHED
+  DEPRECATED
+  YANKED
+}
+
 enum Visibility {
   PUBLIC
   PRIVATE
   TEAM
 }
 
+enum PackageStatus {
+  ACTIVE
+  ARCHIVED
+  DEPRECATED
+}
+
 model Package {
-  id                  String      @id @default(uuid(7))
+  id                  String        @id @default(uuid(7))
   name                String
   slug                String
   description         String?
-  type                PackageType @default(SKILL)
-  visibility          Visibility  @default(PRIVATE)
-  tags                String[]    @default([])
-  compatibilityAgents String[]    @default([])
+  type                PackageType   @default(SKILL)
+  visibility          Visibility    @default(PRIVATE)
+  status              PackageStatus @default(ACTIVE)
+  deprecationNote     String?
+  tags                String[]      @default([])
+  compatibilityAgents String[]      @default([])
   readme              String?
   organisationId      String
   teamId              String?
   authorId            String
   forkedFromId        String?
-  starCount           Int         @default(0)
-  installCount        Int         @default(0)
-  isVerified          Boolean     @default(false)
+  starCount           Int           @default(0)
+  installCount        Int           @default(0)
+  isVerified          Boolean       @default(false)
   licence             String?
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   // Git-native: source of truth is a Git repository
   gitUri        String? // e.g. "github.com/acme/team-skills"
@@ -197,21 +211,23 @@ model Package {
   @@index([slug])
   @@index([type])
   @@index([visibility])
+  @@index([status])
   @@index([organisationId])
   @@index([teamId])
   @@map("packages")
 }
 
 model PackageVersion {
-  id           String   @id @default(uuid(7))
+  id           String        @id @default(uuid(7))
   packageId    String
   version      String
   changelog    String?
+  status       VersionStatus @default(PUBLISHED)
   fileManifest Json? // Cached file list (paths + hashes); optional for git-native versions
   storagePath  String? // Legacy: path in object storage; optional for git-native versions
   sha256       String? // Legacy: content hash; optional for git-native versions
   size         Int? // Legacy: file size in bytes; optional for git-native versions
-  createdAt    DateTime @default(now())
+  createdAt    DateTime      @default(now())
 
   // Git-native: version resolved from a Git ref
   gitRef       String? // Tag or branch name, e.g. "v1.2.0" or "main"

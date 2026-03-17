@@ -45,6 +45,7 @@ export async function GET(
     select: {
       version: true,
       changelog: true,
+      status: true,
       sha256: true,
       size: true,
       gitRef: true,
