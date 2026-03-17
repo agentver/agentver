@@ -10,6 +10,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@agentver/ui/components/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@agentver/ui/components/dropdown-menu'
+import { Input } from '@agentver/ui/components/input'
 import { Label } from '@agentver/ui/components/label'
 import { cn } from '@agentver/ui-utils'
 import {
@@ -19,12 +27,17 @@ import {
   GitBranch,
   GitFork,
   Monitor,
+  MoreVertical,
+  Pencil,
+  Settings,
   Star,
   Terminal,
+  Trash2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { StarButton } from '@/components/star-button'
 import { AGENT_DISPLAY, type AgentDisplayInfo } from '@/lib/agent-display'
 import { PACKAGE_TYPE_DISPLAY } from '@/lib/package-types'
@@ -67,6 +80,7 @@ type SkillHeaderProps = {
   }
   org: string
   name: string
+  canManage?: boolean
 }
 
 function buildGitViewUrl(
@@ -79,15 +93,18 @@ function buildGitViewUrl(
   return gitRepoUrl
 }
 
-export function SkillHeader({ pkg, org, name }: SkillHeaderProps) {
+export function SkillHeader({ pkg, org, name, canManage }: SkillHeaderProps) {
   const router = useRouter()
   const { data: userOrgs } = trpc.organisations.list.useQuery()
   const forkMutation = trpc.skills.fork.useMutation()
+  const deleteMutation = trpc.skills.delete.useMutation()
 
   const [forkDialogOpen, setForkDialogOpen] = useState(false)
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null)
   const [installDialogOpen, setInstallDialogOpen] = useState(false)
   const [copiedInstall, setCopiedInstall] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
 
   const latestVersion = pkg.versions[0]?.version ?? '0.0.0'
   const gitViewUrl = buildGitViewUrl(pkg.gitRepoUrl, pkg.gitPath, pkg.gitDefaultRef)
@@ -124,6 +141,27 @@ export function SkillHeader({ pkg, org, name }: SkillHeaderProps) {
         onSuccess: (forkedPkg) => {
           setForkDialogOpen(false)
           router.push(`/skills/${targetOrg?.slug ?? org}/${forkedPkg.name}`)
+        },
+      }
+    )
+  }
+
+  const expectedDeleteConfirmation = `${org}/${pkg.name}`
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirmation !== expectedDeleteConfirmation) return
+
+    deleteMutation.mutate(
+      { id: pkg.id },
+      {
+        onSuccess: () => {
+          toast.success('Package deleted', {
+            description: `${expectedDeleteConfirmation} has been permanently deleted.`,
+          })
+          router.push('/skills')
+        },
+        onError: (error) => {
+          toast.error('Failed to delete package', { description: error.message })
         },
       }
     )
@@ -231,6 +269,42 @@ export function SkillHeader({ pkg, org, name }: SkillHeaderProps) {
           <Button variant="outline" size="sm" onClick={handleForkClick}>
             <GitFork className="mr-1 size-3.5" /> Fork
           </Button>
+          {canManage && (
+            <>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/skills/${org}/${name}/edit`}>
+                  <Pencil className="mr-1 size-3.5" /> Edit
+                </Link>
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="size-8">
+                    <MoreVertical className="size-4" />
+                    <span className="sr-only">More actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href={`/skills/${org}/${name}/settings`}
+                      className="flex items-center gap-2"
+                    >
+                      <Settings className="size-3.5" />
+                      Settings
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="mr-2 size-3.5" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
         </div>
       </div>
 
@@ -312,6 +386,60 @@ export function SkillHeader({ pkg, org, name }: SkillHeaderProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      {canManage && (
+        <Dialog
+          open={deleteDialogOpen}
+          onOpenChange={(open) => {
+            setDeleteDialogOpen(open)
+            if (!open) setDeleteConfirmation('')
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete package</DialogTitle>
+              <DialogDescription>
+                This will permanently delete{' '}
+                <strong className="text-foreground">{expectedDeleteConfirmation}</strong>, all
+                versions, and all installation records. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <Label htmlFor="delete-confirmation">
+                Type <strong>{expectedDeleteConfirmation}</strong> to confirm
+              </Label>
+              <Input
+                id="delete-confirmation"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder={expectedDeleteConfirmation}
+                autoComplete="off"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialogOpen(false)
+                  setDeleteConfirmation('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteConfirm}
+                disabled={
+                  deleteConfirmation !== expectedDeleteConfirmation || deleteMutation.isPending
+                }
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete package'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   )
 }

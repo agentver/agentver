@@ -4,7 +4,13 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit/logger'
 import { GitProviderConfigError, getGitProvider } from '@/lib/git'
-import { commitFiles, getDefaultBranch, getRepoContents } from '@/lib/github/skills-repo'
+import {
+  commitFiles,
+  deleteSkillFromGitHub,
+  getDefaultBranch,
+  getRepoContents,
+} from '@/lib/github/skills-repo'
+import { getGitHubToken } from '@/lib/github/token'
 import { createNotification, createNotifications } from '@/lib/notifications'
 import { invalidateOnSkillWrite } from '@/lib/redis/invalidation'
 import { deliverEvent } from '@/lib/webhooks/service'
@@ -118,42 +124,145 @@ function incrementPatchVersion(version: string): string {
   return `${major}.${minor}.${patch + 1}`
 }
 
+type GitProvider = 'github' | 'gitlab' | 'bitbucket'
+
+type ParsedGitUrl = {
+  provider: GitProvider
+  owner: string
+  repo: string
+  path: string | null
+  ref?: string
+}
+
 /**
- * Parse a GitHub URL or shorthand into owner, repo, and optional path components.
+ * Parse a Git URL or shorthand into provider, owner, repo, and optional path/ref.
  * Accepts:
- *   - https://github.com/owner/repo
- *   - github.com/owner/repo
- *   - owner/repo
- *   - owner/repo/path/to/skill
- *   - https://github.com/owner/repo/tree/main/path/to/skill
+ *   - GitHub: github.com/owner/repo[/tree/branch/path] or owner/repo[/path]
+ *   - GitLab: gitlab.com/owner/repo[/-/tree/branch/path] or gitlab.com/group/subgroup/repo[/-/tree/branch/path]
+ *   - Bitbucket: bitbucket.org/owner/repo[/src/branch/path]
+ *   - Bare owner/repo defaults to GitHub.
  */
-function parseGitHubUrl(url: string): { owner: string; repo: string; path: string | null } {
-  let cleaned = url.trim()
+function parseGitUrl(url: string): ParsedGitUrl {
+  const cleaned = url.trim().replace(/\/$/, '')
+  const withoutProtocol = cleaned.replace(/^https?:\/\//, '')
 
-  // Strip protocol and github.com prefix
-  cleaned = cleaned.replace(/^https?:\/\//, '')
-  cleaned = cleaned.replace(/^github\.com\//, '')
+  let provider: GitProvider = 'github'
+  let remainder = withoutProtocol
 
-  // Remove trailing slash
-  cleaned = cleaned.replace(/\/$/, '')
+  if (withoutProtocol.startsWith('gitlab.com/')) {
+    provider = 'gitlab'
+    remainder = withoutProtocol.replace(/^gitlab\.com\//, '')
+  } else if (withoutProtocol.startsWith('bitbucket.org/')) {
+    provider = 'bitbucket'
+    remainder = withoutProtocol.replace(/^bitbucket\.org\//, '')
+  } else if (withoutProtocol.startsWith('github.com/')) {
+    provider = 'github'
+    remainder = withoutProtocol.replace(/^github\.com\//, '')
+  }
 
-  // Remove /tree/{branch}/ segment if present (e.g. from GitHub browser URLs)
-  cleaned = cleaned.replace(/\/tree\/[^/]+/, '')
+  if (provider === 'gitlab') {
+    return parseGitLabSegments(remainder)
+  }
 
-  const segments = cleaned.split('/').filter(Boolean)
+  if (provider === 'bitbucket') {
+    return parseBitbucketSegments(remainder)
+  }
 
+  return parseGitHubSegments(remainder)
+}
+
+function parseGitLabSegments(remainder: string): ParsedGitUrl {
+  let working = remainder
+  let ref: string | undefined
+  let extraPath: string | undefined
+
+  const treeSplit = working.split('/-/tree/')
+  if (treeSplit.length === 2 && treeSplit[1]) {
+    working = treeSplit[0]!
+    const refAndPath = treeSplit[1]
+    const slashIdx = refAndPath.indexOf('/')
+    if (slashIdx === -1) {
+      ref = refAndPath
+    } else {
+      ref = refAndPath.slice(0, slashIdx)
+      extraPath = refAndPath.slice(slashIdx + 1) || undefined
+    }
+  }
+
+  const segments = working.split('/').filter(Boolean)
   if (segments.length < 2) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: 'Invalid GitHub URL. Expected format: owner/repo or https://github.com/owner/repo',
+      message:
+        'Invalid GitLab URL. Expected format: gitlab.com/owner/repo or gitlab.com/group/subgroup/repo',
     })
   }
 
-  const owner = segments[0]!
-  const repo = segments[1]!
-  const path = segments.length > 2 ? segments.slice(2).join('/') : null
+  const repo = segments[segments.length - 1]!
+  const owner = segments.slice(0, segments.length - 1).join('/')
 
-  return { owner, repo, path }
+  return { provider: 'gitlab', owner, repo, path: extraPath ?? null, ref }
+}
+
+function parseBitbucketSegments(remainder: string): ParsedGitUrl {
+  const srcMatch = remainder.match(/^([^/]+\/[^/]+)\/src\/([^/]+)(?:\/(.+))?$/)
+  if (srcMatch) {
+    const [, ownerRepo, matchedRef, pathAfterRef] = srcMatch
+    const segments = ownerRepo!.split('/').filter(Boolean)
+    return {
+      provider: 'bitbucket',
+      owner: segments[0]!,
+      repo: segments[1]!,
+      path: pathAfterRef ?? null,
+      ref: matchedRef,
+    }
+  }
+
+  const segments = remainder.split('/').filter(Boolean)
+  if (segments.length < 2) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Invalid Bitbucket URL. Expected format: bitbucket.org/owner/repo',
+    })
+  }
+
+  return {
+    provider: 'bitbucket',
+    owner: segments[0]!,
+    repo: segments[1]!,
+    path: segments.length > 2 ? segments.slice(2).join('/') : null,
+  }
+}
+
+function parseGitHubSegments(remainder: string): ParsedGitUrl {
+  let working = remainder
+  let ref: string | undefined
+
+  const treeMatch = working.match(/^(.+?)\/tree\/([^/]+)(?:\/(.+))?$/)
+  if (treeMatch) {
+    working = treeMatch[1]!
+    ref = treeMatch[2]
+    if (treeMatch[3]) {
+      working = `${working}/${treeMatch[3]}`
+    }
+  }
+
+  const segments = working.split('/').filter(Boolean)
+  if (segments.length < 2) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message:
+        'Invalid repository URL. Expected format: owner/repo, github.com/..., gitlab.com/..., or bitbucket.org/...',
+    })
+  }
+
+  return {
+    provider: 'github',
+    owner: segments[0]!,
+    repo: segments[1]!,
+    path: segments.length > 2 ? segments.slice(2).join('/') : null,
+    ref,
+  }
 }
 
 /**
@@ -266,6 +375,274 @@ async function fetchSkillFolderFromGitHub(
   return files
 }
 
+// ---------------------------------------------------------------------------
+// GitLab: public fetch helpers (no auth required)
+// ---------------------------------------------------------------------------
+
+type GitLabTreeEntry = {
+  id: string
+  name: string
+  type: 'tree' | 'blob'
+  path: string
+  mode: string
+}
+
+/**
+ * Build the encoded GitLab project ID from owner/repo (e.g. "group/subgroup/repo" -> "group%2Fsubgroup%2Frepo").
+ */
+function gitlabProjectId(owner: string, repo: string): string {
+  return encodeURIComponent(`${owner}/${repo}`)
+}
+
+/**
+ * Fetch a raw file from a public GitLab repo.
+ * Returns null on 404.
+ */
+async function gitlabFetchRaw(
+  projectId: string,
+  filePath: string,
+  ref: string
+): Promise<string | null> {
+  const encodedPath = encodeURIComponent(filePath)
+  const url = `https://gitlab.com/api/v4/projects/${projectId}/repository/files/${encodedPath}/raw?ref=${ref}`
+
+  const response = await fetch(url, {
+    headers: { Accept: 'text/plain' },
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (response.status === 404) return null
+  if (!response.ok) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `GitLab API error fetching file: ${response.status}`,
+    })
+  }
+
+  return response.text()
+}
+
+/**
+ * Fetch a SKILL.md from a public GitLab repo.
+ * Tries candidate paths on main, then master.
+ */
+async function fetchSkillMdFromGitLab(
+  owner: string,
+  repo: string,
+  path: string | null,
+  ref?: string
+): Promise<{ content: string; resolvedPath: string; branch: string }> {
+  const projectId = gitlabProjectId(owner, repo)
+  const candidatePaths = path
+    ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, 'SKILL.md']
+    : ['SKILL.md', 'agentver.yaml']
+
+  const branches = ref ? [ref] : ['main', 'master']
+
+  for (const branch of branches) {
+    for (const candidate of candidatePaths) {
+      const content = await gitlabFetchRaw(projectId, candidate, branch)
+      if (content !== null) {
+        return { content, resolvedPath: candidate, branch }
+      }
+    }
+  }
+
+  throw new TRPCError({
+    code: 'NOT_FOUND',
+    message: `Could not find SKILL.md or agentver.yaml in gitlab.com/${owner}/${repo}${path ? `/${path}` : ''}. Ensure the file exists on the main or master branch.`,
+  })
+}
+
+/**
+ * Fetch all files in a skill folder from a public GitLab repo.
+ */
+async function fetchSkillFolderFromGitLab(
+  owner: string,
+  repo: string,
+  folderPath: string,
+  branch: string
+): Promise<Array<{ path: string; content: string }>> {
+  const projectId = gitlabProjectId(owner, repo)
+  const encodedFolder = encodeURIComponent(folderPath)
+  const treeUrl = `https://gitlab.com/api/v4/projects/${projectId}/repository/tree?path=${encodedFolder}&ref=${branch}&per_page=100`
+
+  const response = await fetch(treeUrl, {
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (!response.ok) {
+    logger.warn('Failed to list GitLab skill folder', {
+      owner,
+      repo,
+      folderPath,
+      branch,
+      status: response.status,
+    })
+    return []
+  }
+
+  const entries = (await response.json()) as GitLabTreeEntry[]
+  const files: Array<{ path: string; content: string }> = []
+
+  for (const entry of entries) {
+    if (entry.type !== 'blob') continue
+
+    try {
+      const content = await gitlabFetchRaw(projectId, entry.path, branch)
+      if (content !== null) {
+        files.push({ path: entry.name, content })
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch file from GitLab skill folder', {
+        path: entry.path,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return files
+}
+
+// ---------------------------------------------------------------------------
+// Bitbucket: public fetch helpers (no auth required)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch a raw file from a public Bitbucket repo.
+ * Returns null on 404.
+ */
+async function bitbucketFetchRaw(
+  owner: string,
+  repo: string,
+  filePath: string,
+  ref: string
+): Promise<string | null> {
+  const url = `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/src/${ref}/${filePath}`
+
+  const response = await fetch(url, {
+    headers: { Accept: 'text/plain' },
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (response.status === 404) return null
+  if (!response.ok) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Bitbucket API error fetching file: ${response.status}`,
+    })
+  }
+
+  return response.text()
+}
+
+type BitbucketSrcEntry = {
+  path: string
+  type: 'commit_file' | 'commit_directory'
+  size?: number
+}
+
+type BitbucketSrcResponse = {
+  values: BitbucketSrcEntry[]
+  next?: string
+}
+
+/**
+ * Fetch a SKILL.md from a public Bitbucket repo.
+ * Tries candidate paths on main, then master.
+ */
+async function fetchSkillMdFromBitbucket(
+  owner: string,
+  repo: string,
+  path: string | null,
+  ref?: string
+): Promise<{ content: string; resolvedPath: string; branch: string }> {
+  const candidatePaths = path
+    ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, 'SKILL.md']
+    : ['SKILL.md', 'agentver.yaml']
+
+  const branches = ref ? [ref] : ['main', 'master']
+
+  for (const branch of branches) {
+    for (const candidate of candidatePaths) {
+      const content = await bitbucketFetchRaw(owner, repo, candidate, branch)
+      if (content !== null) {
+        return { content, resolvedPath: candidate, branch }
+      }
+    }
+  }
+
+  throw new TRPCError({
+    code: 'NOT_FOUND',
+    message: `Could not find SKILL.md or agentver.yaml in bitbucket.org/${owner}/${repo}${path ? `/${path}` : ''}. Ensure the file exists on the main or master branch.`,
+  })
+}
+
+/**
+ * Fetch all files in a skill folder from a public Bitbucket repo.
+ */
+async function fetchSkillFolderFromBitbucket(
+  owner: string,
+  repo: string,
+  folderPath: string,
+  branch: string
+): Promise<Array<{ path: string; content: string }>> {
+  const listUrl = `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/src/${branch}/${folderPath}?pagelen=100`
+
+  const response = await fetch(listUrl, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (!response.ok) {
+    logger.warn('Failed to list Bitbucket skill folder', {
+      owner,
+      repo,
+      folderPath,
+      branch,
+      status: response.status,
+    })
+    return []
+  }
+
+  const data = (await response.json()) as BitbucketSrcResponse
+  const files: Array<{ path: string; content: string }> = []
+
+  for (const entry of data.values) {
+    if (entry.type !== 'commit_file') continue
+
+    try {
+      const content = await bitbucketFetchRaw(owner, repo, entry.path, branch)
+      if (content !== null) {
+        const fileName = entry.path.split('/').pop() ?? entry.path
+        files.push({ path: fileName, content })
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch file from Bitbucket skill folder', {
+        path: entry.path,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return files
+}
+
+// ---------------------------------------------------------------------------
+// Provider display label helper
+// ---------------------------------------------------------------------------
+
+function providerDomain(provider: GitProvider): string {
+  switch (provider) {
+    case 'github':
+      return 'github.com'
+    case 'gitlab':
+      return 'gitlab.com'
+    case 'bitbucket':
+      return 'bitbucket.org'
+  }
+}
+
 export const skillsRouter = router({
   list: protectedProcedure
     .input(
@@ -345,7 +722,7 @@ export const skillsRouter = router({
     }),
 
   /**
-   * Import a skill from a public GitHub repository URL.
+   * Import a skill from a public GitHub, GitLab, or Bitbucket repository URL.
    * Fetches the SKILL.md, parses frontmatter, and creates a Package record.
    */
   importFromUrl: protectedProcedure
@@ -372,11 +749,37 @@ export const skillsRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not a member of this organisation' })
       }
 
-      // Parse the GitHub URL
-      const { owner, repo, path } = parseGitHubUrl(input.url)
+      // Parse the repository URL (supports GitHub, GitLab, Bitbucket)
+      const { provider, owner, repo, path, ref } = parseGitUrl(input.url)
+      const domain = providerDomain(provider)
 
-      // Fetch the SKILL.md content
-      const { content, resolvedPath, branch } = await fetchSkillMdFromGitHub(owner, repo, path)
+      // Fetch the SKILL.md content from the appropriate provider
+      let content: string
+      let resolvedPath: string
+      let branch: string
+
+      switch (provider) {
+        case 'gitlab': {
+          const result = await fetchSkillMdFromGitLab(owner, repo, path, ref)
+          content = result.content
+          resolvedPath = result.resolvedPath
+          branch = result.branch
+          break
+        }
+        case 'bitbucket': {
+          const result = await fetchSkillMdFromBitbucket(owner, repo, path, ref)
+          content = result.content
+          resolvedPath = result.resolvedPath
+          branch = result.branch
+          break
+        }
+        default: {
+          const result = await fetchSkillMdFromGitHub(owner, repo, path)
+          content = result.content
+          resolvedPath = result.resolvedPath
+          branch = result.branch
+        }
+      }
 
       // Parse frontmatter to extract metadata
       const { rawData } = parseFrontmatter(content)
@@ -423,7 +826,16 @@ export const skillsRouter = router({
       let allFiles: Array<{ path: string; content: string }> = []
 
       if (folderPath) {
-        allFiles = await fetchSkillFolderFromGitHub(owner, repo, folderPath, branch)
+        switch (provider) {
+          case 'gitlab':
+            allFiles = await fetchSkillFolderFromGitLab(owner, repo, folderPath, branch)
+            break
+          case 'bitbucket':
+            allFiles = await fetchSkillFolderFromBitbucket(owner, repo, folderPath, branch)
+            break
+          default:
+            allFiles = await fetchSkillFolderFromGitHub(owner, repo, folderPath, branch)
+        }
       }
 
       // If folder listing failed or returned nothing, fall back to the single SKILL.md
@@ -436,7 +848,8 @@ export const skillsRouter = router({
 
       const slug = `${org.slug}/${normalisedName}`
       const gitPath = `skills/${normalisedName}/SKILL.md`
-      const commitMessage = `Import ${normalisedName} from github.com/${owner}/${repo}`
+      const sourceLabel = `${domain}/${owner}/${repo}`
+      const commitMessage = `Import ${normalisedName} from ${sourceLabel}`
       let commitSha: string | undefined
       let commitUrl: string | null = null
 
@@ -496,7 +909,7 @@ export const skillsRouter = router({
         ? `agentver://${org.slug}`
         : hasExternalRepo
           ? `github.com/${org.skillsRepoOwner}/${org.skillsRepoName}`
-          : `github.com/${owner}/${repo}`
+          : sourceLabel
 
       const pkg = await prisma.package.create({
         data: {
@@ -524,7 +937,7 @@ export const skillsRouter = router({
         data: {
           packageId: pkg.id,
           version: '1.0.0',
-          changelog: `Imported from github.com/${owner}/${repo}`,
+          changelog: `Imported from ${sourceLabel}`,
           gitRef: branch,
           ...(commitSha && { gitCommitSha: commitSha }),
         },
@@ -539,7 +952,7 @@ export const skillsRouter = router({
           name: normalisedName,
           type,
           organisationId: input.organisationId,
-          importedFrom: `github.com/${owner}/${repo}`,
+          importedFrom: sourceLabel,
           fileCount: allFiles.length,
         },
       })
@@ -554,7 +967,7 @@ export const skillsRouter = router({
       logger.info('Skill imported from URL', {
         packageId: pkg.id,
         name: normalisedName,
-        source: `github.com/${owner}/${repo}`,
+        source: sourceLabel,
         fileCount: allFiles.length,
         commitSha,
       })
@@ -1410,6 +1823,41 @@ export const skillsRouter = router({
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Only org owners/admins can delete packages',
+        })
+      }
+
+      // Best-effort git file cleanup — don't block DB deletion on failure
+      const org = pkg.organisation
+      try {
+        if (isAgentverProvider(org)) {
+          await getGitProvider().deleteSkill(org.slug, pkg.name, `Deleted package: ${pkg.name}`)
+        } else if (
+          org.skillsRepoProvider === 'github' &&
+          org.skillsRepoOwner &&
+          org.skillsRepoName
+        ) {
+          const token = await getGitHubToken(ctx.user.id)
+          if (token) {
+            await deleteSkillFromGitHub(
+              org.skillsRepoOwner,
+              org.skillsRepoName,
+              `skills/${pkg.name}`,
+              `Deleted package: ${pkg.name}`,
+              token
+            )
+          } else {
+            logger.warn('Skipping GitHub file cleanup — no connected account', {
+              userId: ctx.user.id,
+              packageName: pkg.name,
+            })
+          }
+        }
+      } catch (error) {
+        logger.warn('Git file cleanup failed during package deletion', {
+          packageName: pkg.name,
+          orgSlug: org.slug,
+          provider: org.skillsRepoProvider,
+          error: error instanceof Error ? error.message : String(error),
         })
       }
 

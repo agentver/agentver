@@ -181,6 +181,9 @@ function SourcesContent() {
 
   const hasAnyConnection = accounts.data?.some((a) => PROVIDERS.some((p) => p.id === a.provider))
 
+  // GitHub supports unauthenticated scanning of public repos, so always show the provider grid
+  const hasUnauthenticatedProvider = true
+
   if (browsingSource) {
     return (
       <div className="space-y-8">
@@ -270,7 +273,7 @@ function SourcesContent() {
         </FadeIn>
       )}
 
-      {!accounts.isLoading && !hasAnyConnection ? (
+      {!accounts.isLoading && !hasAnyConnection && !hasUnauthenticatedProvider ? (
         <FadeIn delay={200}>
           <EmptyState />
         </FadeIn>
@@ -284,6 +287,7 @@ function SourcesContent() {
                   account={getAccountForProvider(provider.id)}
                   isLoading={accounts.isLoading}
                   onBrowse={() => setBrowsingSource(provider.importKey)}
+                  allowUnauthenticated={provider.id === 'GITHUB'}
                 />
               </FadeIn>
             ))}

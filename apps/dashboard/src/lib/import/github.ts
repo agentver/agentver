@@ -35,10 +35,7 @@ type ScannedGitHubFile = {
 
 export async function listUserRepos(accessToken: string): Promise<GitHubRepo[]> {
   const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/vnd.github.v3+json',
-    },
+    headers: githubHeaders(accessToken),
   })
 
   if (!response.ok) {
@@ -54,10 +51,36 @@ export async function listUserRepos(accessToken: string): Promise<GitHubRepo[]> 
   }))
 }
 
+function githubHeaders(token?: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github.v3+json',
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  return headers
+}
+
+export type GitHubApiError = {
+  status: number
+  rateLimited: boolean
+  message: string
+}
+
+export function isGitHubApiError(error: unknown): error is GitHubApiError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    'rateLimited' in error &&
+    'message' in error
+  )
+}
+
 export async function scanRepoForSkills(
-  accessToken: string,
   owner: string,
-  repo: string
+  repo: string,
+  token?: string | null
 ): Promise<ScannedGitHubFile[]> {
   const skillPaths = [
     '.claude/skills',
@@ -91,17 +114,33 @@ export async function scanRepoForSkills(
   ]
 
   const foundFiles: ScannedGitHubFile[] = []
+  const headers = githubHeaders(token)
+
+  // Verify the repo is accessible before scanning individual paths.
+  // This lets us surface a clear error for private/missing repos early.
+  const repoCheckResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+    headers,
+  })
+
+  if (!repoCheckResponse.ok) {
+    const rateLimitRemaining = repoCheckResponse.headers.get('X-RateLimit-Remaining')
+    const isRateLimited =
+      repoCheckResponse.status === 429 ||
+      (repoCheckResponse.status === 403 && rateLimitRemaining === '0')
+
+    const error: GitHubApiError = {
+      status: repoCheckResponse.status,
+      rateLimited: isRateLimited,
+      message: `GitHub API error: ${repoCheckResponse.status}`,
+    }
+    throw error
+  }
 
   for (const configEntry of configFiles) {
     try {
       const response = await fetch(
         `https://api.github.com/repos/${owner}/${repo}/contents/${configEntry.path}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: 'application/vnd.github.v3+json',
-          },
-        }
+        { headers }
       )
 
       if (response.ok) {
@@ -117,6 +156,7 @@ export async function scanRepoForSkills(
         })
       }
     } catch (error) {
+      if (isGitHubApiError(error)) throw error
       logger.error(`Failed to check config file ${configEntry.path}`, { error })
     }
   }
@@ -125,12 +165,7 @@ export async function scanRepoForSkills(
   try {
     const rooRulesResponse = await fetch(
       `https://api.github.com/repos/${owner}/${repo}/contents/.roo/rules`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: 'application/vnd.github.v3+json',
-        },
-      }
+      { headers }
     )
 
     if (rooRulesResponse.ok) {
@@ -149,6 +184,7 @@ export async function scanRepoForSkills(
       }
     }
   } catch (error) {
+    if (isGitHubApiError(error)) throw error
     logger.error('Failed to scan .roo/rules directory', { error })
   }
 
@@ -170,12 +206,7 @@ export async function scanRepoForSkills(
     try {
       const response = await fetch(
         `https://api.github.com/repos/${owner}/${repo}/contents/${skillPath}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: 'application/vnd.github.v3+json',
-          },
-        }
+        { headers }
       )
 
       if (response.ok) {
@@ -197,6 +228,7 @@ export async function scanRepoForSkills(
         }
       }
     } catch (error) {
+      if (isGitHubApiError(error)) throw error
       logger.error(`Failed to scan skill directory ${skillPath}`, { error })
     }
   }
@@ -211,10 +243,7 @@ export async function getRepoDefaultBranch(
   repo: string
 ): Promise<string> {
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/vnd.github.v3+json',
-    },
+    headers: githubHeaders(accessToken),
   })
 
   if (!response.ok) {
@@ -225,10 +254,16 @@ export async function getRepoDefaultBranch(
   return data.default_branch
 }
 
-export async function fetchFileContent(accessToken: string, downloadUrl: string): Promise<string> {
-  const response = await fetch(downloadUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
+export async function fetchFileContent(
+  downloadUrl: string,
+  token?: string | null
+): Promise<string> {
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(downloadUrl, { headers })
 
   if (!response.ok) {
     throw new Error(`Failed to fetch file: ${response.status}`)
@@ -256,10 +291,7 @@ export async function fetchSkillDirectoryFiles(
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}`,
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/vnd.github.v3+json',
-      },
+      headers: githubHeaders(accessToken),
     }
   )
 
@@ -280,7 +312,7 @@ export async function fetchSkillDirectoryFiles(
     if (entry.type !== 'file' || !entry.download_url) continue
 
     try {
-      const content = await fetchFileContent(accessToken, entry.download_url)
+      const content = await fetchFileContent(entry.download_url, accessToken)
       files.push({ name: entry.name, content })
     } catch (error) {
       logger.warn('Failed to fetch file from skill directory', {

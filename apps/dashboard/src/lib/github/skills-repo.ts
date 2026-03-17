@@ -378,3 +378,107 @@ export async function getDefaultBranch(
   const data = (await response.json()) as GitHubRepoResponse
   return data.default_branch
 }
+
+/**
+ * Delete a skill's directory from a GitHub repository.
+ *
+ * Lists files under `skillPath`, then creates a single commit that removes
+ * them all using the Git Trees API (setting each entry's SHA to null).
+ */
+export async function deleteSkillFromGitHub(
+  owner: string,
+  repo: string,
+  skillPath: string,
+  message: string,
+  token: string
+): Promise<void> {
+  // 1. Resolve the default branch
+  let branch: string
+  try {
+    branch = await getDefaultBranch(owner, repo, token)
+  } catch {
+    branch = 'main'
+  }
+
+  // 2. Get the latest commit and its tree
+  const refData = await githubFetch<GitHubRefResponse>(
+    `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`,
+    token
+  )
+  const latestCommitSha = refData.object.sha
+
+  const commitData = await githubFetch<GitHubCommitResponse>(
+    `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/commits/${latestCommitSha}`,
+    token
+  )
+  const baseTreeSha = commitData.tree.sha
+
+  // 3. List files under the skill path so we know what to remove
+  const contents = await getRepoContents(owner, repo, skillPath, undefined, token)
+  const filePaths: string[] = []
+
+  if (contents.type === 'dir' && contents.entries) {
+    for (const entry of contents.entries) {
+      if (entry.type === 'file') {
+        filePaths.push(entry.path)
+      }
+    }
+  } else if (contents.type === 'file') {
+    filePaths.push(contents.path)
+  }
+
+  if (filePaths.length === 0) {
+    logger.warn('No files found under skill path — nothing to delete', { owner, repo, skillPath })
+    return
+  }
+
+  // 4. Create a new tree that removes the files (sha: null deletes the entry)
+  const newTree = await githubFetch<GitHubTreeResponse>(
+    `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees`,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        base_tree: baseTreeSha,
+        tree: filePaths.map((path) => ({
+          path,
+          mode: '100644',
+          type: 'blob',
+          sha: null,
+        })),
+      }),
+    }
+  )
+
+  // 5. Create the commit
+  const newCommit = await githubFetch<GitHubCreateCommitResponse>(
+    `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/commits`,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        message,
+        tree: newTree.sha,
+        parents: [latestCommitSha],
+      }),
+    }
+  )
+
+  // 6. Update the branch ref
+  await githubFetch<GitHubRefResponse>(
+    `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branch)}`,
+    token,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ sha: newCommit.sha }),
+    }
+  )
+
+  logger.info('Skill deleted from GitHub repository', {
+    owner,
+    repo,
+    skillPath,
+    deletedFiles: filePaths.length,
+    commitSha: newCommit.sha,
+  })
+}
