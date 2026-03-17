@@ -1,0 +1,230 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGION: europe-west4
+  IMAGE_REPO: europe-west4-docker.pkg.dev
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Validate — lint, type-check, test before anything gets released
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Restore Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+            turbo-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Format check
+        run: bun run format:check
+
+      - name: Type-check
+        run: bun run type-check
+
+      - name: Test
+        run: bun run test
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Create GitHub Release
+  # ---------------------------------------------------------------------------
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [validate]
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          name: ${{ github.ref_name }}
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Publish @agentver/cli to npm
+  # ---------------------------------------------------------------------------
+  publish-cli:
+    name: Publish CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate]
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Setup Node.js (for npm publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build CLI
+        run: bun run turbo build --filter=@agentver/cli
+
+      - name: Publish CLI to npm
+        working-directory: packages/cli
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Publish @agentver/mcp-server to npm
+  # ---------------------------------------------------------------------------
+  publish-mcp-server:
+    name: Publish MCP Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate]
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Setup Node.js (for npm publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build MCP Server
+        run: bun run turbo build --filter=@agentver/mcp-server
+
+      - name: Publish MCP Server to npm
+        working-directory: packages/mcp-server
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Job 5: Build & push Docker images
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Build & push Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [validate]
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.IMAGE_REPO }} --quiet
+
+      - name: Build platform image
+        run: |
+          docker build \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:${{ github.sha }} \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:${{ github.ref_name }} \
+            .
+
+      - name: Push platform image
+        run: |
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:${{ github.sha }}
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:${{ github.ref_name }}
+
+      - name: Build website image
+        run: |
+          docker build \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.sha }} \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.ref_name }} \
+            -f Dockerfile.website .
+
+      - name: Push website image
+        run: |
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.sha }}
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.ref_name }}
+
+      - name: Post release summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.summary
+              .addHeading('Release ${{ github.ref_name }}', 2)
+              .addList([
+                'GitHub Release created with auto-generated changelog',
+                'CLI published to npm',
+                'MCP Server published to npm',
+                'Platform Docker image pushed with version tag',
+                'Website Docker image pushed with version tag',
+              ])
+              .write();

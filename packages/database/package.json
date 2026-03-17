@@ -1,0 +1,36 @@
+{
+  "name": "@agentver/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "prisma": {
+    "seed": "bun prisma/seed.ts"
+  },
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset",
+    "postinstall": "test -f prisma/schema.prisma && prisma generate || true",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.3.0",
+    "@prisma/client": "^7.3.0",
+    "pg": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@agentver/typescript-config": "workspace:*",
+    "@types/pg": "^8.11.11",
+    "dotenv": "^16.6.0",
+    "prisma": "^7.3.0",
+    "typescript": "^5.9.3"
+  }
+}

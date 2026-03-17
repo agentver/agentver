@@ -1,0 +1,57 @@
+{
+  "name": "@agentver/mcp-server",
+  "version": "0.1.1",
+  "type": "module",
+  "author": "Agentver <hello@agentver.com>",
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "MCP server for Agentver — discover, install, and manage agent skills from AI coding assistants",
+  "bin": {
+    "agentver-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@agentver/agent-definitions": "workspace:*",
+    "@agentver/shared": "workspace:*",
+    "@agentver/typescript-config": "workspace:*",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "skill",
+    "registry",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "cursor",
+    "codex"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentver/agentver.git",
+    "directory": "packages/mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/agentver/agentver/issues"
+  },
+  "homepage": "https://agentver.com"
+}

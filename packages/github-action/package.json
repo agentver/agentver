@@ -1,0 +1,34 @@
+{
+  "name": "@agentver/github-action",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Action for automated Agentver skill installation in CI/CD",
+  "license": "MIT",
+  "author": "Agentver <hello@agentver.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentver/agentver.git",
+    "directory": "packages/github-action"
+  },
+  "bugs": {
+    "url": "https://github.com/agentver/agentver/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1"
+  },
+  "devDependencies": {
+    "@agentver/agent-definitions": "workspace:*",
+    "@agentver/shared": "workspace:*",
+    "@agentver/typescript-config": "workspace:*",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
+  }
+}

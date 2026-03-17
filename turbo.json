@@ -1,0 +1,65 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalDependencies": [".env"],
+  "globalEnv": ["NODE_ENV", "CI"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "out/**"],
+      "env": ["DATABASE_URL", "NEXT_PUBLIC_*"]
+    },
+    "desktop:dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "desktop:build": {
+      "dependsOn": ["^build"],
+      "outputs": ["src-tauri/target/**"],
+      "env": ["TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true,
+      "env": ["DATABASE_URL", "NEXT_PUBLIC_*", "BETTER_AUTH_SECRET"]
+    },
+    "build:types": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/types/**"]
+    },
+    "type-check": {
+      "dependsOn": ["^build", "^build:types"],
+      "outputs": []
+    },
+    "clean": {
+      "cache": false
+    },
+    "db:generate": {
+      "cache": false,
+      "outputs": ["node_modules/.prisma/**"]
+    },
+    "db:push": {
+      "cache": false
+    },
+    "db:reset": {
+      "cache": false
+    },
+    "db:migrate:dev": {
+      "cache": false
+    },
+    "db:migrate:deploy": {
+      "cache": false
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "env": ["DATABASE_URL", "TEST_DATABASE_URL"]
+    },
+    "db:studio": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

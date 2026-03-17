@@ -1,0 +1,88 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    paths:
+      - "apps/dashboard/**"
+      - "e2e/**"
+      - "packages/**"
+  push:
+    branches: [main]
+    paths:
+      - "apps/dashboard/**"
+      - "e2e/**"
+      - "packages/**"
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://agentver:test@localhost:5432/agentver_test
+      BETTER_AUTH_SECRET: test-secret-minimum-thirty-two-characters-long
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: agentver_test
+          POSTGRES_USER: agentver
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Restore Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+            turbo-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Run migrations
+        run: bun run db:migrate:deploy
+
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+
+      - name: Build dashboard
+        run: bun run turbo build --filter=@agentver/dashboard
+
+      - name: Run E2E tests
+        run: bunx playwright test
+        env:
+          APP_URL: http://localhost:3001
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

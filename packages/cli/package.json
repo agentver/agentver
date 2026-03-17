@@ -1,0 +1,66 @@
+{
+  "name": "@agentver/cli",
+  "version": "0.2.1",
+  "type": "module",
+  "description": "Agent skill registry — store, version, and distribute AI agent skills",
+  "bin": {
+    "agentver": "./dist/agentver.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^14.0.0",
+    "open": "^10.1.2",
+    "ora": "^8.2.0",
+    "prompts": "^2.4.2",
+    "update-notifier": "^7.3.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@agentver/agent-definitions": "workspace:*",
+    "@agentver/shared": "workspace:*",
+    "@agentver/typescript-config": "workspace:*",
+    "@types/prompts": "^2.4.9",
+    "@types/update-notifier": "^6.0.8",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "skill",
+    "registry",
+    "cli",
+    "claude",
+    "cursor",
+    "codex"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "author": "Agentver <hello@agentver.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentver/agentver.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/agentver/agentver/issues"
+  },
+  "homepage": "https://agentver.com"
+}

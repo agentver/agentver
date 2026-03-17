@@ -1,0 +1,49 @@
+{
+  "name": "@agentver/shared",
+  "version": "0.1.0",
+  "description": "Zod schemas, skill spec validation, and shared types for Agentver",
+  "license": "MIT",
+  "author": "Agentver <hello@agentver.com>",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "nanoid": "^5.1.5",
+    "tslog": "^4.10.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@agentver/typescript-config": "workspace:*",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentver/agentver.git",
+    "directory": "packages/shared"
+  },
+  "bugs": {
+    "url": "https://github.com/agentver/agentver/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://agentver.com"
+}

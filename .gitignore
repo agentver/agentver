@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.bun/
+
+# Build outputs
+dist/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+coverage/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Prisma
+packages/database/generated/
+
+# Infrastructure
+infra/
+
+# Tauri generated schemas
+apps/desktop/src-tauri/gen/schemas/
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Local
+.local/

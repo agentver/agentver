@@ -1,0 +1,65 @@
+name: Install Agent Skills
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  install-skills:
+    name: Install Agentver skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Agentver skills
+        uses: agentver/agentver/packages/github-action@main
+        id: agentver
+        with:
+          api-key: ${{ secrets.AGENTVER_API_KEY }}
+
+      - name: Show results
+        run: |
+          echo "Installed ${{ steps.agentver.outputs.installed-count }} skill(s)"
+          echo "Skills: ${{ steps.agentver.outputs.installed-skills }}"
+          echo "Agents: ${{ steps.agentver.outputs.agents-configured }}"
+
+  # Example: target specific agents
+  install-specific-agents:
+    name: Install for specific agents
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Agentver skills for Claude and Cursor
+        uses: agentver/agentver/packages/github-action@main
+        with:
+          api-key: ${{ secrets.AGENTVER_API_KEY }}
+          agents: 'claude-code,cursor'
+          verify-integrity: 'true'
+
+  # Example: custom registry and manifest paths
+  install-custom-paths:
+    name: Install with custom configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Agentver skills
+        uses: agentver/agentver/packages/github-action@main
+        with:
+          api-key: ${{ secrets.AGENTVER_API_KEY }}
+          registry-url: 'https://registry.example.com/api/v1'
+          manifest-path: 'config/.agentver/manifest.json'
+          lockfile-path: 'config/.agentver/lockfile.json'
+          working-directory: '.'

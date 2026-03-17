@@ -1,0 +1,35 @@
+{
+  "name": "@agentver/agent-definitions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent detection, placement, and config translation for 43+ AI coding assistants",
+  "license": "MIT",
+  "author": "Agentver <hello@agentver.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentver/agentver.git",
+    "directory": "packages/agent-definitions"
+  },
+  "bugs": {
+    "url": "https://github.com/agentver/agentver/issues"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@agentver/typescript-config": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

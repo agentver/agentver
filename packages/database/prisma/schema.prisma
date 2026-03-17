@@ -1,0 +1,870 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth & Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id                  String    @id @default(uuid(7))
+  email               String    @unique
+  username            String?   @unique
+  name                String?
+  image               String?
+  emailVerified       Boolean   @default(false)
+  isVerifiedPublisher Boolean   @default(false)
+  suspended           Boolean   @default(false)
+  suspendedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  memberships         OrganisationMember[]
+  packages            Package[]
+  packageInstalls     PackageInstall[]
+  apiKeys             ApiKey[]
+  cliAuthCodes        CliAuthCode[]
+  cliSessions         CliSession[]
+  connectedAccounts   ConnectedAccount[]
+  auditLogs           AuditLog[]
+  collections         Collection[]
+  teamMemberships     TeamMember[]
+  proposals           ChangeProposal[]
+  proposalComments    ProposalComment[]
+  proposalReviews     ProposalReview[]
+  notifications       Notification[]
+  installationReports InstallationReport[]
+  stars               Star[]
+  drafts              Draft[]
+  skillMaintainers    SkillMaintainer[]
+  secretVaultEntries  SecretVault[]
+  authSessions        Session[]  @relation("auth_sessions")
+  authAccounts        Account[]  @relation("auth_accounts")
+
+  @@map("users")
+}
+
+model Organisation {
+  id         String   @id @default(uuid(7))
+  name       String
+  slug       String   @unique
+  image      String?
+  isVerified Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Git-native: organisation skills repository
+  skillsRepoUrl         String? // Full URL to the org's skills repo
+  skillsRepoOwner       String? // GitHub/GitLab owner or namespace
+  skillsRepoName        String? // Repository name
+  skillsRepoProvider    String? @default("github") // github/gitlab/bitbucket/agentver
+  branchProtectionRules Json? // BranchProtectionRule[] — see branch-protection.ts
+
+  members          OrganisationMember[]
+  teams            Team[]
+  packages         Package[]
+  apiKeys          ApiKey[]
+  collections      Collection[]
+  webhookEndpoints WebhookEndpoint[]
+  secretVault      SecretVault[]
+  subscription     Subscription?
+
+  @@map("organisations")
+}
+
+enum OrganisationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model OrganisationMember {
+  id             String           @id @default(uuid(7))
+  userId         String
+  organisationId String
+  role           OrganisationRole @default(MEMBER)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organisationId])
+  @@index([organisationId])
+  @@map("organisation_members")
+}
+
+model Team {
+  id             String   @id @default(uuid(7))
+  name           String
+  slug           String
+  organisationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation     Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  members          TeamMember[]
+  packages         Package[]
+  skillMaintainers SkillMaintainer[]
+  secretVault      SecretVault[]
+
+  @@unique([organisationId, slug])
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid(7))
+  teamId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// ---------------------------------------------------------------------------
+// Packages (Skills, Agent Configs, Plugins, Scripts, Prompts)
+// ---------------------------------------------------------------------------
+
+enum PackageType {
+  SKILL
+  AGENT_CONFIG
+  PLUGIN
+  SCRIPT
+  PROMPT
+  BUNDLE
+}
+
+enum Visibility {
+  PUBLIC
+  PRIVATE
+  TEAM
+}
+
+model Package {
+  id                  String      @id @default(uuid(7))
+  name                String
+  slug                String
+  description         String?
+  type                PackageType @default(SKILL)
+  visibility          Visibility  @default(PRIVATE)
+  tags                String[]    @default([])
+  compatibilityAgents String[]    @default([])
+  readme              String?
+  organisationId      String
+  teamId              String?
+  authorId            String
+  forkedFromId        String?
+  starCount           Int         @default(0)
+  installCount        Int         @default(0)
+  isVerified          Boolean     @default(false)
+  licence             String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  // Git-native: source of truth is a Git repository
+  gitUri        String? // e.g. "github.com/acme/team-skills"
+  gitPath       String? @default("") // e.g. "skills/code-review"
+  gitDefaultRef String  @default("main") // default branch or tag
+
+  organisation        Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  team                Team?                @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  author              User                 @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  forkedFrom          Package?             @relation("PackageForks", fields: [forkedFromId], references: [id], onDelete: SetNull)
+  forks               Package[]            @relation("PackageForks")
+  versions            PackageVersion[]
+  installs            PackageInstall[]
+  installationReports InstallationReport[]
+  collectionItems     CollectionItem[]
+  proposals           ChangeProposal[]
+  stars               Star[]
+  categories          PackageCategory[]
+  drafts              Draft[]
+  skillMaintainers    SkillMaintainer[]
+
+  @@unique([organisationId, name])
+  @@index([slug])
+  @@index([type])
+  @@index([visibility])
+  @@index([organisationId])
+  @@index([teamId])
+  @@map("packages")
+}
+
+model PackageVersion {
+  id           String   @id @default(uuid(7))
+  packageId    String
+  version      String
+  changelog    String?
+  fileManifest Json? // Cached file list (paths + hashes); optional for git-native versions
+  storagePath  String? // Legacy: path in object storage; optional for git-native versions
+  sha256       String? // Legacy: content hash; optional for git-native versions
+  size         Int? // Legacy: file size in bytes; optional for git-native versions
+  createdAt    DateTime @default(now())
+
+  // Git-native: version resolved from a Git ref
+  gitRef       String? // Tag or branch name, e.g. "v1.2.0" or "main"
+  gitCommitSha String? // Resolved commit SHA at time of publish
+
+  package             Package              @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  installs            PackageInstall[]
+  installationReports InstallationReport[]
+
+  @@unique([packageId, version])
+  @@index([packageId, createdAt])
+  @@map("package_versions")
+}
+
+model PackageInstall {
+  id        String   @id @default(uuid(7))
+  packageId String
+  versionId String
+  userId    String
+  agents    String[] @default([])
+  createdAt DateTime @default(now())
+
+  package Package        @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  version PackageVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([packageId])
+  @@index([userId])
+  @@index([versionId])
+  @@map("package_installs")
+}
+
+model InstallationReport {
+  id         String   @id @default(uuid(7))
+  packageId  String
+  versionId  String?
+  userId     String
+  agents     String[] @default([])
+  machineId  String   @default("unknown")
+  modified   Boolean  @default(false)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sourceUri    String?
+  sourcePath   String?
+  sourceRef    String?
+  sourceCommit String?
+
+  package Package         @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  version PackageVersion? @relation(fields: [versionId], references: [id])
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([packageId, userId, machineId])
+  @@map("installation_reports")
+}
+
+// ---------------------------------------------------------------------------
+// API Keys
+// ---------------------------------------------------------------------------
+
+enum ApiKeyScope {
+  READ
+  WRITE
+  ADMIN
+}
+
+model ApiKey {
+  id             String        @id @default(uuid(7))
+  name           String
+  keyHash        String        @unique
+  keyPrefix      String
+  scopes         ApiKeyScope[] @default([READ])
+  rateLimit      Int           @default(1000) // requests per minute
+  userId         String
+  organisationId String
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  createdAt      DateTime      @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@index([userId])
+  @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Credential Vault
+// ---------------------------------------------------------------------------
+
+enum SecretSharing {
+  INDIVIDUAL
+  TEAM
+  ORG
+}
+
+model SecretVault {
+  id             String        @id @default(uuid(7))
+  organisationId String
+  teamId         String?
+  key            String // e.g., "github-pat", "linear-api-key"
+  description    String
+  encryptedValue String // AES-256-GCM encrypted
+  sharing        SecretSharing @default(INDIVIDUAL)
+  rotationDays   Int? // optional rotation reminder interval
+  lastRotatedAt  DateTime?
+  expiresAt      DateTime?
+  createdById    String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organisation Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  team         Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdBy    User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  accessLogs   SecretAccessLog[]
+
+  @@unique([organisationId, teamId, key])
+  @@index([organisationId])
+  @@index([teamId])
+  @@map("secret_vault")
+}
+
+model SecretAccessLog {
+  id        String   @id @default(uuid(7))
+  secretId  String
+  userId    String
+  action    String // "read", "write", "rotate", "delete"
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  secret SecretVault @relation(fields: [secretId], references: [id], onDelete: Cascade)
+
+  @@index([secretId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("secret_access_logs")
+}
+
+// ---------------------------------------------------------------------------
+// CLI Authentication (OAuth PKCE flow)
+// ---------------------------------------------------------------------------
+
+model CliAuthCode {
+  id            String    @id @default(uuid(7))
+  code          String    @unique
+  codeChallenge String
+  redirectUri   String
+  state         String
+  userId        String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([expiresAt])
+  @@map("cli_auth_codes")
+}
+
+model CliSession {
+  id         String    @id @default(uuid(7))
+  userId     String
+  tokenHash  String    @unique
+  name       String    @default("CLI")
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("cli_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Connected Accounts (OAuth for GitHub, Google Drive, OneDrive)
+// ---------------------------------------------------------------------------
+
+enum ConnectedProvider {
+  GITHUB
+  GOOGLE
+  MICROSOFT
+  GITLAB
+  BITBUCKET
+}
+
+model ConnectedAccount {
+  id                String            @id @default(uuid(7))
+  userId            String
+  provider          ConnectedProvider
+  providerAccountId String
+  accessToken       String
+  refreshToken      String?
+  expiresAt         DateTime?
+  scopes            String[]          @default([])
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("connected_accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Audit Log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid(7))
+  userId     String?
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([resourceId])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Collections (installable bundles)
+// ---------------------------------------------------------------------------
+
+model Collection {
+  id             String     @id @default(uuid(7))
+  name           String
+  slug           String
+  description    String?
+  organisationId String
+  authorId       String
+  visibility     Visibility @default(PRIVATE)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  author       User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  items        CollectionItem[]
+
+  @@unique([organisationId, slug])
+  @@index([visibility])
+  @@map("collections")
+}
+
+model CollectionItem {
+  id           String   @id @default(uuid(7))
+  collectionId String
+  packageId    String
+  order        Int
+  addedAt      DateTime @default(now())
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  package    Package    @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, packageId])
+  @@index([collectionId])
+  @@map("collection_items")
+}
+
+// ---------------------------------------------------------------------------
+// Change Proposals (PR-like workflow for collaborative editing)
+// ---------------------------------------------------------------------------
+
+enum ProposalStatus {
+  OPEN
+  IN_REVIEW
+  APPROVED
+  MERGED
+  REJECTED
+  CLOSED
+}
+
+model ChangeProposal {
+  id           String         @id @default(uuid(7))
+  packageId    String
+  authorId     String
+  title        String
+  description  String?
+  content      Json // Proposed new content for the package
+  status       ProposalStatus @default(OPEN)
+  baseVersion  String? // Version this proposal is based on (semver)
+  sourceBranch String?
+  targetBranch String         @default("main")
+  baseSha      String?
+  headSha      String?
+  diffStat     Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  mergedAt     DateTime?
+  closedAt     DateTime?
+
+  package  Package           @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  author   User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments ProposalComment[]
+  reviews  ProposalReview[]
+
+  @@index([packageId])
+  @@index([authorId])
+  @@index([status])
+  @@map("change_proposals")
+}
+
+model ProposalComment {
+  id         String   @id @default(uuid(7))
+  proposalId String
+  authorId   String
+  body       String
+  filePath   String?
+  lineStart  Int?
+  lineEnd    Int?
+  side       String?
+  resolved   Boolean  @default(false)
+  parentId   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  proposal ChangeProposal    @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  author   User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent   ProposalComment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: SetNull)
+  replies  ProposalComment[] @relation("CommentThread")
+
+  @@index([proposalId])
+  @@map("proposal_comments")
+}
+
+enum ReviewDecision {
+  APPROVED
+  CHANGES_REQUESTED
+  COMMENTED
+}
+
+model ProposalReview {
+  id         String         @id @default(uuid(7))
+  proposalId String
+  reviewerId String
+  decision   ReviewDecision
+  body       String?
+  createdAt  DateTime       @default(now())
+
+  proposal ChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  reviewer User           @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, reviewerId])
+  @@index([proposalId])
+  @@map("proposal_reviews")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  PROPOSAL_OPENED
+  PROPOSAL_APPROVED
+  PROPOSAL_MERGED
+  PROPOSAL_REJECTED
+  PROPOSAL_COMMENTED
+  REVIEW_REQUESTED
+  PACKAGE_FORKED
+  PACKAGE_UPDATED
+  VERSION_PUBLISHED
+  MEMBER_INVITED
+  COLLECTION_SHARED
+  UPSTREAM_CHANGED
+  SECRET_ROTATION_DUE
+  SECRET_EXPIRING
+  BUNDLE_UPDATED
+}
+
+model Notification {
+  id           String           @id @default(uuid(7))
+  userId       String
+  type         NotificationType
+  title        String
+  body         String?
+  resourceId   String? // ID of related resource (proposal, package, etc.)
+  resourceType String? // Type of resource for routing (proposal, package, etc.)
+  actorId      String? // User who triggered the notification
+  read         Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Stars
+// ---------------------------------------------------------------------------
+
+model Star {
+  id        String   @id @default(uuid(7))
+  userId    String
+  packageId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, packageId])
+  @@index([packageId])
+  @@map("stars")
+}
+
+// ---------------------------------------------------------------------------
+// Categories
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          String   @id @default(uuid(7))
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  packages PackageCategory[]
+
+  @@map("categories")
+}
+
+model PackageCategory {
+  id         String @id @default(uuid(7))
+  packageId  String
+  categoryId String
+
+  package  Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([packageId, categoryId])
+  @@map("package_categories")
+}
+
+// ---------------------------------------------------------------------------
+// Drafts (branch-based editing)
+// ---------------------------------------------------------------------------
+
+enum DraftStatus {
+  ACTIVE
+  MERGED
+  DISCARDED
+}
+
+model Draft {
+  id          String      @id @default(uuid(7))
+  packageId   String
+  authorId    String
+  branchName  String
+  title       String
+  description String?
+  status      DraftStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  mergedAt    DateTime?
+  discardedAt DateTime?
+
+  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([packageId, branchName])
+  @@index([authorId])
+  @@index([status])
+  @@map("drafts")
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks
+// ---------------------------------------------------------------------------
+
+model WebhookEndpoint {
+  id             String   @id @default(uuid(7))
+  organisationId String
+  url            String
+  secret         String
+  events         String[] @default([])
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([organisationId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id          String    @id @default(uuid(7))
+  endpointId  String
+  event       String
+  payload     Json
+  status      Int
+  response    String?
+  attempts    Int       @default(1)
+  nextRetryAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, createdAt])
+  @@index([nextRetryAt])
+  @@map("webhook_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// MCP Server Catalogue
+// ---------------------------------------------------------------------------
+
+model McpServerDefinition {
+  id          String @id @default(uuid(7))
+  name        String @unique // e.g., "github", "linear", "slack"
+  displayName String
+  description String
+  author      String
+
+  // Source information
+  sourceType    String // "npm", "git", "docker", "url"
+  sourcePackage String? // npm package name
+  sourceUri     String? // git URI or Docker image
+  latestVersion String?
+
+  // Runtime configuration
+  transport String   @default("stdio") // "stdio", "http", "sse"
+  command   String? // for stdio transport
+  args      String[] @default([])
+  url       String? // for http/sse transport
+
+  // Metadata
+  credentialSchema Json? // JSON schema for required credentials
+  toolManifest     Json? // cached list of tools this server exposes
+  compatibility    String[] @default([]) // agent IDs that support this server
+  categories       String[] @default([])
+
+  // Stats
+  installCount Int     @default(0)
+  starCount    Int     @default(0)
+  verified     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sourceType])
+  @@index([verified])
+  @@map("mcp_server_definitions")
+}
+
+// ---------------------------------------------------------------------------
+// Skill Maintainers
+// ---------------------------------------------------------------------------
+
+model SkillMaintainer {
+  id        String   @id @default(uuid(7))
+  packageId String
+  userId    String?
+  teamId    String?
+  createdAt DateTime @default(now())
+
+  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team    Team?   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([packageId])
+  @@map("skill_maintainers")
+}
+
+// ---------------------------------------------------------------------------
+// Better Auth
+// ---------------------------------------------------------------------------
+
+model Session {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Text
+  expiresAt DateTime
+  token     String   @unique @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?  @db.Text
+  userAgent String?  @db.Text
+  userId    String
+  user      User     @relation("auth_sessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Text
+  accountId             String    @db.Text
+  providerId            String    @db.Text
+  userId                String
+  user                  User      @relation("auth_accounts", fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("accounts")
+}
+
+model Verification {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Text
+  identifier String    @db.Text
+  value      String    @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verifications")
+}
+
+// ---------------------------------------------------------------------------
+// Billing (Cloud Edition)
+// ---------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  UNPAID
+}
+
+model Subscription {
+  id                   String             @id @default(uuid(7))
+  organisationId       String             @unique
+  organisation         Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String             @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  status               SubscriptionStatus @default(TRIALING)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([organisationId])
+  @@map("subscriptions")
+}

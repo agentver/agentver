@@ -1,0 +1,206 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "Dockerfile*"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGION: europe-west4
+  IMAGE_REPO: europe-west4-docker.pkg.dev
+
+jobs:
+  deploy-platform:
+    name: Deploy Platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+      statuses: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.IMAGE_REPO }} --quiet
+
+      - name: Get current production image (for rollback)
+        id: current
+        run: |
+          CURRENT_IMAGE=$(gcloud run services describe agentver-platform \
+            --region ${{ env.REGION }} \
+            --format='value(spec.template.spec.containers[0].image)' 2>/dev/null || echo "")
+          echo "image=${CURRENT_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build platform image
+        run: |
+          docker build \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:${{ github.sha }} \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:latest \
+            --build-arg NODE_ENV=production \
+            .
+
+      - name: Push platform image
+        run: |
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:${{ github.sha }}
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:latest
+
+      - name: Run database migrations
+        run: |
+          gcloud run jobs execute agentver-migrate \
+            --region ${{ env.REGION }} \
+            --wait
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: agentver-platform
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/platform:${{ github.sha }}
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          sleep 10
+          URL=$(gcloud run services describe agentver-platform \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)')
+          HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' "${URL}/api/health" || echo "000")
+          echo "Platform health: $HTTP_CODE"
+          [ "$HTTP_CODE" = "200" ] || exit 1
+
+      - name: Rollback on smoke test failure
+        if: failure() && steps.smoke.outcome == 'failure' && steps.current.outputs.image != ''
+        run: |
+          echo "Smoke test failed — rolling back to previous image: ${{ steps.current.outputs.image }}"
+          gcloud run services update agentver-platform \
+            --region ${{ env.REGION }} \
+            --image ${{ steps.current.outputs.image }}
+
+      - name: Set commit status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const succeeded = '${{ job.status }}' === 'success'
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: succeeded ? 'success' : 'failure',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: succeeded ? 'Platform deployment succeeded' : 'Platform deployment failed',
+              context: 'deploy/platform',
+            });
+
+  deploy-website:
+    name: Deploy Website
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [deploy-platform]
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+      statuses: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.IMAGE_REPO }} --quiet
+
+      - name: Get current production image (for rollback)
+        id: current
+        run: |
+          CURRENT_IMAGE=$(gcloud run services describe agentver-website \
+            --region ${{ env.REGION }} \
+            --format='value(spec.template.spec.containers[0].image)' 2>/dev/null || echo "")
+          echo "image=${CURRENT_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build website image
+        run: |
+          docker build \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.sha }} \
+            --tag ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:latest \
+            --build-arg NODE_ENV=production \
+            -f Dockerfile.website .
+
+      - name: Push website image
+        run: |
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.sha }}
+          docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:latest
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: agentver-website
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.sha }}
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          sleep 10
+          URL=$(gcloud run services describe agentver-website \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)')
+          HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' "${URL}/api/health" || echo "000")
+          echo "Website health: $HTTP_CODE"
+          [ "$HTTP_CODE" = "200" ] || exit 1
+
+      - name: Rollback on smoke test failure
+        if: failure() && steps.smoke.outcome == 'failure' && steps.current.outputs.image != ''
+        run: |
+          echo "Smoke test failed — rolling back to previous image: ${{ steps.current.outputs.image }}"
+          gcloud run services update agentver-website \
+            --region ${{ env.REGION }} \
+            --image ${{ steps.current.outputs.image }}
+
+      - name: Set commit status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const succeeded = '${{ job.status }}' === 'success'
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: succeeded ? 'success' : 'failure',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: succeeded ? 'Website deployment succeeded' : 'Website deployment failed',
+              context: 'deploy/website',
+            });

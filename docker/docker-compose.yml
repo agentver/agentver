@@ -1,0 +1,74 @@
+# =============================================================================
+# Agentver — Self-Hosted Docker Compose
+# =============================================================================
+# Usage:
+#   ./setup.sh                           # Interactive first-time setup
+#   docker compose up -d                 # Start core services
+#   docker compose --profile git up -d   # Include Forgejo git server
+#   docker compose --profile cache up -d # Include Redis caching
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentver
+      POSTGRES_USER: agentver
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentver"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    image: ghcr.io/agentver/agentver:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://agentver:${POSTGRES_PASSWORD}@postgres:5432/agentver
+
+  # Optional: Forgejo git server for full version control
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:8
+    profiles: ["git"]
+    restart: unless-stopped
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+    volumes:
+      - forgejo_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:7-alpine
+    profiles: ["cache"]
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
+  forgejo_data:
+  redis_data:

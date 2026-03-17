@@ -1,0 +1,42 @@
+name: 'Agentver Install'
+description: 'Install Agentver skills for AI coding assistants in your CI/CD pipeline'
+branding:
+  icon: 'download-cloud'
+  color: 'green'
+inputs:
+  api-key:
+    description: 'Agentver API key for authentication'
+    required: true
+  registry-url:
+    description: 'Agentver registry URL'
+    required: false
+    default: 'https://app.agentver.com/api/v1'
+  manifest-path:
+    description: 'Path to .agentver/manifest.json'
+    required: false
+    default: '.agentver/manifest.json'
+  lockfile-path:
+    description: 'Path to .agentver/lockfile.json'
+    required: false
+    default: '.agentver/lockfile.json'
+  agents:
+    description: 'Comma-separated list of target agents (default: auto-detect)'
+    required: false
+  working-directory:
+    description: 'Working directory for installation'
+    required: false
+    default: '.'
+  verify-integrity:
+    description: 'Verify SHA256 integrity of downloaded packages'
+    required: false
+    default: 'true'
+outputs:
+  installed-count:
+    description: 'Number of skills installed'
+  installed-skills:
+    description: 'JSON array of installed skill names'
+  agents-configured:
+    description: 'Comma-separated list of agents that were configured'
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

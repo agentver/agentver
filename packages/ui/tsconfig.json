@@ -1,0 +1,10 @@
+{
+  "extends": "@agentver/typescript-config/library.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", ".turbo"]
+}
