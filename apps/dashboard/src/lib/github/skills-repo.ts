@@ -482,3 +482,71 @@ export async function deleteSkillFromGitHub(
     commitSha: newCommit.sha,
   })
 }
+
+/**
+ * Delete a single file from a skill directory in a GitHub repository.
+ * Uses the Contents API to remove the file with a commit message.
+ */
+export async function deleteSkillFileFromGitHub(
+  owner: string,
+  repo: string,
+  filePath: string,
+  message: string,
+  token: string
+): Promise<{ commitSha: string }> {
+  // 1. Fetch the file to get its SHA (required for deletion)
+  const fileData = await getRepoContents(owner, repo, filePath, undefined, token)
+
+  if (fileData.type !== 'file' || !fileData.sha) {
+    throw new Error(`File not found or is not a file: ${filePath}`)
+  }
+
+  // 2. Resolve the default branch
+  let branch: string
+  try {
+    branch = await getDefaultBranch(owner, repo, token)
+  } catch {
+    branch = 'main'
+  }
+
+  // 3. Delete the file via the Contents API
+  const encodedPath = filePath
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+
+  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${encodedPath}`
+
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: githubHeaders(token),
+    body: JSON.stringify({
+      message,
+      sha: fileData.sha,
+      branch,
+    }),
+  })
+
+  if (!response.ok) {
+    const body = (await response
+      .json()
+      .catch(() => ({ message: 'Unknown error' }))) as GitHubApiErrorBody
+    logger.error('GitHub file deletion failed', {
+      url,
+      status: response.status,
+      message: body.message,
+    })
+    throw new Error(`GitHub API error (${response.status}): ${body.message}`)
+  }
+
+  const result = (await response.json()) as { commit: { sha: string } }
+
+  logger.info('Skill file deleted from GitHub repository', {
+    owner,
+    repo,
+    filePath,
+    commitSha: result.commit.sha,
+  })
+
+  return { commitSha: result.commit.sha }
+}

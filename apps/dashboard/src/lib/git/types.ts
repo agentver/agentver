@@ -96,6 +96,13 @@ export type GitProvider = {
 
   listSkillFiles(namespace: string, skillName: string, ref?: string): Promise<SkillFileEntry[]>
 
+  removeSkillFile(
+    namespace: string,
+    skillName: string,
+    filePath: string,
+    message: string
+  ): Promise<{ commitSha: string }>
+
   deleteSkill(namespace: string, skillName: string, message: string): Promise<void>
 
   // Version control

@@ -1,5 +1,6 @@
 'use client'
 
+import { Badge } from '@agentver/ui/components/badge'
 import { Button } from '@agentver/ui/components/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@agentver/ui/components/card'
 import {
@@ -19,7 +20,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@agentver/ui/components/select'
-import { ExternalLink, Pencil, Shield, Trash2 } from 'lucide-react'
+import { Textarea } from '@agentver/ui/components/textarea'
+import {
+  AlertTriangle,
+  Archive,
+  ExternalLink,
+  Pencil,
+  RotateCcw,
+  Shield,
+  Trash2,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { use, useState } from 'react'
@@ -46,6 +56,21 @@ const VISIBILITY_OPTIONS: Array<{ value: Visibility; label: string; description:
   },
 ]
 
+const STATUS_STYLES: Record<string, { label: string; className: string }> = {
+  ACTIVE: {
+    label: 'Active',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
+  },
+  ARCHIVED: {
+    label: 'Archived',
+    className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+  },
+  DEPRECATED: {
+    label: 'Deprecated',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  },
+}
+
 export default function SkillSettingsPage({
   params,
 }: {
@@ -68,10 +93,43 @@ export default function SkillSettingsPage({
     },
   })
 
+  const archiveMutation = trpc.skills.archive.useMutation({
+    onSuccess: () => {
+      toast.success('Package archived')
+      utils.skills.getBySlug.invalidate({ org, name })
+    },
+    onError: (error) => {
+      toast.error('Failed to archive package', { description: error.message })
+    },
+  })
+
+  const deprecateMutation = trpc.skills.deprecate.useMutation({
+    onSuccess: () => {
+      toast.success('Package deprecated')
+      utils.skills.getBySlug.invalidate({ org, name })
+    },
+    onError: (error) => {
+      toast.error('Failed to deprecate package', { description: error.message })
+    },
+  })
+
+  const activateMutation = trpc.skills.activate.useMutation({
+    onSuccess: () => {
+      toast.success('Package restored')
+      utils.skills.getBySlug.invalidate({ org, name })
+    },
+    onError: (error) => {
+      toast.error('Failed to restore package', { description: error.message })
+    },
+  })
+
   const deleteMutation = trpc.skills.delete.useMutation()
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [deprecateDialogOpen, setDeprecateDialogOpen] = useState(false)
+  const [deprecationNote, setDeprecationNote] = useState('')
 
   if (pkgLoading) {
     return <SkillPageSkeleton />
@@ -102,9 +160,32 @@ export default function SkillSettingsPage({
   }
 
   const expectedDeleteConfirmation = `${org}/${pkg.name}`
+  const statusStyle = STATUS_STYLES[pkg.status] ?? STATUS_STYLES.ACTIVE!
+  const isStatusMutating =
+    archiveMutation.isPending || deprecateMutation.isPending || activateMutation.isPending
 
   const handleVisibilityChange = (visibility: Visibility) => {
     updateMutation.mutate({ id: pkg.id, visibility })
+  }
+
+  const handleArchiveConfirm = () => {
+    archiveMutation.mutate({ id: pkg.id }, { onSuccess: () => setArchiveDialogOpen(false) })
+  }
+
+  const handleDeprecateConfirm = () => {
+    deprecateMutation.mutate(
+      { id: pkg.id, note: deprecationNote || undefined },
+      {
+        onSuccess: () => {
+          setDeprecateDialogOpen(false)
+          setDeprecationNote('')
+        },
+      }
+    )
+  }
+
+  const handleActivate = () => {
+    activateMutation.mutate({ id: pkg.id })
   }
 
   const handleDeleteConfirm = () => {
@@ -180,6 +261,75 @@ export default function SkillSettingsPage({
         </CardContent>
       </Card>
 
+      {/* Package Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Package Status</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Label>Current status</Label>
+            <Badge className={statusStyle.className}>{statusStyle.label}</Badge>
+          </div>
+
+          {pkg.status === 'ACTIVE' && (
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setArchiveDialogOpen(true)}
+                disabled={isStatusMutating}
+              >
+                <Archive className="mr-1.5 size-3.5" />
+                Archive
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeprecateDialogOpen(true)}
+                disabled={isStatusMutating}
+              >
+                <AlertTriangle className="mr-1.5 size-3.5" />
+                Deprecate
+              </Button>
+            </div>
+          )}
+
+          {pkg.status === 'ARCHIVED' && (
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleActivate}
+                disabled={isStatusMutating}
+              >
+                <RotateCcw className="mr-1.5 size-3.5" />
+                {activateMutation.isPending ? 'Restoring...' : 'Restore'}
+              </Button>
+            </div>
+          )}
+
+          {pkg.status === 'DEPRECATED' && (
+            <div className="space-y-3">
+              {pkg.deprecationNote && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 text-sm dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                  {pkg.deprecationNote}
+                </div>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleActivate}
+                disabled={isStatusMutating}
+              >
+                <RotateCcw className="mr-1.5 size-3.5" />
+                {activateMutation.isPending ? 'Removing deprecation...' : 'Remove deprecation'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Danger Zone */}
       <Card className="border-destructive/50">
         <CardHeader>
@@ -200,6 +350,70 @@ export default function SkillSettingsPage({
           </div>
         </CardContent>
       </Card>
+
+      {/* Archive Confirmation Dialog */}
+      <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archive package</DialogTitle>
+            <DialogDescription>
+              Archived packages are hidden from public listings but remain accessible via direct
+              URL. You can restore them at any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setArchiveDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleArchiveConfirm} disabled={archiveMutation.isPending}>
+              {archiveMutation.isPending ? 'Archiving...' : 'Archive'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deprecate Confirmation Dialog */}
+      <Dialog
+        open={deprecateDialogOpen}
+        onOpenChange={(open) => {
+          setDeprecateDialogOpen(open)
+          if (!open) setDeprecationNote('')
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deprecate package</DialogTitle>
+            <DialogDescription>
+              Deprecated packages show a warning banner to users. Provide a note explaining why and
+              what to use instead.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="deprecation-note">Deprecation note (optional)</Label>
+            <Textarea
+              id="deprecation-note"
+              value={deprecationNote}
+              onChange={(e) => setDeprecationNote(e.target.value)}
+              placeholder="e.g. Use @org/new-package instead"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeprecateDialogOpen(false)
+                setDeprecationNote('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleDeprecateConfirm} disabled={deprecateMutation.isPending}>
+              {deprecateMutation.isPending ? 'Deprecating...' : 'Deprecate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog

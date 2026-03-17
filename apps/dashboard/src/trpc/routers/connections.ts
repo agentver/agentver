@@ -169,7 +169,12 @@ export const connectionsRouter = router({
         id: account.id,
         provider: account.provider,
         providerAccountId: account.providerAccountId,
-        providerAccountName: (metadata?.login as string) ?? (metadata?.name as string) ?? null,
+        providerAccountName:
+          (metadata?.login as string) ??
+          (metadata?.username as string) ??
+          (metadata?.displayName as string) ??
+          (metadata?.name as string) ??
+          null,
         avatarUrl: (metadata?.avatarUrl as string) ?? null,
         scopes: account.scopes,
         connectedAt: account.createdAt,
@@ -463,7 +468,12 @@ export const connectionsRouter = router({
         connected: true as const,
         provider: input.provider,
         providerAccountId: account.providerAccountId,
-        providerAccountName: (metadata?.login as string) ?? (metadata?.name as string) ?? null,
+        providerAccountName:
+          (metadata?.login as string) ??
+          (metadata?.username as string) ??
+          (metadata?.displayName as string) ??
+          (metadata?.name as string) ??
+          null,
         avatarUrl: (metadata?.avatarUrl as string) ?? null,
         scopes: account.scopes,
         connectedAt: account.createdAt,

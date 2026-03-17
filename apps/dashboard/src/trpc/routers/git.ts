@@ -3,6 +3,7 @@ import { createLogger } from '@agentver/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { type CommitEntry, GitProviderConfigError, getGitProvider } from '@/lib/git'
+import { deleteSkillFileFromGitHub } from '@/lib/github/skills-repo'
 import { getGitHubToken } from '@/lib/github/token'
 import { protectedProcedure, router } from '../init'
 
@@ -265,6 +266,140 @@ export const gitRouter = router({
       return prisma.packageVersion.findMany({
         where: { packageId: pkg.id },
         orderBy: { createdAt: 'desc' },
+      })
+    }),
+
+  /**
+   * Remove a single file from a skill directory.
+   * Routes to Agentver Forgejo or GitHub based on the org's provider.
+   */
+  removeSkillFile: protectedProcedure
+    .input(
+      z.object({
+        org: z.string(),
+        name: z.string(),
+        filePath: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const pkg = await prisma.package.findFirst({
+        where: {
+          name: input.name,
+          organisation: { slug: input.org },
+        },
+        include: {
+          organisation: {
+            include: { members: { where: { userId: ctx.user.id } } },
+          },
+        },
+      })
+
+      if (!pkg) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Package not found' })
+      }
+
+      const membership = pkg.organisation.members[0]
+      const isAuthor = pkg.authorId === ctx.user.id
+      const isAdminOrOwner = membership?.role === 'ADMIN' || membership?.role === 'OWNER'
+
+      if (!isAuthor && !isAdminOrOwner) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the package author or organisation admins can remove files',
+        })
+      }
+
+      if (input.filePath === 'SKILL.md') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot remove the primary skill file (SKILL.md)',
+        })
+      }
+
+      const org = pkg.organisation
+      const message = `Remove ${input.filePath} from ${input.name}`
+
+      // Agentver-hosted Forgejo storage
+      if (org.skillsRepoProvider === 'agentver') {
+        try {
+          const gitService = getGitProvider()
+          const result = await gitService.removeSkillFile(
+            input.org,
+            input.name,
+            input.filePath,
+            message
+          )
+
+          logger.info('Skill file removed via Forgejo', {
+            org: input.org,
+            name: input.name,
+            filePath: input.filePath,
+            commitSha: result.commitSha,
+          })
+
+          return { commitSha: result.commitSha }
+        } catch (error) {
+          if (error instanceof GitProviderConfigError) {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+          }
+          logger.error('Failed to remove skill file from Forgejo', {
+            org: input.org,
+            name: input.name,
+            filePath: input.filePath,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to remove file from Git',
+          })
+        }
+      }
+
+      // GitHub-backed storage
+      if (org.skillsRepoProvider === 'github' && org.skillsRepoOwner && org.skillsRepoName) {
+        const token = await getGitHubToken(ctx.user.id)
+        if (!token) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'No connected GitHub account. Please connect your GitHub account in Settings.',
+          })
+        }
+
+        try {
+          const skillFilePath = `skills/${input.name}/${input.filePath}`
+          const result = await deleteSkillFileFromGitHub(
+            org.skillsRepoOwner,
+            org.skillsRepoName,
+            skillFilePath,
+            message,
+            token
+          )
+
+          logger.info('Skill file removed via GitHub', {
+            org: input.org,
+            name: input.name,
+            filePath: input.filePath,
+            commitSha: result.commitSha,
+          })
+
+          return { commitSha: result.commitSha }
+        } catch (error) {
+          logger.error('Failed to remove skill file from GitHub', {
+            org: input.org,
+            name: input.name,
+            filePath: input.filePath,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to remove file from GitHub',
+          })
+        }
+      }
+
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'No skills repository configured for this organisation',
       })
     }),
 })

@@ -20,7 +20,7 @@ const PROVIDERS = [
     description: 'Connect to browse projects and import packages.',
     logo: '/images/integrations/gitlab.svg',
     sourceType: 'git' as const,
-    comingSoon: true,
+    comingSoon: false,
   },
   {
     id: 'BITBUCKET' as const,
@@ -28,7 +28,7 @@ const PROVIDERS = [
     description: 'Connect to browse repositories and import packages.',
     logo: '/images/integrations/bitbucket.svg',
     sourceType: 'git' as const,
-    comingSoon: true,
+    comingSoon: false,
   },
   {
     id: 'GOOGLE' as const,

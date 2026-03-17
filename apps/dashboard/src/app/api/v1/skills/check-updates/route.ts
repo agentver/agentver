@@ -53,6 +53,7 @@ export async function POST(request: Request) {
     where: { slug: { in: slugList } },
     include: {
       versions: {
+        where: { status: { not: 'YANKED' } },
         orderBy: { createdAt: 'desc' },
         take: 1,
         select: { version: true },
