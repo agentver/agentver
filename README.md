@@ -1,43 +1,50 @@
-# Agentver
+<p align="center">
+  <img src="apps/website/public/logo.png" alt="Agentver" height="80" />
+</p>
 
-Open-source skill registry for AI coding assistants. Store, version, and distribute agent skills across 43+ assistants.
+<h1 align="center">agentver</h1>
 
-<!-- TODO: Add screenshots/demo GIF here -->
+<p align="center">
+  <strong>The skill registry for AI coding assistants.</strong><br />
+  Store, version, and distribute agent skills across 43+ assistants.
+</p>
+
+<p align="center">
+  <a href="https://agentver.com">Website</a> &middot;
+  <a href="https://app.agentver.com">Platform</a> &middot;
+  <a href="https://agentver.com/docs">Docs</a> &middot;
+  <a href="https://agentver.com/docs/quickstart">Quick Start</a>
+</p>
+
+<p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-AGPLv3-blue" alt="Licence" /></a>
+  <a href="./packages/cli/LICENSE"><img src="https://img.shields.io/badge/CLI-MIT-green" alt="CLI Licence" /></a>
+  <a href="https://www.npmjs.com/package/@agentver/cli"><img src="https://img.shields.io/npm/v/@agentver/cli" alt="npm" /></a>
+</p>
+
+---
 
 ## What is Agentver?
 
-Agentver is a skill registry that lets you manage reusable skills, prompts, and configurations for AI coding assistants like Claude Code, Cursor, Windsurf, GitHub Copilot, and more. Install skills from Git repositories, keep them in sync across your team, and share improvements back to the community.
+Agentver is an open-source skill registry that lets you manage reusable skills, prompts, and configurations for AI coding assistants — Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, and 38 more. Install skills from Git repositories, keep them in sync across your team, and share improvements back to the community.
 
 ### Key features
 
 - **Skill management** — install, version, update, and track skills from Git repositories
+- **43+ agent support** — one skill, every assistant
 - **MCP server catalogue** — browse and connect MCP servers to your coding assistants
 - **Credential vault** — securely store and manage API keys and secrets for your agents
 - **Bundles** — group skills into curated collections for specific workflows or stacks
 - **Community discovery** — search and browse published skills from the community
-- **Self-hosting** — run the full platform on your own infrastructure with Docker
 - **Security scanning** — 28 built-in rules detect credential harvesting, prompt injection, and exfiltration
+- **Self-hosting** — run the full platform on your own infrastructure with Docker
 
-## Self-hosting (Docker)
+## Quick start
 
-```bash
-git clone https://github.com/agentver/agentver.git
-cd agentver/docker
-./setup.sh
-```
-
-Your dashboard will be available at `http://localhost:3000` within minutes.
-
-See the [`docker/`](./docker) directory for configuration options.
-
-## Cloud
-
-Use the hosted version at [app.agentver.com](https://app.agentver.com) — no setup required.
-
-## CLI quick start
+### CLI
 
 ```bash
-# Install the CLI
+# Install
 npm install -g @agentver/cli
 # or: bun install -g @agentver/cli
 
@@ -47,7 +54,7 @@ agentver install github.com/owner/repo
 # Scan your project for existing agent configs
 agentver scan
 
-# Check the status of installed skills
+# Check status of installed skills
 agentver status
 
 # List installed skills
@@ -55,6 +62,20 @@ agentver list
 ```
 
 See the [CLI documentation](./packages/cli/README.md) for the full command reference.
+
+### Self-hosting (Docker)
+
+```bash
+git clone https://github.com/agentver/agentver.git
+cd agentver/docker
+./setup.sh
+```
+
+Your dashboard will be available at `http://localhost:3000` within minutes. See the [`docker/`](./docker) directory for configuration options.
+
+### Cloud
+
+Use the hosted version at [app.agentver.com](https://app.agentver.com) — no setup required.
 
 ## Repository structure
 

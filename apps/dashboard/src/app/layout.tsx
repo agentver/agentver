@@ -25,6 +25,9 @@ const bricolage = Bricolage_Grotesque({
 export const metadata: Metadata = {
   title: 'Agentver — Agent Skill Registry',
   description: 'Store, share, and discover AI agent skills across your team.',
+  icons: {
+    icon: '/favicon.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
