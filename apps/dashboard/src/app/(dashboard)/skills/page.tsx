@@ -1008,73 +1008,75 @@ function SkillsPageContent() {
       )}
 
       <FadeIn delay={160}>
-        {isLoading ? (
-          view === 'grid' ? (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-48 animate-pulse rounded-2xl bg-muted" />
-              ))}
+        <div data-testid="skills-list">
+          {isLoading ? (
+            view === 'grid' ? (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="h-48 animate-pulse rounded-2xl bg-muted" />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="h-14 animate-pulse rounded-2xl bg-muted" />
+                ))}
+              </div>
+            )
+          ) : isEmpty ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                {showRepoBanner ? <GitBranch className="size-7" /> : <Package className="size-7" />}
+              </div>
+              <h2 className="mt-6 font-display font-semibold text-xl tracking-tight">
+                {showRepoBanner ? 'Connect a package repository' : 'No packages yet'}
+              </h2>
+              <p className="mt-2 max-w-md text-muted-foreground">
+                {showRepoBanner
+                  ? 'Before you can create or import packages, connect a package repository to store and version your skills.'
+                  : 'Create your first package to start sharing skills and configurations with your team.'}
+              </p>
+              <div className="mt-6 flex gap-3">
+                {showRepoBanner ? (
+                  <>
+                    <Link href="/settings/organisation">
+                      <Button>
+                        <GitBranch className="mr-2 size-4" />
+                        Connect Repository
+                      </Button>
+                    </Link>
+                    <Link href="/skills/new">
+                      <Button variant="outline">Create Package</Button>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Link href="/skills/new">
+                      <Button>Create Package</Button>
+                    </Link>
+                    <Link href="/sources">
+                      <Button variant="outline">Import from Source</Button>
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
+          ) : view === 'grid' ? (
+            <SkillGrid
+              packages={packages}
+              selectable
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+            />
           ) : (
-            <div className="space-y-1">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-14 animate-pulse rounded-2xl bg-muted" />
-              ))}
-            </div>
-          )
-        ) : isEmpty ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              {showRepoBanner ? <GitBranch className="size-7" /> : <Package className="size-7" />}
-            </div>
-            <h2 className="mt-6 font-display font-semibold text-xl tracking-tight">
-              {showRepoBanner ? 'Connect a package repository' : 'No packages yet'}
-            </h2>
-            <p className="mt-2 max-w-md text-muted-foreground">
-              {showRepoBanner
-                ? 'Before you can create or import packages, connect a package repository to store and version your skills.'
-                : 'Create your first package to start sharing skills and configurations with your team.'}
-            </p>
-            <div className="mt-6 flex gap-3">
-              {showRepoBanner ? (
-                <>
-                  <Link href="/settings/organisation">
-                    <Button>
-                      <GitBranch className="mr-2 size-4" />
-                      Connect Repository
-                    </Button>
-                  </Link>
-                  <Link href="/skills/new">
-                    <Button variant="outline">Create Package</Button>
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <Link href="/skills/new">
-                    <Button>Create Package</Button>
-                  </Link>
-                  <Link href="/sources">
-                    <Button variant="outline">Import from Source</Button>
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-        ) : view === 'grid' ? (
-          <SkillGrid
-            packages={packages}
-            selectable
-            selectedIds={selectedIds}
-            onToggleSelect={handleToggleSelect}
-          />
-        ) : (
-          <SkillList
-            packages={packages}
-            selectable
-            selectedIds={selectedIds}
-            onToggleSelect={handleToggleSelect}
-          />
-        )}
+            <SkillList
+              packages={packages}
+              selectable
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+            />
+          )}
+        </div>
       </FadeIn>
 
       {/* Bulk action bar */}

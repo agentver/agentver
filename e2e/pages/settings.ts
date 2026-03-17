@@ -21,5 +21,6 @@ export class SettingsPage {
 
   async goto() {
     await this.page.goto('/settings')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

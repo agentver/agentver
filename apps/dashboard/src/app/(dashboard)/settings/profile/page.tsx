@@ -69,7 +69,9 @@ export default function ProfilePage() {
               <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
             </Avatar>
             <div>
-              <p className="font-medium text-lg">{user?.name}</p>
+              <p data-testid="user-name" className="font-medium text-lg">
+                {user?.name}
+              </p>
               <p className="text-muted-foreground text-sm">{user?.email}</p>
             </div>
           </div>

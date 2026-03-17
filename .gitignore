@@ -42,6 +42,11 @@ apps/desktop/src-tauri/gen/schemas/
 .claude/
 CLAUDE.md
 
+# Playwright
+playwright-report/
+playwright/.auth/
+test-results/
+
 # Local
 .local/
 

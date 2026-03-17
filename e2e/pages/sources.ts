@@ -13,5 +13,6 @@ export class SourcesPage {
 
   async goto() {
     await this.page.goto('/sources')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

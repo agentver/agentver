@@ -43,7 +43,7 @@ export function SkillFilters({
 }: SkillFiltersProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-testid="type-filter" className="flex flex-wrap items-center gap-2">
         {TYPE_FILTERS.map((filter) => {
           const isActive = type === filter.value
           const count = typeCounts?.[filter.value]

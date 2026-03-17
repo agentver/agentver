@@ -19,5 +19,6 @@ export class SkillsPage {
 
   async goto() {
     await this.page.goto('/skills')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }
