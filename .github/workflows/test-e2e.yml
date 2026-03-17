@@ -6,12 +6,14 @@ on:
       - "apps/dashboard/**"
       - "e2e/**"
       - "packages/**"
+      - "playwright.config.ts"
   push:
     branches: [main]
     paths:
       - "apps/dashboard/**"
       - "e2e/**"
       - "packages/**"
+      - "playwright.config.ts"
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -21,10 +23,14 @@ jobs:
   e2e:
     name: Playwright
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       DATABASE_URL: postgresql://agentver:test@localhost:5432/agentver_test
       BETTER_AUTH_SECRET: test-secret-minimum-thirty-two-characters-long
+      NEXT_PUBLIC_APP_URL: http://localhost:3001
+      APP_URL: http://localhost:3001
+      E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+      E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
 
     services:
       postgres:
@@ -68,6 +74,9 @@ jobs:
       - name: Run migrations
         run: bun run db:migrate:deploy
 
+      - name: Seed categories
+        run: bun run db:seed
+
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
@@ -76,13 +85,11 @@ jobs:
 
       - name: Run E2E tests
         run: bunx playwright test
-        env:
-          APP_URL: http://localhost:3001
 
       - name: Upload report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
+          name: playwright-report-${{ github.run_id }}
           path: playwright-report/
-          retention-days: 7
+          retention-days: 30

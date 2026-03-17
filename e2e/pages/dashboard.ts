@@ -6,6 +6,8 @@ export class DashboardPage {
   readonly statCards: Locator
   readonly recentPackages: Locator
   readonly recentActivity: Locator
+  readonly quickActions: Locator
+  readonly gettingStarted: Locator
 
   constructor(page: Page) {
     this.page = page
@@ -13,9 +15,12 @@ export class DashboardPage {
     this.statCards = page.locator('[data-testid="stat-card"]')
     this.recentPackages = page.locator('[data-testid="recent-packages"]')
     this.recentActivity = page.locator('[data-testid="recent-activity"]')
+    this.quickActions = page.locator('[data-testid="quick-actions"]')
+    this.gettingStarted = page.locator('[data-testid="getting-started"]')
   }
 
   async goto() {
     await this.page.goto('/dashboard')
+    await this.page.waitForLoadState('networkidle')
   }
 }
