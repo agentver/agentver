@@ -33,7 +33,7 @@ export class OrganisationsPage {
     this.packagesBadge = page.getByText(/package/i).first()
     this.editButton = page.getByRole('button', { name: /edit/i })
     this.deleteButton = page.getByRole('button', { name: /delete/i })
-    this.createButton = page.getByRole('button', { name: /create organisation/i })
+    this.createButton = page.locator('main').getByRole('button', { name: /create organisation/i })
     this.noOrgsHeading = page.getByRole('heading', { name: /no organisations yet/i })
     this.membersCard = page
       .locator('section, div')

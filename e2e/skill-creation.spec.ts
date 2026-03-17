@@ -2,16 +2,33 @@ import { expect, test } from '@playwright/test'
 import { SkillCreatePage } from './pages/skill-create'
 
 /**
- * Helper to check GitHub connection state and skip with visible annotations.
- * Returns true if GitHub is connected (editor/upload tabs are available).
+ * Wait for the skill creation page to settle into a stable state.
+ * During tRPC query loading, the page briefly renders editor tabs
+ * before switching to GitHub-required or no-repo states.
+ */
+async function waitForStableState(skillCreate: SkillCreatePage) {
+  const stableIndicator = skillCreate.editorTab
+    .or(skillCreate.githubRequiredHeading)
+    .or(skillCreate.noRepoHeading)
+
+  // Wait for any known state to appear, then give it a moment to settle
+  await expect(stableIndicator).toBeVisible({ timeout: 10_000 })
+  // Allow re-render after tRPC queries resolve
+  await skillCreate.page.waitForLoadState('networkidle')
+}
+
+/**
+ * Check if GitHub is connected (editor/upload tabs available).
+ * Skips the test with annotation if not.
  */
 async function requireGitHubConnection(
-  page: import('@playwright/test').Page,
-  testInfo: import('@playwright/test').TestInfo,
-  locator: import('@playwright/test').Locator
-): Promise<boolean> {
-  const isVisible = await locator.isVisible().catch(() => false)
-  if (!isVisible) {
+  skillCreate: SkillCreatePage,
+  testInfo: import('@playwright/test').TestInfo
+): Promise<void> {
+  await waitForStableState(skillCreate)
+
+  const hasEditorTab = await skillCreate.editorTab.isVisible().catch(() => false)
+  if (!hasEditorTab) {
     testInfo.annotations.push({
       type: 'skip',
       description:
@@ -19,7 +36,6 @@ async function requireGitHubConnection(
     })
     test.skip(true, 'Requires GitHub connection: editor/upload tabs not rendered without it')
   }
-  return true
 }
 
 test.describe('skill creation', () => {
@@ -40,6 +56,8 @@ test.describe('skill creation', () => {
     const skillCreate = new SkillCreatePage(page)
     await skillCreate.goto()
 
+    await waitForStableState(skillCreate)
+
     const hasGitHub = await skillCreate.editorTab.isVisible().catch(() => false)
     const showsGitHubRequired = await skillCreate.githubRequiredHeading
       .isVisible()
@@ -54,9 +72,6 @@ test.describe('skill creation', () => {
       })
     }
 
-    // The page must show either the editor tabs (GitHub connected) or a
-    // GitHub-required / no-repo heading (GitHub not connected). This ensures
-    // the page rendered correctly regardless of connection state.
     const renderedExpectedState = hasGitHub || showsGitHubRequired || showsNoRepo
     expect(
       renderedExpectedState,
@@ -68,7 +83,7 @@ test.describe('skill creation', () => {
     const skillCreate = new SkillCreatePage(page)
     await skillCreate.goto()
 
-    await requireGitHubConnection(page, testInfo, skillCreate.editorTab)
+    await requireGitHubConnection(skillCreate, testInfo)
 
     await expect(skillCreate.editorTab).toHaveAttribute('aria-selected', 'true')
   })
@@ -77,7 +92,7 @@ test.describe('skill creation', () => {
     const skillCreate = new SkillCreatePage(page)
     await skillCreate.goto()
 
-    await requireGitHubConnection(page, testInfo, skillCreate.uploadTab)
+    await requireGitHubConnection(skillCreate, testInfo)
 
     await skillCreate.uploadTab.click()
     await expect(skillCreate.uploadTab).toHaveAttribute('aria-selected', 'true')
@@ -88,7 +103,7 @@ test.describe('skill creation', () => {
     const skillCreate = new SkillCreatePage(page)
     await skillCreate.goto()
 
-    await requireGitHubConnection(page, testInfo, skillCreate.editorTab)
+    await requireGitHubConnection(skillCreate, testInfo)
 
     await expect(skillCreate.nameInput).toBeVisible()
     await expect(skillCreate.descriptionInput).toBeVisible()

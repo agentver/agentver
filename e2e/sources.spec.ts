@@ -18,6 +18,7 @@ test.describe('sources', () => {
   test('all import providers are listed', async ({ page }) => {
     const sources = new SourcesPage(page)
     await sources.goto()
+    await expect(sources.providerCards.first()).toBeVisible()
     const count = await sources.providerCards.count()
     expect(count).toBeGreaterThanOrEqual(1)
   })
