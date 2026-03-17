@@ -18,13 +18,18 @@ const TABS: Array<{ value: ExploreSource; label: string; icon: typeof Package }>
 
 export function SourceTabs({ value, onChange }: SourceTabsProps) {
   return (
-    <div className="inline-flex h-10 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
+    <div
+      role="tablist"
+      className="inline-flex h-10 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground"
+    >
       {TABS.map((tab) => {
         const Icon = tab.icon
         return (
           <button
             key={tab.value}
             type="button"
+            role="tab"
+            aria-selected={value === tab.value}
             onClick={() => onChange(tab.value)}
             className={cn(
               'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 font-medium text-sm transition-all',

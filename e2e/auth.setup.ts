@@ -1,6 +1,5 @@
 import { test as setup } from '@playwright/test'
-
-const authFile = 'playwright/.auth/user.json'
+import { AUTH_FILE } from './constants'
 
 setup('create test user and authenticate', async ({ page }) => {
   const email = process.env.E2E_TEST_EMAIL
@@ -38,5 +37,5 @@ setup('create test user and authenticate', async ({ page }) => {
   await page.waitForURL(/^\/(dashboard)?$/, { timeout: 15_000 })
 
   // Save the authenticated session state for all tests
-  await page.context().storageState({ path: authFile })
+  await page.context().storageState({ path: AUTH_FILE })
 })

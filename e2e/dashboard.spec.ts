@@ -5,7 +5,7 @@ test.describe('dashboard', () => {
   test('dashboard page renders with heading', async ({ page }) => {
     const dashboard = new DashboardPage(page)
     await dashboard.goto()
-    await expect(page).toHaveURL(/^\/$|\/$/)
+    await expect(page).toHaveURL(/^\/$/)
     await expect(dashboard.heading).toBeVisible()
   })
 

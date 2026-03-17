@@ -17,9 +17,7 @@ export class ProfilePage {
 
     // Account section — locate by card title text
     this.accountCardTitle = page.getByText('Account', { exact: true }).first()
-    // User name and email are the two <p> tags next to the avatar
-    // The name is inside a div alongside the avatar, scoped by the profile page content
-    this.userName = page.locator('p').filter({ hasText: /\S/ }).first()
+    this.userName = page.getByTestId('user-name')
     this.userEmail = page.locator('p').filter({ hasText: /@/ }).first()
 
     // Connected accounts section

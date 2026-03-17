@@ -19,11 +19,8 @@ test.describe('skills', () => {
     const skills = new SkillsPage(page)
     await skills.goto()
     await expect(skills.searchInput).toBeVisible()
-    const initialCount = await skills.skillsList.locator('> *').count()
     await skills.searchInput.fill('zzz_nonexistent_query')
-    await page.waitForLoadState('domcontentloaded')
-    const filteredCount = await skills.skillsList.locator('> *').count()
-    expect(filteredCount).toBeLessThanOrEqual(initialCount)
+    await expect(skills.skillsList.getByText('No packages')).toBeVisible()
   })
 
   test('create button navigates to new skill page', async ({ page }) => {
