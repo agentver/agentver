@@ -8,7 +8,12 @@ import open from 'open'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { saveCredentials } from '../registry/auth.js'
 import { getRegistryUrl } from '../registry/client.js'
-import { getPlatformUrl, readConfig, writeConfig } from '../registry/config.js'
+import {
+  DEFAULT_PLATFORM_URL,
+  getPlatformUrl,
+  readConfig,
+  writeConfig,
+} from '../registry/config.js'
 import { checkOnline, showOfflineError } from '../utils/network.js'
 
 const AUTH_TIMEOUT_MS = 120_000
@@ -173,8 +178,9 @@ export function registerLoginCommand(program: Command): void {
     .argument('[url]', 'Platform URL')
     .option('--token <key>', 'API key for CI/CD authentication')
     .action(async (url: string | undefined, options: { token?: string }) => {
-      if (url) {
-        writeConfig({ ...readConfig(), platformUrl: url })
+      const effectiveUrl = url ?? getPlatformUrl() ?? DEFAULT_PLATFORM_URL
+      if (!getPlatformUrl() || url) {
+        writeConfig({ ...readConfig(), platformUrl: effectiveUrl })
       }
 
       if (options.token) {

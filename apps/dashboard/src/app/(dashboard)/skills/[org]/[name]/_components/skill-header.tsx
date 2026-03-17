@@ -113,12 +113,12 @@ export function SkillHeader({ pkg, org, name, canManage }: SkillHeaderProps) {
   const latestVersion = pkg.versions[0]?.version ?? '0.0.0'
   const gitViewUrl = buildGitViewUrl(pkg.gitRepoUrl, pkg.gitPath, pkg.gitDefaultRef)
 
-  const installIdentifier =
-    pkg.gitUri && pkg.gitPath
+  const hasExternalGitSource = pkg.gitUri && !pkg.gitUri.startsWith('agentver://')
+  const installIdentifier = hasExternalGitSource
+    ? pkg.gitPath
       ? `${pkg.gitUri}/${pkg.gitPath}@${pkg.gitDefaultRef}`
-      : pkg.gitUri
-        ? `${pkg.gitUri}@${pkg.gitDefaultRef}`
-        : `${org}/${name}`
+      : `${pkg.gitUri}@${pkg.gitDefaultRef}`
+    : `${org}/${name}`
 
   const installCommand = `agentver install ${installIdentifier}`
 

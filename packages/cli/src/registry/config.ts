@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import type { ScanSeverity } from '../security/types.js'
 import { getCredentials } from './auth.js'
 
+export const DEFAULT_PLATFORM_URL = 'https://app.agentver.com'
+
 export type AuditConfig = {
   enabled?: boolean
   blockSeverity?: ScanSeverity

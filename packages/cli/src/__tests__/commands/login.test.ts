@@ -13,6 +13,7 @@ vi.mock('../../registry/auth.js', () => ({
 }))
 
 vi.mock('../../registry/config.js', () => ({
+  DEFAULT_PLATFORM_URL: 'https://app.agentver.com',
   readConfig: vi.fn().mockReturnValue({}),
   writeConfig: vi.fn(),
   getPlatformUrl: vi.fn().mockReturnValue(null),
@@ -150,7 +151,17 @@ describe('login command', () => {
     )
   })
 
-  it('saves API key without writing platform URL when no URL argument is provided', async () => {
+  it('saves API key and writes default platform URL when no URL argument is provided', async () => {
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'login', '--token', 'sk-abc123'])
+    expect(saveCredentials).toHaveBeenCalledWith({ apiKey: 'sk-abc123' })
+    expect(writeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ platformUrl: 'https://app.agentver.com' })
+    )
+  })
+
+  it('does not overwrite existing platform URL when no URL argument is provided', async () => {
+    vi.mocked(getPlatformUrl).mockReturnValue('https://custom.agentver.com')
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'login', '--token', 'sk-abc123'])
     expect(saveCredentials).toHaveBeenCalledWith({ apiKey: 'sk-abc123' })
