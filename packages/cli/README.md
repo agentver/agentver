@@ -1,8 +1,10 @@
-# agentver
+# @agentver/cli
 
-Agent skill registry — store, version, and distribute AI agent skills.
+Agent skill registry — store, version, and distribute AI agent skills across 43+ coding assistants.
 
-Agentver is a CLI for managing reusable skills, prompts, and configurations across AI coding agents like Claude Code, Cursor, Windsurf, Copilot, and more. Install skills from Git repositories, keep them in sync, and share improvements back.
+Agentver is a CLI for managing reusable skills, prompts, and configurations across AI coding agents like Claude Code, Cursor, Windsurf, Copilot, and more. Install skills from Git repositories or community marketplaces, keep them in sync, and share improvements back.
+
+**Platform:** [app.agentver.com](https://app.agentver.com) | **Source:** [github.com/agentver/agentver](https://github.com/agentver/agentver)
 
 ## Install
 
@@ -31,6 +33,9 @@ agentver install github.com/owner/repo
 # Install from a subdirectory
 agentver install github.com/owner/repo/path/to/skill
 
+# Search for skills
+agentver search "code review"
+
 # Scan your project for existing agent configs
 agentver scan
 
@@ -39,35 +44,72 @@ agentver adopt
 
 # Check the status of installed skills
 agentver status
+
+# Connect to the Agentver platform
+agentver login
 ```
 
 ## Commands
 
+### Core
+
 | Command | Description |
 | --- | --- |
-| `install <source>` | Install a skill from a Git repository or well-known domain |
-| `remove <name>` | Remove an installed package |
+| `install <source>` | Install a skill from a Git repository, well-known domain, or registry |
+| `remove <name>` | Remove an installed package (alias: `uninstall`) |
 | `update` | Update installed skills to their latest upstream version |
 | `list` | Show installed packages |
 | `status` | Show status of installed skills (upstream changes, local modifications) |
-| `diff <name>` | Show diff between local and upstream version of a skill |
 | `sync` | Push local installation state to platform |
-| `search <query>` | Search for skills across registries |
+
+### Discovery
+
+| Command | Description |
+| --- | --- |
+| `search <query>` | Search for skills across registries (platform, skills.sh, well-known) |
+| `info <package>` | Show detailed information about a package |
 | `scan` | Scan directory for agent configs and skills |
 | `adopt` | Adopt existing skills and configs into agentver management |
-| `init` | Scaffold a new package (skill, agent, plugin, script, or prompt) |
+
+### Authoring
+
+| Command | Description |
+| --- | --- |
+| `init` | Scaffold a new package (skill, agent config, plugin, script, or prompt) |
 | `save` | Commit local skill changes to the platform |
 | `publish` | Publish a skill to the registry |
-| `audit` | Run a security scan on installed skills or an arbitrary directory |
-| `verify <name>` | Verify a skill — checks publisher, integrity, and security |
 | `suggest <title>` | Create a suggestion from local modifications |
 | `suggestions` | List suggestions for a skill |
 | `draft` | Manage skill drafts (branches) |
 | `version` | Manage skill versions (tags) |
+| `diff <name>` | Show diff between local and upstream version of a skill |
 | `log <name>` | Show commit history for a skill |
-| `login` | Authenticate with the agentver registry |
-| `logout` | Log out from the agentver registry |
+
+### Security
+
+| Command | Description |
+| --- | --- |
+| `audit` | Run a security scan on installed skills or an arbitrary directory |
+| `verify <name>` | Verify a skill — checks publisher, integrity, and security |
+
+### Account
+
+| Command | Description |
+| --- | --- |
+| `login` | Authenticate with the Agentver platform |
+| `logout` | Log out from the Agentver platform |
 | `whoami` | Show authentication state |
+
+### Configuration
+
+| Command | Description |
+| --- | --- |
+| `config` | Get, set, list, or reset CLI configuration |
+| `pin <name>` | Pin a package to prevent automatic updates |
+| `unpin <name>` | Unpin a package to allow updates |
+| `doctor` | Diagnose environment issues (checks dependencies, connectivity, config) |
+| `upgrade` | Self-update the CLI to the latest version |
+| `completion` | Generate shell completions (bash, zsh, fish) |
 
 Use `agentver <command> --help` for detailed usage of any command.
 
@@ -87,11 +129,11 @@ Agentver automatically detects which AI coding agents are present in your projec
 - Cursor (`.cursor/rules/`)
 - Windsurf (`.windsurfrules/`)
 - GitHub Copilot (`.github/copilot/`)
-- Codex (`.codex/`)
+- OpenAI Codex (`.codex/`)
 - Aider (`.aider/`)
 - Cline (`.cline/rules/`)
 - Roo Code (`.roo/rules/`)
-- And more
+- Zencoder, Tabnine, Sourcegraph Cody, and [40+ more](https://github.com/agentver/agentver/blob/main/packages/agent-definitions/src/agents/definitions.ts)
 
 ## Security
 
@@ -120,4 +162,4 @@ Repositories can advertise their skills via a `/.well-known/skills/index.json` e
 
 ## Licence
 
-MIT
+MIT — see [LICENSE](./LICENSE)
