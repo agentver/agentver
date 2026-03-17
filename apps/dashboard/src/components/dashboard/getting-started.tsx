@@ -92,7 +92,7 @@ export function GettingStarted({ progress }: GettingStartedProps) {
   ] as const
 
   return (
-    <div className="relative rounded-2xl border border-border bg-card p-6">
+    <div data-testid="getting-started" className="relative rounded-2xl border border-border bg-card p-6">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="font-display font-semibold text-lg tracking-tight">Getting started</h3>

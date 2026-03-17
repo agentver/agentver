@@ -20,12 +20,12 @@ export class SignInPage {
     this.signUpLink = page.getByRole('link', { name: /sign up/i })
     this.githubButton = page.getByRole('button', { name: /github/i })
     this.googleButton = page.getByRole('button', { name: /google/i })
-    this.errorMessage = page.locator('.text-destructive')
+    this.errorMessage = page.getByRole('alert')
   }
 
   async goto() {
     await this.page.goto('/sign-in')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }
 
@@ -51,11 +51,11 @@ export class SignUpPage {
     this.signInLink = page.getByRole('link', { name: /sign in/i })
     this.githubButton = page.getByRole('button', { name: /github/i })
     this.googleButton = page.getByRole('button', { name: /google/i })
-    this.errorMessage = page.locator('.text-destructive')
+    this.errorMessage = page.getByRole('alert')
   }
 
   async goto() {
     await this.page.goto('/sign-up')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

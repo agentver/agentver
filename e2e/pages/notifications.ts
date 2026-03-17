@@ -15,12 +15,12 @@ export class NotificationsPage {
     this.markAllReadButton = page.getByRole('button', { name: /mark all as read/i })
     this.allFilterTab = page.getByRole('button', { name: /^all$/i })
     this.unreadFilterTab = page.getByRole('button', { name: /^unread$/i })
-    this.notificationsList = page.locator('.space-y-0\\.5')
+    this.notificationsList = page.locator('main').locator('ul, [role="list"]').first()
     this.emptyState = page.getByText(/you're all caught up/i)
   }
 
   async goto() {
     await this.page.goto('/notifications')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

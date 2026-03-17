@@ -23,15 +23,7 @@ test.describe('teams settings', () => {
   test('teams list renders or empty state is shown', async ({ page }) => {
     const teams = new TeamsPage(page)
     await teams.goto()
-    // Either team cards or the empty state message should be visible
-    const hasTeams = await teams.teamCards
-      .first()
-      .isVisible()
-      .catch(() => false)
-    if (hasTeams) {
-      await expect(teams.teamCards.first()).toBeVisible()
-    } else {
-      await expect(teams.emptyState).toBeVisible()
-    }
+
+    await expect(teams.teamCards.first().or(teams.emptyState)).toBeVisible()
   })
 })

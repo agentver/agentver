@@ -19,13 +19,13 @@ export class TeamsPage {
     this.teamNameInput = page.getByLabel('Name')
     this.teamSlugInput = page.getByLabel('Slug')
     this.submitCreateButton = this.createTeamDialog.getByRole('button', { name: /create team/i })
-    this.teamCards = page.locator('.grid .cursor-pointer')
+    this.teamCards = page.locator('main a[href*="/teams/"]')
     this.emptyState = page.getByText(/no teams yet/i)
   }
 
   async goto() {
     await this.page.goto('/settings/teams')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 
   async openCreateDialog() {

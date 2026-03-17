@@ -14,7 +14,7 @@ export class CollectionsPage {
     this.page = page
     this.heading = page.getByRole('heading', { name: /collections/i })
     this.createButton = page.getByRole('button', { name: /new collection/i })
-    this.collectionsGrid = page.locator('.grid')
+    this.collectionsGrid = page.locator('main').locator('[class*="grid"]').first()
     this.emptyState = page.getByText(/no collections yet/i)
     this.dialogTitle = page.getByRole('heading', { name: /create collection/i })
     this.nameInput = page.getByLabel(/name/i)
@@ -23,6 +23,6 @@ export class CollectionsPage {
 
   async goto() {
     await this.page.goto('/collections')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

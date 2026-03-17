@@ -27,16 +27,16 @@ test.describe('explore', () => {
     const explore = new ExplorePage(page)
     await explore.goto()
     await explore.communityTab.click()
-    await page.waitForLoadState('networkidle')
-    await expect(explore.communityTab).toBeVisible()
+    await page.waitForLoadState('domcontentloaded')
+    await expect(explore.communityTab).toHaveAttribute('aria-selected', 'true')
   })
 
   test('switching to mcp servers tab updates results', async ({ page }) => {
     const explore = new ExplorePage(page)
     await explore.goto()
     await explore.mcpServersTab.click()
-    await page.waitForLoadState('networkidle')
-    await expect(explore.mcpServersTab).toBeVisible()
+    await page.waitForLoadState('domcontentloaded')
+    await expect(explore.mcpServersTab).toHaveAttribute('aria-selected', 'true')
   })
 
   test('results grid renders', async ({ page }) => {

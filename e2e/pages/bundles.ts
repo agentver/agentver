@@ -11,12 +11,12 @@ export class BundlesPage {
     this.page = page
     this.heading = page.getByRole('heading', { name: /bundles/i })
     this.createButton = page.getByRole('link', { name: /create bundle/i })
-    this.bundlesGrid = page.locator('.grid')
+    this.bundlesGrid = page.locator('main').locator('[class*="grid"]').first()
     this.emptyState = page.getByText(/no bundles yet/i)
   }
 
   async goto() {
     await this.page.goto('/bundles')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

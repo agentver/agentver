@@ -41,6 +41,6 @@ export class SkillCreatePage {
 
   async goto() {
     await this.page.goto('/skills/new')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

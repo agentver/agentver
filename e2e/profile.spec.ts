@@ -15,6 +15,8 @@ test.describe('profile settings', () => {
     await expect(profile.accountCardTitle).toBeVisible()
     await expect(profile.userName).toBeVisible()
     await expect(profile.userEmail).toBeVisible()
+    // Verify the email contains an '@' sign
+    await expect(profile.userEmail).toContainText('@')
   })
 
   test('connected accounts section is visible', async ({ page }) => {

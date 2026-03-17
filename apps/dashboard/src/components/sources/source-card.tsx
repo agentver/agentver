@@ -44,6 +44,7 @@ export function SourceCard({
 
   return (
     <div
+      data-testid="provider-card"
       className={`rounded-2xl border border-border p-6 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
         isConnected ? 'border-l-4 border-l-green-500' : ''
       }`}

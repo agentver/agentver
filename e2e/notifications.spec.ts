@@ -25,8 +25,7 @@ test.describe('notifications', () => {
   test('notifications list or empty state is visible', async ({ page }) => {
     const notifications = new NotificationsPage(page)
     await notifications.goto()
-    const hasList = await notifications.notificationsList.isVisible()
-    const hasEmptyState = await notifications.emptyState.isVisible()
-    expect(hasList || hasEmptyState).toBe(true)
+
+    await expect(notifications.notificationsList.or(notifications.emptyState)).toBeVisible()
   })
 })

@@ -14,23 +14,25 @@ export class ApiKeysPage {
   constructor(page: Page) {
     this.page = page
     this.heading = page.getByRole('heading', { name: /api keys/i, level: 2 })
-    this.createKeyCard = page
-      .locator('div')
-      .filter({ has: page.getByRole('heading', { name: 'Create API Key' }) })
-      .first()
     this.createKeyTitle = page.getByRole('heading', { name: 'Create API Key' })
+    this.createKeyCard = page
+      .locator('section, div')
+      .filter({ has: this.createKeyTitle })
+      .first()
     this.keyNameInput = page.getByLabel('Key Name')
     this.createKeyButton = page.getByRole('button', { name: /create key/i })
-    this.activeKeysCard = page
-      .locator('div')
-      .filter({ has: page.getByRole('heading', { name: 'Active Keys' }) })
-      .first()
     this.activeKeysTitle = page.getByRole('heading', { name: 'Active Keys' })
-    this.keyRows = page.locator('.flex.items-center.justify-between.rounded-md.border')
+    this.activeKeysCard = page
+      .locator('section, div')
+      .filter({ has: this.activeKeysTitle })
+      .first()
+    this.keyRows = this.activeKeysCard.locator('li, [role="listitem"], > div > div').filter({
+      has: page.getByRole('button', { name: /revoke|delete|remove/i }),
+    })
   }
 
   async goto() {
     await this.page.goto('/settings/api-keys')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

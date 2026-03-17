@@ -13,7 +13,7 @@ type StatsCardProps = {
 
 export function StatsCard({ title, value, icon: Icon, colour, children }: StatsCardProps) {
   return (
-    <div className="relative h-full overflow-hidden rounded-2xl border border-border bg-card p-6">
+    <div data-testid="stat-card" className="relative h-full overflow-hidden rounded-2xl border border-border bg-card p-6">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <p className="text-muted-foreground text-sm">{title}</p>

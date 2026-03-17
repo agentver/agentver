@@ -15,6 +15,7 @@ export class OrganisationsPage {
   readonly noOrgsHeading: Locator
   readonly membersCard: Locator
   readonly skillsRepoCard: Locator
+  readonly orgSwitcher: Locator
 
   constructor(page: Page) {
     this.page = page
@@ -23,11 +24,11 @@ export class OrganisationsPage {
       /manage your organisation settings, members, and package repository/i
     )
     this.detailsCard = page
-      .locator('div.space-y-6 > div')
-      .filter({ has: page.locator('img, svg') })
+      .locator('section, div')
+      .filter({ has: page.getByRole('heading', { name: /organisation/i }) })
       .first()
-    this.orgName = page.locator('[class*="CardTitle"]').first()
-    this.orgSlug = page.locator('[class*="CardDescription"]').first()
+    this.orgName = this.detailsCard.getByRole('heading').first()
+    this.orgSlug = this.detailsCard.getByText(/^@/).first()
     this.membersBadge = page.getByText(/member/i).first()
     this.packagesBadge = page.getByText(/package/i).first()
     this.editButton = page.getByRole('button', { name: /edit/i })
@@ -35,14 +36,18 @@ export class OrganisationsPage {
     this.createButton = page.getByRole('button', { name: /create organisation/i })
     this.noOrgsHeading = page.getByRole('heading', { name: /no organisations yet/i })
     this.membersCard = page
-      .getByText(/members/i)
-      .locator('..')
-      .locator('..')
+      .locator('section, div')
+      .filter({ has: page.getByRole('heading', { name: /members/i }) })
+      .first()
     this.skillsRepoCard = page.getByText(/package repository/i).first()
+    this.orgSwitcher = page
+      .getByRole('combobox')
+      .or(page.locator('aside').getByText(/create organisation/i))
+      .or(page.locator('aside p.truncate'))
   }
 
   async goto() {
     await this.page.goto('/settings/organisation')
-    await this.page.waitForLoadState('networkidle')
+    await this.page.waitForLoadState('domcontentloaded')
   }
 }

@@ -19,12 +19,22 @@ test.describe('connections settings', () => {
     await expect(connections.oneDriveCard).toBeVisible()
   })
 
-  test('connection status badges render for each provider', async ({ page }) => {
+  test('each provider card shows a connection status', async ({ page }) => {
     const connections = new ConnectionsPage(page)
     await connections.goto()
-    // Each provider displays either "Connected" or "Not connected" (or "Coming soon")
-    // There should be at least 5 status indicators (one per provider)
-    const badgeCount = await connections.connectionBadges.count()
-    expect(badgeCount).toBeGreaterThanOrEqual(5)
+
+    // Each provider card should display a status badge (Connected, Not connected, or Coming soon)
+    const providers = [
+      connections.githubCard,
+      connections.gitlabCard,
+      connections.bitbucketCard,
+      connections.googleDriveCard,
+      connections.oneDriveCard,
+    ]
+
+    for (const card of providers) {
+      const statusBadge = card.getByText(/connected|not connected|coming soon/i).first()
+      await expect(statusBadge).toBeVisible()
+    }
   })
 })

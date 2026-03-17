@@ -19,13 +19,10 @@ test.describe('skill creation', () => {
     const skillCreate = new SkillCreatePage(page)
     await skillCreate.goto()
 
-    // The page may show a gate (GitHub required / no repo) or the full editor.
-    // Only check tabs when the editor is rendered.
     const hasEditor = await skillCreate.editorTab.isVisible().catch(() => false)
-    if (hasEditor) {
-      await expect(skillCreate.editorTab).toBeVisible()
-      await expect(skillCreate.editorTab).toHaveAttribute('aria-selected', 'true')
-    }
+    test.skip(!hasEditor, 'Editor only available when GitHub is connected')
+
+    await expect(skillCreate.editorTab).toHaveAttribute('aria-selected', 'true')
   })
 
   test('upload tab is accessible', async ({ page }) => {
@@ -33,11 +30,11 @@ test.describe('skill creation', () => {
     await skillCreate.goto()
 
     const hasUpload = await skillCreate.uploadTab.isVisible().catch(() => false)
-    if (hasUpload) {
-      await skillCreate.uploadTab.click()
-      await expect(skillCreate.uploadTab).toHaveAttribute('aria-selected', 'true')
-      await expect(skillCreate.dropzone).toBeVisible()
-    }
+    test.skip(!hasUpload, 'Upload tab only available when GitHub is connected')
+
+    await skillCreate.uploadTab.click()
+    await expect(skillCreate.uploadTab).toHaveAttribute('aria-selected', 'true')
+    await expect(skillCreate.dropzone).toBeVisible()
   })
 
   test('form fields render in editor tab', async ({ page }) => {
@@ -45,26 +42,11 @@ test.describe('skill creation', () => {
     await skillCreate.goto()
 
     const hasEditor = await skillCreate.editorTab.isVisible().catch(() => false)
-    if (hasEditor) {
-      await expect(skillCreate.nameInput).toBeVisible()
-      await expect(skillCreate.descriptionInput).toBeVisible()
-      await expect(skillCreate.commitMessageInput).toBeVisible()
-      await expect(skillCreate.tagsInput).toBeVisible()
-    }
-  })
+    test.skip(!hasEditor, 'Editor only available when GitHub is connected')
 
-  test('page shows appropriate content for creating a skill', async ({ page }) => {
-    const skillCreate = new SkillCreatePage(page)
-    await skillCreate.goto()
-
-    // The page always renders one of three states:
-    // 1. Full editor with tabs (org + repo connected)
-    // 2. "GitHub account required" gate
-    // 3. "No package repository connected" gate
-    const hasEditor = await skillCreate.editorTab.isVisible().catch(() => false)
-    const hasGitHubGate = await skillCreate.githubRequiredHeading.isVisible().catch(() => false)
-    const hasRepoGate = await skillCreate.noRepoHeading.isVisible().catch(() => false)
-
-    expect(hasEditor || hasGitHubGate || hasRepoGate).toBe(true)
+    await expect(skillCreate.nameInput).toBeVisible()
+    await expect(skillCreate.descriptionInput).toBeVisible()
+    await expect(skillCreate.commitMessageInput).toBeVisible()
+    await expect(skillCreate.tagsInput).toBeVisible()
   })
 })

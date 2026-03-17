@@ -15,13 +15,23 @@ setup('create test user and authenticate', async ({ page }) => {
   }
 
   // Create the test user via Better Auth sign-up API (idempotent — ignores if user exists)
-  await page.request.post('/api/auth/sign-up/email', {
+  const signUpResponse = await page.request.post('/api/auth/sign-up/email', {
     data: { email, password, name: 'E2E Test User' },
   })
 
+  if (!signUpResponse.ok()) {
+    const body = await signUpResponse.text()
+    const isUserExists = body.includes('already exists') || body.includes('already registered')
+    if (!isUserExists) {
+      throw new Error(
+        `Sign-up API failed with status ${signUpResponse.status()}: ${body}`,
+      )
+    }
+  }
+
   // Authenticate via the sign-in form
   await page.goto('/sign-in')
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()

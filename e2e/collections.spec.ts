@@ -2,16 +2,11 @@ import { expect, test } from '@playwright/test'
 import { CollectionsPage } from './pages/collections'
 
 test.describe('collections', () => {
-  test('collections page renders', async ({ page }) => {
+  test('collections page renders with correct heading', async ({ page }) => {
     const collections = new CollectionsPage(page)
     await collections.goto()
     await expect(page).toHaveURL(/\/collections/)
     await expect(collections.heading).toBeVisible()
-  })
-
-  test('page heading displays correct text', async ({ page }) => {
-    const collections = new CollectionsPage(page)
-    await collections.goto()
     await expect(collections.heading).toHaveText('Collections')
   })
 
@@ -28,8 +23,8 @@ test.describe('collections', () => {
   test('collections grid or empty state is visible', async ({ page }) => {
     const collections = new CollectionsPage(page)
     await collections.goto()
-    const hasGrid = await collections.collectionsGrid.first().isVisible()
-    const hasEmptyState = await collections.emptyState.isVisible()
-    expect(hasGrid || hasEmptyState).toBe(true)
+    await expect(
+      collections.collectionsGrid.or(collections.emptyState)
+    ).toBeVisible()
   })
 })

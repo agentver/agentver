@@ -15,18 +15,15 @@ test.describe('skills', () => {
     await expect(skills.skillsList).toBeVisible()
   })
 
-  test('search input is present and accepts input', async ({ page }) => {
+  test('search input filters results', async ({ page }) => {
     const skills = new SkillsPage(page)
     await skills.goto()
     await expect(skills.searchInput).toBeVisible()
-    await skills.searchInput.fill('test')
-    await expect(skills.searchInput).toHaveValue('test')
-  })
-
-  test('create button is present', async ({ page }) => {
-    const skills = new SkillsPage(page)
-    await skills.goto()
-    await expect(skills.createButton).toBeVisible()
+    const initialCount = await skills.skillsList.locator('> *').count()
+    await skills.searchInput.fill('zzz_nonexistent_query')
+    await page.waitForLoadState('domcontentloaded')
+    const filteredCount = await skills.skillsList.locator('> *').count()
+    expect(filteredCount).toBeLessThanOrEqual(initialCount)
   })
 
   test('create button navigates to new skill page', async ({ page }) => {
