@@ -32,7 +32,7 @@ setup('create test user and authenticate', async ({ page }) => {
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await page.waitForURL(/^\/(dashboard)?$/, { timeout: 15_000 })
+  await page.waitForURL(/^\/(dashboard)?$/, { timeout: 15_000, waitUntil: 'domcontentloaded' })
 
   // Save the authenticated session state for all tests
   await page.context().storageState({ path: AUTH_FILE })

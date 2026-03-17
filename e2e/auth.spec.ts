@@ -40,13 +40,13 @@ test.describe('auth', () => {
 
   test('unauthenticated user accessing /dashboard redirects to sign-in', async ({ page }) => {
     await page.goto('/dashboard')
-    await page.waitForURL(/\/sign-in/)
+    await page.waitForURL(/\/sign-in/, { waitUntil: 'domcontentloaded' })
     await expect(page).toHaveURL(/\/sign-in/)
   })
 
   test('unauthenticated user accessing /skills redirects to sign-in', async ({ page }) => {
     await page.goto('/skills')
-    await page.waitForURL(/\/sign-in/)
+    await page.waitForURL(/\/sign-in/, { waitUntil: 'domcontentloaded' })
     await expect(page).toHaveURL(/\/sign-in/)
   })
 })
