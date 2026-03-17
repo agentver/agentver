@@ -28,9 +28,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: process.env.CI ? 'bun run --cwd apps/dashboard start' : 'bun run dev',
+    command: process.env.CI ? 'node apps/dashboard/.next/standalone/server.js' : 'bun run dev',
     url: 'http://localhost:3001',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: process.env.CI ? { PORT: '3001', HOSTNAME: '0.0.0.0' } : undefined,
   },
 })

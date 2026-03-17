@@ -23,8 +23,6 @@ test.describe('collections', () => {
   test('collections grid or empty state is visible', async ({ page }) => {
     const collections = new CollectionsPage(page)
     await collections.goto()
-    await expect(
-      collections.collectionsGrid.or(collections.emptyState)
-    ).toBeVisible()
+    await expect(collections.collectionsGrid.or(collections.emptyState)).toBeVisible()
   })
 })

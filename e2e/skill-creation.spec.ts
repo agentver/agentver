@@ -8,7 +8,7 @@ import { SkillCreatePage } from './pages/skill-create'
 async function requireGitHubConnection(
   page: import('@playwright/test').Page,
   testInfo: import('@playwright/test').TestInfo,
-  locator: import('@playwright/test').Locator,
+  locator: import('@playwright/test').Locator
 ): Promise<boolean> {
   const isVisible = await locator.isVisible().catch(() => false)
   if (!isVisible) {
@@ -60,7 +60,7 @@ test.describe('skill creation', () => {
     const renderedExpectedState = hasGitHub || showsGitHubRequired || showsNoRepo
     expect(
       renderedExpectedState,
-      'Expected either editor tabs (GitHub connected) or a GitHub-required / no-repo heading (GitHub not connected)',
+      'Expected either editor tabs (GitHub connected) or a GitHub-required / no-repo heading (GitHub not connected)'
     ).toBe(true)
   })
 

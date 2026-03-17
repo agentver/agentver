@@ -97,6 +97,11 @@ jobs:
       - name: Build dashboard
         run: bun run turbo build --filter=@agentver/dashboard
 
+      - name: Prepare standalone server
+        run: |
+          cp -r apps/dashboard/.next/static apps/dashboard/.next/standalone/apps/dashboard/.next/static
+          cp -r apps/dashboard/public apps/dashboard/.next/standalone/apps/dashboard/public
+
       - name: Run E2E tests
         run: bunx playwright test
 

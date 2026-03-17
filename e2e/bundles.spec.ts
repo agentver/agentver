@@ -19,8 +19,6 @@ test.describe('bundles', () => {
   test('bundles grid or empty state is visible', async ({ page }) => {
     const bundles = new BundlesPage(page)
     await bundles.goto()
-    await expect(
-      bundles.bundlesGrid.or(bundles.emptyState)
-    ).toBeVisible()
+    await expect(bundles.bundlesGrid.or(bundles.emptyState)).toBeVisible()
   })
 })

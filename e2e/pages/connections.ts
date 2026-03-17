@@ -18,11 +18,26 @@ export class ConnectionsPage {
     this.mainContent = page.locator('main')
 
     // Each provider is rendered as a <Card> component — find by the provider name text within the card title
-    this.githubCard = this.mainContent.locator('div').filter({ hasText: /^GitHub/ }).first()
-    this.gitlabCard = this.mainContent.locator('div').filter({ hasText: /^GitLab/ }).first()
-    this.bitbucketCard = this.mainContent.locator('div').filter({ hasText: /^Bitbucket/ }).first()
-    this.googleDriveCard = this.mainContent.locator('div').filter({ hasText: /^Google Drive/ }).first()
-    this.oneDriveCard = this.mainContent.locator('div').filter({ hasText: /^OneDrive/ }).first()
+    this.githubCard = this.mainContent
+      .locator('div')
+      .filter({ hasText: /^GitHub/ })
+      .first()
+    this.gitlabCard = this.mainContent
+      .locator('div')
+      .filter({ hasText: /^GitLab/ })
+      .first()
+    this.bitbucketCard = this.mainContent
+      .locator('div')
+      .filter({ hasText: /^Bitbucket/ })
+      .first()
+    this.googleDriveCard = this.mainContent
+      .locator('div')
+      .filter({ hasText: /^Google Drive/ })
+      .first()
+    this.oneDriveCard = this.mainContent
+      .locator('div')
+      .filter({ hasText: /^OneDrive/ })
+      .first()
   }
 
   /** Get the connection status badge text for a specific provider card */

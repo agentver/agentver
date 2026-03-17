@@ -22,9 +22,7 @@ setup('create test user and authenticate', async ({ page }) => {
     const body = await signUpResponse.text()
     const isUserExists = body.includes('already exists') || body.includes('already registered')
     if (!isUserExists) {
-      throw new Error(
-        `Sign-up API failed with status ${signUpResponse.status()}: ${body}`,
-      )
+      throw new Error(`Sign-up API failed with status ${signUpResponse.status()}: ${body}`)
     }
   }
 

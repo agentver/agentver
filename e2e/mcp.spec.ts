@@ -21,8 +21,6 @@ test.describe('mcp catalogue', () => {
   test('server cards or empty state with info is visible', async ({ page }) => {
     const mcp = new McpPage(page)
     await mcp.goto()
-    await expect(
-      mcp.serverGrid.or(mcp.emptyState)
-    ).toBeVisible()
+    await expect(mcp.serverGrid.or(mcp.emptyState)).toBeVisible()
   })
 })
