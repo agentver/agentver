@@ -1,7 +1,15 @@
 'use client'
 
 import { cn } from '@agentver/ui-utils'
-import { Check, ExternalLink, GitBranch, Monitor, Package } from 'lucide-react'
+import {
+  AlertTriangle,
+  Archive,
+  Check,
+  ExternalLink,
+  GitBranch,
+  Monitor,
+  Package,
+} from 'lucide-react'
 import Link from 'next/link'
 import { PACKAGE_TYPE_DISPLAY } from '@/lib/package-types'
 
@@ -18,6 +26,7 @@ type PackageData = {
   gitUri?: string | null
   gitPath?: string | null
   gitDefaultRef?: string
+  status?: string
   _count: { installationReports: number }
 }
 
@@ -99,7 +108,21 @@ export function SkillList({ packages, selectable, selectedIds, onToggleSelect }:
                 </button>
               )}
               <div className="min-w-0">
-                <p className="truncate font-display font-medium text-sm">{pkg.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate font-display font-medium text-sm">{pkg.name}</p>
+                  {pkg.status === 'DEPRECATED' && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 text-xs dark:bg-amber-900 dark:text-amber-200">
+                      <AlertTriangle className="size-2.5" />
+                      Deprecated
+                    </span>
+                  )}
+                  {pkg.status === 'ARCHIVED' && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-1.5 py-0.5 font-medium text-gray-600 text-xs dark:bg-gray-800 dark:text-gray-300">
+                      <Archive className="size-2.5" />
+                      Archived
+                    </span>
+                  )}
+                </div>
                 <p className="truncate text-muted-foreground text-xs">
                   {pkg.organisation.slug}
                   {pkg.description ? ` \u2014 ${pkg.description}` : ''}

@@ -3,6 +3,8 @@
 import type { SpecComplianceLevel } from '@agentver/shared'
 import { cn } from '@agentver/ui-utils'
 import {
+  AlertTriangle,
+  Archive,
   Check,
   ExternalLink,
   GitBranch,
@@ -38,6 +40,7 @@ type SkillCardProps = {
   gitDefaultRef?: string
   gitRef?: string | null
   isVerified?: boolean
+  status?: string
 }
 
 const COMPLIANCE_STYLES: Record<'compliant' | 'partial', { label: string; className: string }> = {
@@ -81,6 +84,7 @@ export function SkillCard({
   gitDefaultRef,
   gitRef,
   isVerified,
+  status,
 }: SkillCardProps) {
   const handleCheckboxClick = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -150,6 +154,18 @@ export function SkillCard({
             >
               {PACKAGE_TYPE_DISPLAY[type]?.label ?? type.toLowerCase()}
             </span>
+            {status === 'DEPRECATED' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 text-xs dark:bg-amber-900 dark:text-amber-200">
+                <AlertTriangle className="size-3" />
+                Deprecated
+              </span>
+            )}
+            {status === 'ARCHIVED' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600 text-xs dark:bg-gray-800 dark:text-gray-300">
+                <Archive className="size-3" />
+                Archived
+              </span>
+            )}
           </div>
         </div>
 

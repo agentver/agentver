@@ -16,6 +16,7 @@ type PackageData = {
   gitUri?: string | null
   gitPath?: string | null
   gitDefaultRef?: string
+  status?: string
   _count: { installationReports: number }
 }
 
@@ -63,6 +64,7 @@ export function SkillGrid({ packages, selectable, selectedIds, onToggleSelect }:
           gitPath={pkg.gitPath}
           gitDefaultRef={pkg.gitDefaultRef}
           gitRef={pkg.versions[0]?.gitRef}
+          status={pkg.status}
         />
       ))}
     </div>

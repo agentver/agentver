@@ -134,6 +134,21 @@ export class FilesystemGitProvider implements GitProvider {
     ]
   }
 
+  async removeSkillFile(
+    _namespace: string,
+    _skillName: string,
+    filePath: string,
+    _message: string
+  ): Promise<{ commitSha: string }> {
+    if (filePath === 'SKILL.md') {
+      throw new Error('Cannot remove the primary skill file')
+    }
+
+    // The filesystem provider only stores SKILL.md in the database.
+    // Additional files are not tracked, so this is a no-op.
+    return { commitSha: generateSha(`removed:${filePath}:${Date.now()}`) }
+  }
+
   async deleteSkill(namespace: string, skillName: string, _message: string): Promise<void> {
     logger.info('Skill deletion (filesystem) — handled by Package model cascade', {
       namespace,

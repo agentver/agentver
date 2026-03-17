@@ -2,9 +2,18 @@
 
 import { Button } from '@agentver/ui/components/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@agentver/ui/components/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@agentver/ui/components/dialog'
 import { cn } from '@agentver/ui-utils'
-import { ArrowLeft, File, FileCode, FileJson, FileText, Folder } from 'lucide-react'
+import { ArrowLeft, File, FileCode, FileJson, FileText, Folder, Trash2 } from 'lucide-react'
 import { use, useState } from 'react'
+import { toast } from 'sonner'
 import { trpc } from '@/trpc/client'
 import { SkillHeader } from '../_components/skill-header'
 import { SkillPageSkeleton } from '../_components/skill-page-skeleton'
@@ -40,6 +49,7 @@ function formatFileSize(bytes: number): string {
 
 export default function FilesPage({ params }: { params: Promise<{ org: string; name: string }> }) {
   const { org, name } = use(params)
+  const utils = trpc.useUtils()
   const { data: pkg, isLoading: pkgLoading } = trpc.skills.getBySlug.useQuery({ org, name })
   const canManage = useCanManage(org, pkg?.authorId)
 
@@ -50,11 +60,23 @@ export default function FilesPage({ params }: { params: Promise<{ org: string; n
   } = trpc.git.getSkillFiles.useQuery({ org, name })
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
   const { data: fileContent, isLoading: contentLoading } = trpc.git.getSkillFileContent.useQuery(
     { org, name, path: selectedFile! },
     { enabled: selectedFile !== null }
   )
+
+  const removeFileMutation = trpc.git.removeSkillFile.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success(`${variables.filePath} has been removed`)
+      utils.git.getSkillFiles.invalidate({ org, name })
+      setDeleteTarget(null)
+    },
+    onError: (error) => {
+      toast.error('Failed to remove file', { description: error.message })
+    },
+  })
 
   if (pkgLoading) {
     return <SkillPageSkeleton />
@@ -62,6 +84,11 @@ export default function FilesPage({ params }: { params: Promise<{ org: string; n
 
   if (!pkg) {
     return <div className="py-16 text-center text-muted-foreground">Package not found</div>
+  }
+
+  const handleDeleteConfirm = () => {
+    if (!deleteTarget) return
+    removeFileMutation.mutate({ org, name, filePath: deleteTarget })
   }
 
   return (
@@ -107,31 +134,48 @@ export default function FilesPage({ params }: { params: Promise<{ org: string; n
                 {files.map((file, index) => {
                   const Icon = file.type === 'dir' ? Folder : getFileIcon(file.name)
                   const isLast = index === files.length - 1
+                  const canDelete = canManage && file.type === 'file' && file.name !== 'SKILL.md'
 
                   return (
-                    <button
+                    <div
                       key={file.path}
-                      type="button"
-                      onClick={() => {
-                        if (file.type === 'file') {
-                          setSelectedFile(file.path)
-                        }
-                      }}
-                      disabled={file.type !== 'file'}
                       className={cn(
-                        'flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors',
-                        file.type === 'file'
-                          ? 'cursor-pointer hover:bg-muted/50'
-                          : 'cursor-default opacity-60',
+                        'flex w-full items-center gap-3 px-4 py-2.5 text-sm',
                         !isLast && 'border-b'
                       )}
                     >
-                      <Icon className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="flex-1 font-mono text-xs">{file.path}</span>
-                      <span className="text-muted-foreground text-xs">
-                        {formatFileSize(file.size)}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (file.type === 'file') {
+                            setSelectedFile(file.path)
+                          }
+                        }}
+                        disabled={file.type !== 'file'}
+                        className={cn(
+                          'flex min-w-0 flex-1 items-center gap-3 text-left transition-colors',
+                          file.type === 'file'
+                            ? 'cursor-pointer hover:text-foreground'
+                            : 'cursor-default opacity-60'
+                        )}
+                      >
+                        <Icon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate font-mono text-xs">{file.path}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {formatFileSize(file.size)}
+                        </span>
+                      </button>
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => setDeleteTarget(file.path)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -139,6 +183,36 @@ export default function FilesPage({ params }: { params: Promise<{ org: string; n
           </CardContent>
         </Card>
       )}
+
+      {/* Delete File Confirmation Dialog */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget}</DialogTitle>
+            <DialogDescription>
+              This file will be permanently removed from the skill repository. This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={removeFileMutation.isPending}
+            >
+              {removeFileMutation.isPending ? 'Deleting...' : 'Delete file'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
