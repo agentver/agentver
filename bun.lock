@@ -137,7 +137,7 @@
     },
     "packages/cli": {
       "name": "@agentver/cli",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "bin": {
         "agentver": "./dist/agentver.js",
       },
