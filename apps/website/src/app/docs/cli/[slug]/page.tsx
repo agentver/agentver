@@ -321,42 +321,69 @@ const COMMANDS: Record<string, CommandDoc> = {
     related: [
       { name: 'status', why: 'See which skills have changes' },
       { name: 'update', why: 'Apply upstream changes' },
-      { name: 'propose', why: 'Submit your local changes as a proposal' },
+      { name: 'suggest', why: 'Submit your local changes as a suggestion' },
     ],
   },
-  propose: {
-    name: 'propose',
+  suggest: {
+    name: 'suggest',
     description:
-      'Create a change proposal from your local modifications, similar to a pull request.',
-    usage: 'agentver propose <name> <title>',
-    args: [
-      { name: 'name', desc: 'Package name', required: true },
-      { name: 'title', desc: 'Proposal title', required: true },
+      'Create a suggestion from local modifications and submit it to the platform, similar to a pull request.',
+    usage: 'agentver suggest <title>',
+    args: [{ name: 'title', desc: 'Suggestion title', required: true }],
+    options: [
+      { flag: '-d, --description <text>', desc: 'Suggestion description' },
+      { flag: '--name <name>', desc: 'Target a specific modified package by name' },
+      { flag: '--dry-run', desc: 'Show what would be suggested without submitting' },
     ],
     examples: [
       {
-        cmd: 'agentver propose deploy-checker "Improve error handling"',
-        desc: 'Submit a proposal',
+        cmd: 'agentver suggest "Improve error handling"',
+        desc: 'Submit a suggestion for all modified packages',
+      },
+      {
+        cmd: 'agentver suggest "Fix validation" --name deploy-checker',
+        desc: 'Submit a suggestion for a specific package',
+      },
+      {
+        cmd: 'agentver suggest "Add retry logic" --dry-run',
+        desc: 'Preview what would be submitted',
       },
     ],
     notes:
-      'Requires platform connection (agentver login). Generates a patch from your local changes.',
+      'Requires platform connection (agentver login). Detects locally modified packages by comparing integrity hashes.',
     related: [
-      { name: 'proposals', why: 'List and manage open proposals' },
-      { name: 'diff', why: 'Preview your changes before proposing' },
+      { name: 'suggestions', why: 'List and manage open suggestions' },
+      { name: 'diff', why: 'Preview your changes before suggesting' },
       { name: 'login', why: 'Connect to the platform first' },
     ],
   },
-  proposals: {
-    name: 'proposals',
-    description: 'List open change proposals.',
-    usage: 'agentver proposals [name]',
-    args: [{ name: 'name', desc: 'Filter by skill name (optional)', required: false }],
-    examples: [
-      { cmd: 'agentver proposals', desc: 'List all open proposals' },
-      { cmd: 'agentver proposals deploy-checker', desc: 'List proposals for a specific skill' },
+  suggestions: {
+    name: 'suggestions',
+    description: 'List suggestions for a skill from the platform.',
+    usage: 'agentver suggestions [name]',
+    args: [{ name: 'name', desc: 'Filter by package name (optional)', required: false }],
+    options: [
+      {
+        flag: '-s, --status <status>',
+        desc: 'Filter by status: open, closed, merged, all (default: open)',
+      },
     ],
-    related: [{ name: 'propose', why: 'Create a new proposal' }],
+    examples: [
+      { cmd: 'agentver suggestions', desc: 'List all open suggestions' },
+      {
+        cmd: 'agentver suggestions deploy-checker',
+        desc: 'List suggestions for a specific skill',
+      },
+      {
+        cmd: 'agentver suggestions --status all',
+        desc: 'List suggestions with any status',
+      },
+    ],
+    notes: 'Requires platform connection (agentver login).',
+    related: [
+      { name: 'suggest', why: 'Create a new suggestion' },
+      { name: 'diff', why: 'See local changes before suggesting' },
+    ],
   },
   audit: {
     name: 'audit',
@@ -422,6 +449,198 @@ const COMMANDS: Record<string, CommandDoc> = {
     related: [
       { name: 'login', why: 'Sign in or switch accounts' },
       { name: 'logout', why: 'Log out' },
+    ],
+  },
+  adopt: {
+    name: 'adopt',
+    description:
+      'Scan for existing skills and config files and bring them under Agentver management. Adds entries to the manifest and lockfile without moving or modifying the original files.',
+    usage: 'agentver adopt [path]',
+    args: [
+      {
+        name: 'path',
+        desc: 'Directory to scan (defaults to current directory)',
+        required: false,
+      },
+    ],
+    options: [
+      { flag: '--global', desc: 'Also scan global paths (~/.claude/skills, etc.)' },
+      { flag: '--name <name>', desc: 'Adopt a specific skill by name' },
+      { flag: '--dry-run', desc: 'Show what would be adopted without making changes' },
+    ],
+    examples: [
+      { cmd: 'agentver adopt', desc: 'Adopt skills found in the current directory' },
+      { cmd: 'agentver adopt --global', desc: 'Also scan global agent skill directories' },
+      { cmd: 'agentver adopt --name deploy-checker', desc: 'Adopt a specific skill by name' },
+      { cmd: 'agentver adopt --dry-run', desc: 'Preview what would be adopted' },
+    ],
+    related: [
+      { name: 'scan', why: 'Detect agents and skill files without adopting' },
+      { name: 'install', why: 'Install a skill from a remote source instead' },
+      { name: 'list', why: 'See what you have adopted and installed' },
+    ],
+  },
+  completion: {
+    name: 'completion',
+    description: 'Generate shell completion scripts for bash, zsh, or fish.',
+    usage: 'agentver completion <shell>',
+    args: [{ name: 'shell', desc: 'Shell type: bash, zsh, or fish', required: true }],
+    options: [{ flag: '--install', desc: 'Install the completion script to your shell RC file' }],
+    examples: [
+      { cmd: 'agentver completion bash', desc: 'Print bash completion script to stdout' },
+      { cmd: 'agentver completion zsh --install', desc: 'Install zsh completions to ~/.zshrc' },
+      {
+        cmd: 'eval "$(agentver completion bash)"',
+        desc: 'Load completions in the current session',
+      },
+    ],
+    related: [
+      { name: 'config', why: 'Manage CLI configuration' },
+      { name: 'doctor', why: 'Run health checks on your setup' },
+    ],
+  },
+  config: {
+    name: 'config',
+    description: 'Manage CLI configuration values (platform URL, default org, telemetry).',
+    usage: 'agentver config <subcommand>',
+    subcommands: [
+      { name: 'list', desc: 'Show all config values', usage: 'agentver config list' },
+      { name: 'get <key>', desc: 'Get a config value', usage: 'agentver config get platformUrl' },
+      {
+        name: 'set <key> <value>',
+        desc: 'Set a config value',
+        usage: 'agentver config set telemetry false',
+      },
+      {
+        name: 'unset <key>',
+        desc: 'Remove a config key',
+        usage: 'agentver config unset defaultOrg',
+      },
+      { name: 'path', desc: 'Print the config file path', usage: 'agentver config path' },
+    ],
+    examples: [
+      { cmd: 'agentver config list', desc: 'Show all configuration' },
+      { cmd: 'agentver config set telemetry false', desc: 'Disable telemetry' },
+      {
+        cmd: 'agentver config set platformUrl https://agentver.dev',
+        desc: 'Set the platform URL',
+      },
+      { cmd: 'agentver config path', desc: 'Print where the config file lives' },
+    ],
+    notes: 'Valid keys: platformUrl, defaultOrg, telemetry.',
+    related: [
+      { name: 'login', why: 'Authenticate with a platform' },
+      { name: 'doctor', why: 'Check that your configuration is healthy' },
+    ],
+  },
+  doctor: {
+    name: 'doctor',
+    description:
+      'Run health checks to diagnose common issues. Validates the manifest, lockfile, symlinks, authentication, Git availability, and Node version.',
+    usage: 'agentver doctor',
+    options: [{ flag: '--json', desc: 'Output as JSON' }],
+    examples: [
+      { cmd: 'agentver doctor', desc: 'Run all health checks' },
+      { cmd: 'agentver doctor --json', desc: 'Machine-readable health report' },
+    ],
+    notes:
+      'Checks: manifest integrity, lockfile integrity, manifest/lockfile sync, skill file presence, symlink validity, authentication, Git availability, Node version.',
+    related: [
+      { name: 'config', why: 'Fix configuration issues flagged by doctor' },
+      { name: 'login', why: 'Fix authentication issues' },
+      { name: 'status', why: 'Check skill update status' },
+    ],
+  },
+  info: {
+    name: 'info',
+    description:
+      'Show detailed information about an installed package including source, agents, integrity, file count, and SKILL.md metadata.',
+    usage: 'agentver info <name>',
+    args: [{ name: 'name', desc: 'Package name', required: true }],
+    options: [{ flag: '--json', desc: 'Output as JSON' }],
+    examples: [
+      { cmd: 'agentver info deploy-checker', desc: 'Show details for an installed package' },
+      { cmd: 'agentver info deploy-checker --json', desc: 'Machine-readable package info' },
+    ],
+    related: [
+      { name: 'list', why: 'See all installed packages' },
+      { name: 'status', why: 'Check for updates and modifications' },
+      { name: 'verify', why: 'Verify publisher and integrity' },
+    ],
+  },
+  pin: {
+    name: 'pin',
+    description: 'Pin a package to skip it during updates.',
+    usage: 'agentver pin <name>',
+    args: [{ name: 'name', desc: 'Package name to pin', required: true }],
+    examples: [
+      {
+        cmd: 'agentver pin deploy-checker',
+        desc: 'Pin a package so it is skipped during updates',
+      },
+    ],
+    related: [
+      { name: 'unpin', why: 'Unpin a package to include it in updates again' },
+      { name: 'update', why: 'Update all unpinned packages' },
+      { name: 'list', why: 'See which packages are installed' },
+    ],
+  },
+  unpin: {
+    name: 'unpin',
+    description: 'Unpin a package so it is included in updates.',
+    usage: 'agentver unpin <name>',
+    args: [{ name: 'name', desc: 'Package name to unpin', required: true }],
+    examples: [
+      {
+        cmd: 'agentver unpin deploy-checker',
+        desc: 'Unpin a package so updates include it again',
+      },
+    ],
+    related: [
+      { name: 'pin', why: 'Pin a package to skip it during updates' },
+      { name: 'update', why: 'Update all unpinned packages' },
+    ],
+  },
+  upgrade: {
+    name: 'upgrade',
+    description:
+      'Upgrade the Agentver CLI itself to the latest published version. Detects your package manager automatically.',
+    usage: 'agentver upgrade',
+    examples: [{ cmd: 'agentver upgrade', desc: 'Upgrade Agentver CLI to the latest version' }],
+    notes:
+      'Also available as agentver self-update. Detects bun, pnpm, yarn, or npm and runs the appropriate global install command.',
+    related: [
+      { name: 'doctor', why: 'Check your environment after upgrading' },
+      { name: 'config', why: 'View or change CLI configuration' },
+    ],
+  },
+  verify: {
+    name: 'verify',
+    description:
+      'Verify a skill by checking publisher verification status, local file integrity against the lockfile, and running a security audit.',
+    usage: 'agentver verify [name]',
+    args: [
+      {
+        name: 'name',
+        desc: 'Skill name in @org/skill format (resolved from manifest if omitted)',
+        required: false,
+      },
+    ],
+    options: [{ flag: '--strict', desc: 'Fail on WARN verdicts, not just BLOCK' }],
+    examples: [
+      { cmd: 'agentver verify @acme/deploy-checker', desc: 'Verify a specific skill' },
+      { cmd: 'agentver verify', desc: 'Verify the only installed skill' },
+      {
+        cmd: 'agentver verify @acme/deploy-checker --strict',
+        desc: 'Strict mode — warnings also fail',
+      },
+    ],
+    notes:
+      'Three checks: publisher verification via the platform, SHA256 integrity against the lockfile, and a security audit scan.',
+    related: [
+      { name: 'audit', why: 'Run only the security scan portion' },
+      { name: 'info', why: 'See detailed package information' },
+      { name: 'status', why: 'Check for modifications and updates' },
     ],
   },
 }

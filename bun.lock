@@ -137,7 +137,7 @@
     },
     "packages/cli": {
       "name": "@agentver/cli",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "bin": {
         "agentver": "./dist/agentver.js",
       },
@@ -193,7 +193,7 @@
     },
     "packages/mcp-server": {
       "name": "@agentver/mcp-server",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "agentver-mcp": "./dist/index.js",
       },

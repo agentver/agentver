@@ -32,6 +32,16 @@ const COMMANDS = [
     category: 'Core',
   },
   {
+    name: 'pin',
+    desc: 'Pin a package to skip it during updates',
+    category: 'Core',
+  },
+  {
+    name: 'unpin',
+    desc: 'Unpin a package so it is included in updates',
+    category: 'Core',
+  },
+  {
     name: 'search',
     desc: 'Query the platform registry, skills.sh, and well-known endpoints',
     category: 'Discovery',
@@ -39,6 +49,16 @@ const COMMANDS = [
   {
     name: 'scan',
     desc: 'Detect installed agents and scan for skill/config files',
+    category: 'Discovery',
+  },
+  {
+    name: 'info',
+    desc: 'Show detailed information about an installed package',
+    category: 'Discovery',
+  },
+  {
+    name: 'adopt',
+    desc: 'Adopt existing skills and configs into Agentver management',
     category: 'Discovery',
   },
   {
@@ -72,18 +92,23 @@ const COMMANDS = [
     category: 'Collaboration',
   },
   {
-    name: 'propose',
-    desc: 'Create change proposals with diffs for upstream skills',
+    name: 'suggest',
+    desc: 'Create suggestions from local modifications for upstream skills',
     category: 'Collaboration',
   },
   {
-    name: 'proposals',
-    desc: 'List, review, approve, or reject proposals on skills',
+    name: 'suggestions',
+    desc: 'List, review, and manage suggestions on skills',
     category: 'Collaboration',
   },
   {
     name: 'audit',
     desc: 'Security scan on installed skills for known risks',
+    category: 'Security',
+  },
+  {
+    name: 'verify',
+    desc: 'Verify a skill — checks publisher, integrity, and security',
     category: 'Security',
   },
   {
@@ -99,6 +124,26 @@ const COMMANDS = [
     desc: 'Initialise a new Agentver project with manifest and structure',
     category: 'Core',
   },
+  {
+    name: 'config',
+    desc: 'Manage CLI configuration (platform URL, default org, telemetry)',
+    category: 'Configuration',
+  },
+  {
+    name: 'doctor',
+    desc: 'Run health checks to diagnose common issues',
+    category: 'Configuration',
+  },
+  {
+    name: 'upgrade',
+    desc: 'Upgrade Agentver CLI to the latest version',
+    category: 'Configuration',
+  },
+  {
+    name: 'completion',
+    desc: 'Generate shell completion scripts (bash, zsh, fish)',
+    category: 'Configuration',
+  },
 ]
 
 const CATEGORIES = [
@@ -108,6 +153,7 @@ const CATEGORIES = [
   'Collaboration',
   'Security',
   'Platform',
+  'Configuration',
 ] as const
 
 export default function CliPage() {

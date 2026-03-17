@@ -15,6 +15,8 @@ const CATEGORIES = [
         name: 'status',
         desc: 'Show status of installed skills (upstream changes, local modifications)',
       },
+      { name: 'pin', desc: 'Pin a package to skip it during updates' },
+      { name: 'unpin', desc: 'Unpin a package so it is included in updates' },
     ],
   },
   {
@@ -25,6 +27,8 @@ const CATEGORIES = [
         desc: 'Search for skills across the platform, skills.sh, and well-known domains',
       },
       { name: 'scan', desc: 'Detect installed agents and discover skills/configs in a directory' },
+      { name: 'info', desc: 'Show detailed information about an installed package' },
+      { name: 'adopt', desc: 'Adopt existing skills and configs into Agentver management' },
     ],
   },
   {
@@ -41,13 +45,16 @@ const CATEGORIES = [
     name: 'Collaboration',
     commands: [
       { name: 'diff', desc: 'Show diff between local and upstream version of a skill' },
-      { name: 'propose', desc: 'Create a change proposal from local modifications' },
-      { name: 'proposals', desc: 'List open proposals' },
+      { name: 'suggest', desc: 'Create a suggestion from local modifications' },
+      { name: 'suggestions', desc: 'List suggestions for a skill' },
     ],
   },
   {
     name: 'Security',
-    commands: [{ name: 'audit', desc: 'Run a security scan on installed skills or a directory' }],
+    commands: [
+      { name: 'audit', desc: 'Run a security scan on installed skills or a directory' },
+      { name: 'verify', desc: 'Verify a skill — checks publisher, integrity, and security' },
+    ],
   },
   {
     name: 'Platform',
@@ -56,6 +63,15 @@ const CATEGORIES = [
       { name: 'login', desc: 'Authenticate with the Agentver platform' },
       { name: 'logout', desc: 'Log out and clear credentials' },
       { name: 'whoami', desc: 'Show authentication state and connected organisations' },
+    ],
+  },
+  {
+    name: 'Configuration',
+    commands: [
+      { name: 'config', desc: 'Manage CLI configuration (platform URL, default org, telemetry)' },
+      { name: 'doctor', desc: 'Run health checks to diagnose common issues' },
+      { name: 'upgrade', desc: 'Upgrade Agentver CLI to the latest version' },
+      { name: 'completion', desc: 'Generate shell completion scripts (bash, zsh, fish)' },
     ],
   },
 ]
