@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Bricolage_Grotesque, DM_Sans, JetBrains_Mono } from 'next/font/google'
 import { Footer } from '@/components/footer'
+import { GoogleAnalytics } from '@/components/google-analytics'
 import { Nav } from '@/components/nav'
 import './globals.css'
 
@@ -40,6 +41,13 @@ export const metadata: Metadata = {
     siteName: 'Agentver',
     type: 'website',
   },
+  twitter: {
+    card: 'summary_large_image',
+    site: '@agentver_',
+    title: 'Agentver — The GitHub for AI Agents',
+    description:
+      'Open-source version control for AI agent skills. One CLI, 43+ agents, zero lock-in.',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -49,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${dmSans.variable} ${jetbrainsMono.variable} ${bricolage.variable}`}
     >
       <body className="bg-background font-sans text-foreground antialiased">
+        <GoogleAnalytics />
         <Nav />
         <main>{children}</main>
         <Footer />
