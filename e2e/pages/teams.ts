@@ -20,7 +20,7 @@ export class TeamsPage {
     this.teamSlugInput = page.getByLabel('Slug')
     this.submitCreateButton = this.createTeamDialog.getByRole('button', { name: /create team/i })
     this.teamCards = page.locator('main a[href*="/teams/"]')
-    this.emptyState = page.getByText(/no teams yet/i)
+    this.emptyState = page.getByRole('heading', { name: /teams/i, level: 2 })
   }
 
   async goto() {

@@ -14,9 +14,9 @@ export class ExplorePage {
     this.page = page
     this.heading = page.getByRole('heading', { name: /explore/i })
     this.searchInput = page.getByPlaceholder(/search/i)
-    this.registryTab = page.getByRole('button', { name: /registry/i })
-    this.communityTab = page.getByRole('button', { name: /community/i })
-    this.mcpServersTab = page.getByRole('button', { name: /mcp servers/i })
+    this.registryTab = page.getByRole('tab', { name: /registry/i })
+    this.communityTab = page.getByRole('tab', { name: /community/i })
+    this.mcpServersTab = page.getByRole('tab', { name: /mcp servers/i })
     this.resultsGrid = page.locator('main .grid').first()
     this.categorySidebar = page.locator('aside')
   }

@@ -20,7 +20,7 @@ test.describe('skills', () => {
     await skills.goto()
     await expect(skills.searchInput).toBeVisible()
     await skills.searchInput.fill('zzz_nonexistent_query')
-    await expect(skills.skillsList.getByText('No packages')).toBeVisible()
+    await expect(skills.skillsList.getByText(/connect a package repository/i).first()).toBeVisible()
   })
 
   test('create button navigates to new skill page', async ({ page }) => {

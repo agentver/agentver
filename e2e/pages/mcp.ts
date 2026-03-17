@@ -10,7 +10,7 @@ export class McpPage {
 
   constructor(page: Page) {
     this.page = page
-    this.heading = page.getByRole('heading', { name: /mcp servers/i, level: 1 })
+    this.heading = page.getByRole('heading', { name: /mcp servers/i, level: 2 })
     this.searchInput = page.getByPlaceholder(/search mcp servers/i)
     this.serverGrid = page.locator('main').locator('[class*="grid"]').first()
     this.emptyState = page.getByText(/no mcp servers yet/i)
