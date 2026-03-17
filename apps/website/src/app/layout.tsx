@@ -24,6 +24,7 @@ const bricolage = Bricolage_Grotesque({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://agentver.com'),
   title: {
     default: 'Agentver - The GitHub for AI Agents',
     template: '%s | Agentver',
