@@ -6,12 +6,16 @@ on:
       - "apps/dashboard/**"
       - "e2e/**"
       - "packages/**"
+      - "playwright.config.ts"
+      - ".github/workflows/test-e2e.yml"
   push:
     branches: [main]
     paths:
       - "apps/dashboard/**"
       - "e2e/**"
       - "packages/**"
+      - "playwright.config.ts"
+      - ".github/workflows/test-e2e.yml"
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -21,10 +25,14 @@ jobs:
   e2e:
     name: Playwright
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       DATABASE_URL: postgresql://agentver:test@localhost:5432/agentver_test
       BETTER_AUTH_SECRET: test-secret-minimum-thirty-two-characters-long
+      NEXT_PUBLIC_APP_URL: http://localhost:3001
+      APP_URL: http://localhost:3001
+      E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+      E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
 
     services:
       postgres:
@@ -68,21 +76,47 @@ jobs:
       - name: Run migrations
         run: bun run db:migrate:deploy
 
+      - name: Seed categories
+        run: bun run db:seed
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install --with-deps chromium
+
+      - name: Install Playwright deps (cached)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: bunx playwright install-deps chromium
 
       - name: Build dashboard
         run: bun run turbo build --filter=@agentver/dashboard
 
+      - name: Prepare standalone server
+        run: |
+          cp -r apps/dashboard/.next/static apps/dashboard/.next/standalone/apps/dashboard/.next/static
+          cp -r apps/dashboard/public apps/dashboard/.next/standalone/apps/dashboard/public
+
       - name: Run E2E tests
         run: bunx playwright test
-        env:
-          APP_URL: http://localhost:3001
 
       - name: Upload report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
+          name: playwright-report-${{ github.run_id }}
           path: playwright-report/
-          retention-days: 7
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.run_id }}
+          path: test-results/
+          retention-days: 30

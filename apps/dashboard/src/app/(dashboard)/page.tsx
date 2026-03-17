@@ -209,7 +209,7 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <FadeIn delay={50}>
-        <div className="flex flex-wrap gap-3">
+        <div data-testid="quick-actions" className="flex flex-wrap gap-3">
           {getQuickActions(progress?.hasSkillsRepo ?? true).map((action) => {
             const ActionIcon = action.icon
             const classes = cn(
@@ -359,7 +359,7 @@ export default function DashboardPage() {
       <FadeIn delay={200}>
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Recent Packages */}
-          <div className="rounded-2xl border border-border bg-card">
+          <div data-testid="recent-packages" className="rounded-2xl border border-border bg-card">
             <div className="flex items-center justify-between border-border/60 border-b px-6 py-4">
               <h2 className="font-display font-semibold text-lg tracking-tight">Recent Packages</h2>
               <Link
@@ -489,7 +489,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Recent Activity */}
-          <div className="rounded-2xl border border-border bg-card">
+          <div data-testid="recent-activity" className="rounded-2xl border border-border bg-card">
             <div className="flex items-center justify-between border-border/60 border-b px-6 py-4">
               <h2 className="font-display font-semibold text-lg tracking-tight">Recent Activity</h2>
               <Link
