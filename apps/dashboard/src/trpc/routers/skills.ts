@@ -164,7 +164,7 @@ async function fetchSkillMdFromGitHub(
   owner: string,
   repo: string,
   path: string | null
-): Promise<{ content: string; resolvedPath: string }> {
+): Promise<{ content: string; resolvedPath: string; branch: string }> {
   const candidatePaths = path
     ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, 'SKILL.md']
     : ['SKILL.md', 'agentver.yaml']
@@ -179,7 +179,7 @@ async function fetchSkillMdFromGitHub(
 
     if (response.ok) {
       const content = await response.text()
-      return { content, resolvedPath: candidate }
+      return { content, resolvedPath: candidate, branch: 'main' }
     }
 
     // Also try HEAD/master for repos that still use master
@@ -192,7 +192,7 @@ async function fetchSkillMdFromGitHub(
 
       if (masterResponse.ok) {
         const content = await masterResponse.text()
-        return { content, resolvedPath: candidate }
+        return { content, resolvedPath: candidate, branch: 'master' }
       }
     }
   }
@@ -201,6 +201,69 @@ async function fetchSkillMdFromGitHub(
     code: 'NOT_FOUND',
     message: `Could not find SKILL.md or agentver.yaml in ${owner}/${repo}${path ? `/${path}` : ''}. Ensure the file exists on the main or master branch.`,
   })
+}
+
+type GitHubDirectoryEntry = {
+  name: string
+  path: string
+  type: 'file' | 'dir' | 'symlink' | 'submodule'
+  download_url: string | null
+}
+
+/**
+ * Fetch all files in a skill folder from a public GitHub repo.
+ * Lists the directory via the GitHub Contents API, then fetches each file's content.
+ * Only fetches files (not subdirectories) to keep it flat.
+ */
+async function fetchSkillFolderFromGitHub(
+  owner: string,
+  repo: string,
+  folderPath: string,
+  branch: string
+): Promise<Array<{ path: string; content: string }>> {
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${folderPath}?ref=${branch}`
+
+  const response = await fetch(url, {
+    headers: { Accept: 'application/vnd.github.v3+json' },
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (!response.ok) {
+    logger.warn('Failed to list skill folder contents', {
+      owner,
+      repo,
+      folderPath,
+      branch,
+      status: response.status,
+    })
+    return []
+  }
+
+  const entries = (await response.json()) as GitHubDirectoryEntry[]
+  const files: Array<{ path: string; content: string }> = []
+
+  for (const entry of entries) {
+    if (entry.type !== 'file' || !entry.download_url) continue
+
+    try {
+      const fileResponse = await fetch(entry.download_url, {
+        headers: { Accept: 'text/plain' },
+        signal: AbortSignal.timeout(10_000),
+      })
+
+      if (fileResponse.ok) {
+        const content = await fileResponse.text()
+        files.push({ path: entry.name, content })
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch file from skill folder', {
+        path: entry.path,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return files
 }
 
 export const skillsRouter = router({
@@ -313,7 +376,7 @@ export const skillsRouter = router({
       const { owner, repo, path } = parseGitHubUrl(input.url)
 
       // Fetch the SKILL.md content
-      const { content, resolvedPath } = await fetchSkillMdFromGitHub(owner, repo, path)
+      const { content, resolvedPath, branch } = await fetchSkillMdFromGitHub(owner, repo, path)
 
       // Parse frontmatter to extract metadata
       const { rawData } = parseFrontmatter(content)
@@ -352,9 +415,88 @@ export const skillsRouter = router({
         })
       }
 
+      // Fetch all files from the skill folder (not just SKILL.md)
+      const folderPath = resolvedPath.includes('/')
+        ? resolvedPath.slice(0, resolvedPath.lastIndexOf('/'))
+        : null
+
+      let allFiles: Array<{ path: string; content: string }> = []
+
+      if (folderPath) {
+        allFiles = await fetchSkillFolderFromGitHub(owner, repo, folderPath, branch)
+      }
+
+      // If folder listing failed or returned nothing, fall back to the single SKILL.md
+      if (allFiles.length === 0) {
+        const fileName = resolvedPath.includes('/')
+          ? resolvedPath.slice(resolvedPath.lastIndexOf('/') + 1)
+          : resolvedPath
+        allFiles = [{ path: fileName, content }]
+      }
+
       const slug = `${org.slug}/${normalisedName}`
-      const gitUri = `github.com/${owner}/${repo}`
-      const gitPath = resolvedPath
+      const gitPath = `skills/${normalisedName}/SKILL.md`
+      const commitMessage = `Import ${normalisedName} from github.com/${owner}/${repo}`
+      let commitSha: string | undefined
+      let commitUrl: string | null = null
+
+      // Commit all files to the org's skills storage
+      const hasAgentverGit = isAgentverProvider(org)
+      const hasExternalRepo = !!org.skillsRepoOwner && !!org.skillsRepoName
+
+      if (hasAgentverGit) {
+        try {
+          const result = await getGitProvider().createSkill(
+            org.slug,
+            normalisedName,
+            allFiles.map((f) => ({ path: f.path, content: f.content })),
+            commitMessage
+          )
+          commitSha = result.commitSha
+        } catch (error) {
+          if (error instanceof GitProviderConfigError) {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
+          }
+          logger.warn('Failed to commit imported files to Agentver storage', {
+            name: normalisedName,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      } else if (hasExternalRepo) {
+        try {
+          const token = await requireGitHubToken(ctx.user.id)
+          const targetBranch = await getDefaultBranch(
+            org.skillsRepoOwner!,
+            org.skillsRepoName!,
+            token
+          ).catch(() => 'main')
+
+          const commitResult = await commitFiles(
+            org.skillsRepoOwner!,
+            org.skillsRepoName!,
+            allFiles.map((f) => ({
+              path: `skills/${normalisedName}/${f.path}`,
+              content: f.content,
+            })),
+            commitMessage,
+            targetBranch,
+            token
+          )
+          commitSha = commitResult.sha
+          commitUrl = `https://github.com/${org.skillsRepoOwner}/${org.skillsRepoName}/commit/${commitSha}`
+        } catch (error) {
+          logger.warn('Failed to commit imported files to GitHub skills repo', {
+            name: normalisedName,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+
+      const gitUri = hasAgentverGit
+        ? `agentver://${org.slug}`
+        : hasExternalRepo
+          ? `github.com/${org.skillsRepoOwner}/${org.skillsRepoName}`
+          : `github.com/${owner}/${repo}`
 
       const pkg = await prisma.package.create({
         data: {
@@ -370,7 +512,7 @@ export const skillsRouter = router({
           authorId: ctx.user.id,
           gitUri,
           gitPath,
-          gitDefaultRef: 'main',
+          gitDefaultRef: branch,
         },
         include: {
           organisation: { select: { slug: true, name: true } },
@@ -383,7 +525,8 @@ export const skillsRouter = router({
           packageId: pkg.id,
           version: '1.0.0',
           changelog: `Imported from github.com/${owner}/${repo}`,
-          gitRef: 'main',
+          gitRef: branch,
+          ...(commitSha && { gitCommitSha: commitSha }),
         },
       })
 
@@ -397,6 +540,7 @@ export const skillsRouter = router({
           type,
           organisationId: input.organisationId,
           importedFrom: `github.com/${owner}/${repo}`,
+          fileCount: allFiles.length,
         },
       })
 
@@ -411,11 +555,13 @@ export const skillsRouter = router({
         packageId: pkg.id,
         name: normalisedName,
         source: `github.com/${owner}/${repo}`,
+        fileCount: allFiles.length,
+        commitSha,
       })
 
       invalidateOnSkillWrite(org.slug, normalisedName).catch(() => {})
 
-      return pkg
+      return { ...pkg, commitSha, commitUrl }
     }),
 
   getBySlug: publicProcedure

@@ -236,3 +236,59 @@ export async function fetchFileContent(accessToken: string, downloadUrl: string)
 
   return response.text()
 }
+
+type SkillDirectoryFile = {
+  name: string
+  content: string
+}
+
+/**
+ * Fetch all files from a skill directory on GitHub.
+ * Lists the directory contents via the GitHub Contents API, then fetches
+ * each file's content. Only fetches files (not subdirectories).
+ */
+export async function fetchSkillDirectoryFiles(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  dirPath: string
+): Promise<SkillDirectoryFile[]> {
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github.v3+json',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    logger.warn('Failed to list skill directory contents', {
+      owner,
+      repo,
+      dirPath,
+      status: response.status,
+    })
+    return []
+  }
+
+  const entries = (await response.json()) as GitHubContentResponse[]
+  const files: SkillDirectoryFile[] = []
+
+  for (const entry of entries) {
+    if (entry.type !== 'file' || !entry.download_url) continue
+
+    try {
+      const content = await fetchFileContent(accessToken, entry.download_url)
+      files.push({ name: entry.name, content })
+    } catch (error) {
+      logger.warn('Failed to fetch file from skill directory', {
+        path: entry.path,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return files
+}

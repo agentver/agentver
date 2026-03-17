@@ -184,7 +184,7 @@ export const dashboardRouter = router({
   }),
 
   getGettingStartedProgress: protectedProcedure.query(async ({ ctx }) => {
-    const [orgCount, packageCount, apiKeyCount, connectionCount] = await Promise.all([
+    const [orgCount, packageCount, apiKeyCount, connectionCount, orgWithRepo] = await Promise.all([
       prisma.organisationMember.count({
         where: { userId: ctx.user.id },
       }),
@@ -200,10 +200,19 @@ export const dashboardRouter = router({
       prisma.connectedAccount.count({
         where: { userId: ctx.user.id, provider: 'GITHUB' },
       }),
+
+      prisma.organisation.findFirst({
+        where: {
+          members: { some: { userId: ctx.user.id } },
+          skillsRepoUrl: { not: null },
+        },
+        select: { id: true },
+      }),
     ])
 
     return {
       hasOrg: orgCount > 0,
+      hasSkillsRepo: !!orgWithRepo,
       hasPackage: packageCount > 0,
       hasApiKey: apiKeyCount > 0,
       hasConnectedGitHub: connectionCount > 0,

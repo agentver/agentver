@@ -13,7 +13,12 @@ import {
   refreshBitbucketToken,
   scanBitbucketRepo,
 } from '@/lib/import/bitbucket'
-import { fetchFileContent, getRepoDefaultBranch, scanRepoForSkills } from '@/lib/import/github'
+import {
+  fetchFileContent,
+  fetchSkillDirectoryFiles,
+  getRepoDefaultBranch,
+  scanRepoForSkills,
+} from '@/lib/import/github'
 import { deleteWebhook, registerWebhook } from '@/lib/import/github-webhook'
 import { fetchGitLabFileContent, refreshGitLabToken, scanGitLabRepo } from '@/lib/import/gitlab'
 import {
@@ -473,6 +478,8 @@ type FileToAdopt = {
   content: string
   detectedType: string
   agentId: string
+  /** Additional files from a skill directory (e.g. helper scripts, configs) */
+  additionalFiles?: Array<{ name: string; content: string }>
 }
 
 /**
@@ -549,16 +556,27 @@ async function adoptFile(
     return { packageId: pkg.id, name: baseName }
   }
 
-  // COPY or MIRROR: commit file to the org's skills repo
+  // COPY or MIRROR: commit file(s) to the org's skills repo
   const targetPath = `skills/${baseName}`
   const commitMessage = `Adopt ${file.name} from ${ctx.sourceProvider}`
+
+  // Build the full list of files to commit
+  const filesToCommit = [{ name: file.name, content: file.content }]
+  if (file.additionalFiles) {
+    for (const extra of file.additionalFiles) {
+      // Avoid duplicating the primary file
+      if (extra.name !== file.name) {
+        filesToCommit.push(extra)
+      }
+    }
+  }
 
   // Agentver Forgejo path
   if (ctx.skillsRepoProvider === 'agentver') {
     const forgejoResult = await getGitProvider().createSkill(
       ctx.orgSlug,
       baseName,
-      [{ path: file.name, content: file.content }],
+      filesToCommit.map((f) => ({ path: f.name, content: f.content })),
       commitMessage
     )
 
@@ -642,7 +660,7 @@ async function adoptFile(
 
   const result = await commitImportedFiles(
     ctx.orgId,
-    [{ name: file.name, content: file.content }],
+    filesToCommit,
     targetPath,
     commitMessage,
     ctx.userId,
@@ -866,18 +884,51 @@ export const importsRouter = router({
       const filesToAdopt: FileToAdopt[] = []
       const fetchErrors: Array<{ path: string; error: string }> = []
 
+      const [repoOwnerParsed, repoNameParsed] = input.repo.split('/')
+
       for (const file of input.files) {
         try {
-          const content = file.downloadUrl
-            ? await fetchFileContent(accessToken, file.downloadUrl)
-            : ''
-          filesToAdopt.push({
-            path: file.path,
-            name: file.name,
-            content,
-            detectedType: file.detectedType,
-            agentId: file.agentId,
-          })
+          if (file.type === 'skill' && !file.downloadUrl && repoOwnerParsed && repoNameParsed) {
+            // Skill directory — fetch all files within it
+            const dirFiles = await fetchSkillDirectoryFiles(
+              accessToken,
+              repoOwnerParsed,
+              repoNameParsed,
+              file.path
+            )
+
+            // Find the primary SKILL.md (or first .md file as fallback)
+            const primaryFile =
+              dirFiles.find((f) => f.name === 'SKILL.md') ??
+              dirFiles.find((f) => f.name.endsWith('.md')) ??
+              dirFiles[0]
+
+            if (!primaryFile) {
+              fetchErrors.push({ path: file.path, error: 'No files found in skill directory' })
+              continue
+            }
+
+            filesToAdopt.push({
+              path: file.path,
+              name: primaryFile.name,
+              content: primaryFile.content,
+              detectedType: file.detectedType,
+              agentId: file.agentId,
+              additionalFiles: dirFiles,
+            })
+          } else {
+            // Single file (config, rules, or file with download URL)
+            const content = file.downloadUrl
+              ? await fetchFileContent(accessToken, file.downloadUrl)
+              : ''
+            filesToAdopt.push({
+              path: file.path,
+              name: file.name,
+              content,
+              detectedType: file.detectedType,
+              agentId: file.agentId,
+            })
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           logger.error('Failed to fetch file content', { path: file.path, error: message })

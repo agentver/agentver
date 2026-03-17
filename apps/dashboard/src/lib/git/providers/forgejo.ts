@@ -383,12 +383,13 @@ class ForgejoClient {
   async getCommits(
     owner: string,
     repo: string,
-    options?: { sha?: string; limit?: number; page?: number }
+    options?: { sha?: string; limit?: number; page?: number; path?: string }
   ): Promise<ForgejoCommit[]> {
     const params = new URLSearchParams()
     if (options?.sha) params.set('sha', options.sha)
     if (options?.limit) params.set('limit', String(options.limit))
     if (options?.page) params.set('page', String(options.page))
+    if (options?.path) params.set('path', options.path)
 
     const query = params.toString()
     const suffix = query ? `?${query}` : ''
@@ -542,20 +543,16 @@ export class ForgejoGitProvider implements GitProvider {
 
   async createNamespace(slug: string, displayName: string): Promise<void> {
     const existing = await this.client.getOrg(slug)
-    if (existing) {
-      logger.info('Namespace already exists, skipping creation', { slug })
-      return
+    if (!existing) {
+      await this.client.createOrg(slug, displayName, 'private')
+      logger.info('Namespace org created', { slug, displayName })
     }
 
-    await this.client.createOrg(slug, displayName, 'private')
+    // Always ensure the skills repo exists — the org may have been created
+    // on a previous attempt that failed before repo creation completed.
+    await this.ensureSkillsRepo(slug)
 
-    await this.client.createRepo(slug, SKILLS_REPO, {
-      description: `Skills repository for ${displayName}`,
-      private: true,
-      defaultBranch: DEFAULT_BRANCH,
-    })
-
-    logger.info('Namespace created', { slug, displayName })
+    logger.info('Namespace ready', { slug, displayName })
   }
 
   async deleteNamespace(slug: string): Promise<void> {
@@ -720,12 +717,13 @@ export class ForgejoGitProvider implements GitProvider {
 
   async getHistory(
     namespace: string,
-    _skillName: string,
+    skillName: string,
     options?: { limit?: number; ref?: string }
   ): Promise<CommitEntry[]> {
     const commits = await this.client.getCommits(namespace, SKILLS_REPO, {
       sha: options?.ref ?? DEFAULT_BRANCH,
       limit: options?.limit ?? 50,
+      path: skillName,
     })
 
     return commits.map((c) => ({
