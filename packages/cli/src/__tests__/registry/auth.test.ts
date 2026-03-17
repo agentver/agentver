@@ -131,5 +131,24 @@ describe('registry/auth', () => {
 
       expect(await authModule.isAuthenticated()).toBe(false)
     })
+
+    it('returns false when credentials have empty string values', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ token: '', apiKey: '' }))
+
+      expect(await authModule.isAuthenticated()).toBe(false)
+    })
+  })
+
+  describe('saveCredentials', () => {
+    it('stores credentials at the correct path under .agentver', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      authModule.saveCredentials({ token: 'my-token' })
+
+      const writePath = vi.mocked(fs.writeFileSync).mock.calls[0]![0] as string
+      expect(writePath).toContain('/home/testuser/.agentver/')
+      expect(writePath).toContain('credentials.json')
+    })
   })
 })

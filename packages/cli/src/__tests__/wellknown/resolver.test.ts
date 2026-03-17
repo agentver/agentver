@@ -167,7 +167,7 @@ describe('fetchWellKnownIndex', () => {
     )
   })
 
-  it('upgrades http to https', async () => {
+  it('upgrades http to https in the outgoing request', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -178,9 +178,74 @@ describe('fetchWellKnownIndex', () => {
     vi.stubGlobal('fetch', mockFetch)
 
     await fetchWellKnownIndex('http://example.com')
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://example.com/.well-known/skills/index.json',
-      expect.any(Object)
+
+    const calledUrl = mockFetch.mock.calls[0]![0] as string
+    expect(calledUrl.startsWith('https://')).toBe(true)
+    expect(calledUrl).not.toContain('http://')
+    expect(calledUrl).toBe('https://example.com/.well-known/skills/index.json')
+  })
+
+  it('rejects an index with missing required fields in skill entries', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          skills: [{ name: 'test' }], // missing description and files
+        }),
+      })
+    )
+
+    await expect(fetchWellKnownIndex('https://example.com')).rejects.toThrow(
+      'Invalid well-known skills index'
+    )
+  })
+
+  it('rejects an index with empty skills array', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          skills: [],
+        }),
+      })
+    )
+
+    await expect(fetchWellKnownIndex('https://example.com')).rejects.toThrow(
+      'Invalid well-known skills index'
+    )
+  })
+
+  it('rejects skill entries with empty files array', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          skills: [{ name: 'test', description: 'test', files: [] }],
+        }),
+      })
+    )
+
+    await expect(fetchWellKnownIndex('https://example.com')).rejects.toThrow(
+      'Invalid well-known skills index'
+    )
+  })
+
+  it('rejects skill names that do not match the naming pattern', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          skills: [{ name: 'INVALID NAME!', description: 'test', files: ['a.md'] }],
+        }),
+      })
+    )
+
+    await expect(fetchWellKnownIndex('https://example.com')).rejects.toThrow(
+      'Invalid well-known skills index'
     )
   })
 })

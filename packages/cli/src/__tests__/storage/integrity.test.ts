@@ -47,5 +47,34 @@ describe('storage/integrity', () => {
         integrityModule.computeSha256FromFiles(files2)
       )
     })
+
+    it('produces the same hash regardless of input order (files are sorted by path)', () => {
+      const filesAFirst = [
+        { path: 'a.txt', content: 'alpha' },
+        { path: 'b.txt', content: 'bravo' },
+      ]
+      const filesBFirst = [
+        { path: 'b.txt', content: 'bravo' },
+        { path: 'a.txt', content: 'alpha' },
+      ]
+      expect(integrityModule.computeSha256FromFiles(filesAFirst)).toBe(
+        integrityModule.computeSha256FromFiles(filesBFirst)
+      )
+    })
+
+    it('returns different hash when file paths differ but contents are the same', () => {
+      const files1 = [{ path: 'a.txt', content: 'same' }]
+      const files2 = [{ path: 'b.txt', content: 'same' }]
+      expect(integrityModule.computeSha256FromFiles(files1)).not.toBe(
+        integrityModule.computeSha256FromFiles(files2)
+      )
+    })
+
+    it('returns empty-input hash for an empty files array', () => {
+      const result = integrityModule.computeSha256FromFiles([])
+      expect(result).toMatch(/^sha256-/)
+      // Should be deterministic
+      expect(result).toBe(integrityModule.computeSha256FromFiles([]))
+    })
   })
 })

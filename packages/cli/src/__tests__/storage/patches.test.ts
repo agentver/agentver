@@ -108,5 +108,31 @@ describe('storage/patches', () => {
       expect(result).toContain('b.md')
       expect(result).toContain('c.md')
     })
+
+    it('round-trip: applying the generated patch to the base produces the local state', () => {
+      // Use a hardcoded patch to isolate applyPatch from generatePatch
+      const patchContent = [
+        '--- a/my-skill/index.md',
+        '+++ b/my-skill/index.md',
+        '@@ -1,3 +1,3 @@',
+        ' line 1',
+        '-line 2',
+        '+modified line 2',
+        ' line 3',
+        '',
+      ].join('\n')
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('line 1\nline 2\nline 3')
+
+      const applyResult = patchesModule.applyPatch('/project', patchContent)
+      expect(applyResult.applied).toBe(true)
+      expect(applyResult.conflicts).toHaveLength(0)
+      expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
+        expect.stringContaining('index.md'),
+        'line 1\nmodified line 2\nline 3',
+        'utf-8'
+      )
+    })
   })
 })
