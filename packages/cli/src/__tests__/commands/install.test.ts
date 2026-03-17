@@ -98,7 +98,7 @@ vi.mock('prompts', () => ({ default: vi.fn() }))
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
 
-import { installPackage } from '../../commands/install'
+import { installPackage, parseAgentverUri } from '../../commands/install'
 
 // ---------------------------------------------------------------------------
 // Mock module imports (typed references)
@@ -1288,6 +1288,386 @@ describe('commands/install', () => {
       await expect(installPackage('https://skills.example.com', { detect: false })).rejects.toThrow(
         ExitError
       )
+
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // parseAgentverUri — pure function unit tests
+  // -------------------------------------------------------------------------
+
+  describe('parseAgentverUri', () => {
+    it('parses a full URI with org, deep path, and ref', () => {
+      const result = parseAgentverUri(
+        'agentver://lleverage/skills/google-search-console/SKILL.md@main'
+      )
+      expect(result).toEqual({
+        org: 'lleverage',
+        path: 'skills/google-search-console/SKILL.md',
+        ref: 'main',
+      })
+    })
+
+    it('parses a URI with org, path, and a version ref', () => {
+      const result = parseAgentverUri('agentver://lleverage/skills/google-search-console@v1.0')
+      expect(result).toEqual({
+        org: 'lleverage',
+        path: 'skills/google-search-console',
+        ref: 'v1.0',
+      })
+    })
+
+    it('parses a URI with org and ref but no path', () => {
+      const result = parseAgentverUri('agentver://myorg@main')
+      expect(result).toEqual({
+        org: 'myorg',
+        path: '',
+        ref: 'main',
+      })
+    })
+
+    it('parses a URI with org and single path segment but no ref', () => {
+      const result = parseAgentverUri('agentver://myorg/single-skill')
+      expect(result).toEqual({
+        org: 'myorg',
+        path: 'single-skill',
+        ref: '',
+      })
+    })
+
+    it('returns null for a git URL', () => {
+      expect(parseAgentverUri('github.com/org/repo')).toBeNull()
+    })
+
+    it('returns null for a plain skill name', () => {
+      expect(parseAgentverUri('my-skill')).toBeNull()
+    })
+
+    it('returns null for bare protocol with no org', () => {
+      expect(parseAgentverUri('agentver://')).toBeNull()
+    })
+
+    it('treats agentver://@main as org "@main" since @ at position 0 is not a ref separator', () => {
+      // The parser only splits on @ when atIndex > 0, so the leading @ is part of the path
+      const result = parseAgentverUri('agentver://@main')
+      expect(result).toEqual({ org: '@main', path: '', ref: '' })
+    })
+
+    it('returns null for a well-known HTTPS URL', () => {
+      expect(parseAgentverUri('https://skills.example.com/my-skill')).toBeNull()
+    })
+
+    it('returns null for an empty string', () => {
+      expect(parseAgentverUri('')).toBeNull()
+    })
+
+    it('uses lastIndexOf for @ so paths with @ in segments are handled', () => {
+      const result = parseAgentverUri('agentver://org/path@special@v2')
+      expect(result).toEqual({
+        org: 'org',
+        path: 'path@special',
+        ref: 'v2',
+      })
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // agentver:// URI install (installFromPlatform flow)
+  // -------------------------------------------------------------------------
+
+  describe('agentver:// URI install via platform', () => {
+    const PLATFORM_URL = 'https://app.agentver.com'
+    let originalFetch: typeof globalThis.fetch
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch
+    })
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    function setupPlatformMocks(
+      resolveResponse: Record<string, unknown>,
+      opts?: { platformUrl?: string | undefined; token?: string }
+    ) {
+      const { platformUrl = PLATFORM_URL, token = 'test-token' } = opts ?? {}
+
+      vi.mocked(configModule.readConfig).mockReturnValue({
+        platformUrl: platformUrl ?? undefined,
+      })
+      vi.mocked(authModule.getCredentials).mockResolvedValue(
+        token ? { token } : { token: undefined, apiKey: undefined }
+      )
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(resolveResponse),
+      })
+      globalThis.fetch = mockFetch
+
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        '/project/.agents/skills/google-search-console'
+      )
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      return { mockFetch }
+    }
+
+    it('installs platform-hosted package directly from response files', async () => {
+      const platformFiles = [
+        { path: 'SKILL.md', content: '# Google Search Console\n\nSkill content.' },
+        { path: 'references/api.md', content: '# API Reference\n\nAPI docs.' },
+      ]
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'google-search-console',
+        gitRef: 'main',
+        source: 'platform',
+        files: platformFiles,
+      })
+
+      const result = await installPackage(
+        'agentver://lleverage/skills/google-search-console@main',
+        { agent: 'claude-code' }
+      )
+
+      expect(result).toBeDefined()
+      expect(result!.name).toBe('google-search-console')
+      expect(result!.agents).toEqual(['claude-code'])
+      // Should write manifest and lockfile
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+    })
+
+    it('delegates to git install flow when platform resolves a git-backed package', async () => {
+      const { mockFetch } = setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills-repo',
+        gitPath: 'google-search-console',
+        gitRef: 'main',
+        source: 'git',
+      })
+
+      // Set up git mocks for the delegated flow
+      const gitSource = createGitSource({
+        host: 'github.com',
+        owner: 'lleverage',
+        repo: 'skills-repo',
+        path: 'google-search-console',
+        ref: 'main',
+      })
+      const files = createFetchedFiles(2)
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const fetchResult: FetchResult = { files, commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(fetchResult)
+
+      const result = await installPackage(
+        'agentver://lleverage/skills/google-search-console@main',
+        { agent: 'claude-code' }
+      )
+
+      // The platform fetch should have been called first
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/resolve?name='),
+        expect.any(Object)
+      )
+      // Then the git flow should have been followed
+      expect(gitIndex.parseGitSource).toHaveBeenCalled()
+      expect(result).toBeDefined()
+    })
+
+    it('errors when agentver:// URI is used without platformUrl configured', async () => {
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+
+      await expect(
+        installPackage('agentver://lleverage/skills/google-search-console@main', {
+          agent: 'claude-code',
+        })
+      ).rejects.toThrow(ExitError)
+
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('outputs INSTALL_FAILED JSON error when agentver:// URI used without platformUrl in JSON mode', async () => {
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await expect(
+        installPackage('agentver://lleverage/skills/google-search-console@main', {
+          agent: 'claude-code',
+        })
+      ).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'INSTALL_FAILED',
+        expect.stringContaining('platform connection')
+      )
+    })
+
+    it('uses the ref from the URI when the platform also provides a gitRef', async () => {
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills-repo',
+        gitPath: 'google-search-console',
+        gitRef: 'main',
+        source: 'git',
+      })
+
+      const gitSource = createGitSource({
+        host: 'github.com',
+        owner: 'lleverage',
+        repo: 'skills-repo',
+        path: 'google-search-console',
+        ref: 'v2.0',
+      })
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue({
+        source: gitSource,
+        commitSha: RESOLVED_SHA,
+      })
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: createFetchedFiles(2),
+        commitSha: RESOLVED_SHA,
+        source: gitSource,
+      })
+
+      await installPackage('agentver://lleverage/skills/google-search-console@v2.0', {
+        agent: 'claude-code',
+      })
+
+      // The delegated call to installPackage should use the URI ref (@v2.0), not the platform gitRef
+      expect(gitIndex.parseGitSource).toHaveBeenCalledWith(expect.stringContaining('@v2.0'))
+    })
+
+    it('falls back to platform gitRef when URI has no ref', async () => {
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills-repo',
+        gitPath: 'google-search-console',
+        gitRef: 'release-1.5',
+        source: 'git',
+      })
+
+      const gitSource = createGitSource({
+        host: 'github.com',
+        owner: 'lleverage',
+        repo: 'skills-repo',
+        path: 'google-search-console',
+        ref: 'release-1.5',
+      })
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue({
+        source: gitSource,
+        commitSha: RESOLVED_SHA,
+      })
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: createFetchedFiles(2),
+        commitSha: RESOLVED_SHA,
+        source: gitSource,
+      })
+
+      await installPackage('agentver://lleverage/skills/google-search-console', {
+        agent: 'claude-code',
+      })
+
+      // Should use the platform-provided gitRef since no @ref in the URI
+      expect(gitIndex.parseGitSource).toHaveBeenCalledWith(expect.stringContaining('@release-1.5'))
+    })
+
+    it('sends authorisation header with bearer token to the platform', async () => {
+      const { mockFetch } = setupPlatformMocks(
+        {
+          gitUri: 'github.com/lleverage/skills',
+          gitPath: 'gsc',
+          gitRef: 'main',
+          source: 'platform',
+          files: [{ path: 'SKILL.md', content: '# Skill' }],
+        },
+        { token: 'my-secret-token' }
+      )
+
+      await installPackage('agentver://lleverage/gsc@main', { agent: 'claude-code' })
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: 'Bearer my-secret-token' }),
+        })
+      )
+    })
+
+    it('skips writing manifest and lockfile in dry-run mode for platform-hosted packages', async () => {
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'gsc',
+        gitRef: 'main',
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: '# Skill content' }],
+      })
+
+      const result = await installPackage('agentver://lleverage/gsc@main', {
+        agent: 'claude-code',
+        dryRun: true,
+      })
+
+      expect(manifestModule.writeManifest).not.toHaveBeenCalled()
+      expect(lockfileModule.writeLockfile).not.toHaveBeenCalled()
+      expect(result).toBeDefined()
+      expect(result!.name).toBe('gsc')
+    })
+
+    it('runs security scan on platform-hosted files when skipAudit is not set', async () => {
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'gsc',
+        gitRef: 'main',
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: '# Skill content' }],
+      })
+
+      await installPackage('agentver://lleverage/gsc@main', { agent: 'claude-code' })
+
+      expect(securityModule.scanFiles).toHaveBeenCalledTimes(1)
+    })
+
+    it('skips security scan on platform-hosted files when skipAudit is true', async () => {
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'gsc',
+        gitRef: 'main',
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: '# Skill content' }],
+      })
+
+      await installPackage('agentver://lleverage/gsc@main', {
+        agent: 'claude-code',
+        skipAudit: true,
+      })
+
+      expect(securityModule.scanFiles).not.toHaveBeenCalled()
+    })
+
+    it('exits when platform resolve returns an HTTP error', async () => {
+      vi.mocked(configModule.readConfig).mockReturnValue({ platformUrl: PLATFORM_URL })
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({}),
+      })
+
+      await expect(
+        installPackage('agentver://nonexistent/package@main', { agent: 'claude-code' })
+      ).rejects.toThrow(ExitError)
 
       expect(process.exit).toHaveBeenCalledWith(1)
     })

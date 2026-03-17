@@ -59,6 +59,47 @@ type ResolveResponse = {
   gitUri: string
   gitPath: string
   gitRef: string
+  source?: 'git' | 'platform'
+  files?: Array<{ path: string; content: string }>
+}
+
+type AgentverUri = {
+  org: string
+  path: string
+  ref: string
+}
+
+/**
+ * Parse an agentver:// protocol URI into its constituent parts.
+ *
+ * Format: agentver://org-slug/path/to/package@ref
+ * Example: agentver://lleverage/skills/google-search-console/SKILL.md@main
+ */
+export function parseAgentverUri(source: string): AgentverUri | null {
+  if (!source.startsWith('agentver://')) return null
+
+  const withoutProtocol = source.slice('agentver://'.length)
+  const atIndex = withoutProtocol.lastIndexOf('@')
+
+  let pathPart: string
+  let ref: string
+
+  if (atIndex > 0) {
+    pathPart = withoutProtocol.slice(0, atIndex)
+    ref = withoutProtocol.slice(atIndex + 1)
+  } else {
+    pathPart = withoutProtocol
+    ref = ''
+  }
+
+  const segments = pathPart.split('/').filter(Boolean)
+  if (segments.length < 1) return null
+
+  return {
+    org: segments[0]!,
+    path: segments.slice(1).join('/'),
+    ref,
+  }
 }
 
 function buildAuditData(scanResult?: SecurityScanResult): InstallResultJSON['audit'] {
@@ -127,7 +168,7 @@ async function resolveSource(source: string): Promise<string> {
   if (!config.platformUrl) {
     throw new AgentverError(
       'VALIDATION_ERROR',
-      `"${source}" doesn't look like a Git URL. Connect to a platform to resolve short names:\n  agentver login <platform-url>`
+      `"${source}" doesn't look like a Git URL. Connect to a platform to resolve short names:\n  agentver login`
     )
   }
 
@@ -347,12 +388,269 @@ async function installFromWellKnown(
   }
 }
 
+async function installFromPlatform(
+  parsed: AgentverUri,
+  options: InstallOptions
+): Promise<InstallResult> {
+  const jsonMode = isJSONMode()
+  const displayName = parsed.path ? `${parsed.org}/${parsed.path}` : parsed.org
+  const spinner = createSpinner(`Resolving ${displayName}`).start()
+
+  try {
+    const config = readConfig()
+    if (!config.platformUrl) {
+      throw new AgentverError(
+        'VALIDATION_ERROR',
+        'Agentver URIs require a platform connection. Run:\n  agentver login'
+      )
+    }
+
+    const resolveName = parsed.path ? `${parsed.org}/${parsed.path}` : parsed.org
+    spinner.text = `Resolving ${resolveName} via platform...`
+
+    const resolved = await fetchFromPlatform<ResolveResponse>(
+      config.platformUrl,
+      `/resolve?name=${encodeURIComponent(resolveName)}`
+    )
+
+    // Git-backed package — delegate to the standard git install flow
+    if (resolved.source !== 'platform' || !resolved.files?.length) {
+      let fullSource = resolved.gitPath ? `${resolved.gitUri}/${resolved.gitPath}` : resolved.gitUri
+
+      if (parsed.ref) {
+        fullSource += `@${parsed.ref}`
+      } else if (resolved.gitRef) {
+        fullSource += `@${resolved.gitRef}`
+      }
+
+      spinner.stop()
+      return installPackage(fullSource, options)
+    }
+
+    // Platform-hosted package — install directly from response files
+    const files: FetchedFile[] = resolved.files.map((f) => ({
+      path: f.path,
+      content: f.content,
+      size: new TextEncoder().encode(f.content).length,
+    }))
+
+    if (files.length === 0) {
+      if (jsonMode) {
+        outputError('NO_FILES', `No files found for ${displayName}`)
+        process.exit(1)
+      }
+      spinner.fail(`No files found for ${displayName}`)
+      process.exit(1)
+    }
+
+    const shortName = deriveSkillName({
+      path: resolved.gitPath ?? '',
+      repo: parsed.org,
+    })
+    const ref = parsed.ref || resolved.gitRef || 'main'
+
+    let securityScanResult: SecurityScanResult | undefined
+
+    if (!options.skipAudit) {
+      spinner.text = 'Running security scan...'
+      const scanSource = {
+        host: 'generic' as const,
+        owner: parsed.org,
+        repo: shortName,
+        path: resolved.gitPath ?? '',
+        ref,
+      }
+      securityScanResult = await scanFiles(files, scanSource, {
+        skipAudit: options.skipAudit,
+      })
+
+      if (securityScanResult.verdict === 'BLOCK') {
+        if (jsonMode) {
+          outputError(
+            'SECURITY_BLOCK',
+            `Security scan blocked installation: ${securityScanResult.findings.length} finding(s)`
+          )
+          process.exit(1)
+        }
+        renderScanResult(securityScanResult, spinner as ReturnType<typeof ora>)
+        process.exit(1)
+      }
+
+      if (securityScanResult.verdict === 'WARN') {
+        if (jsonMode) {
+          // In JSON mode, proceed with warnings (no interactive prompt)
+        } else {
+          renderScanResult(securityScanResult, spinner as ReturnType<typeof ora>)
+          const { proceed } = await prompts({
+            type: 'confirm',
+            name: 'proceed',
+            message: 'Continue with installation despite warnings?',
+            initial: false,
+          })
+
+          if (!proceed) {
+            console.log(chalk.dim('Installation cancelled.'))
+            process.exit(0)
+          }
+
+          spinner.start('Continuing installation...')
+        }
+      } else {
+        if (!jsonMode) {
+          spinner.succeed(chalk.green('Security scan passed'))
+          spinner.start('Installing...')
+        }
+      }
+    }
+
+    const integrity = computeSha256FromFiles(files)
+    const projectRoot = process.cwd()
+    const scope = options.global ? 'global' : 'project'
+    const sourceUri = `agentver://${parsed.org}`
+    let agents: string[] = []
+
+    if (options.path) {
+      await installToCustomPath(shortName, files, options, spinner)
+      agents = options.agent ? [options.agent] : []
+    } else {
+      if (options.detect === false && !options.agent) {
+        if (jsonMode) {
+          outputError(
+            'VALIDATION_ERROR',
+            'Use --agent to specify a target agent when --no-detect is enabled'
+          )
+          process.exit(1)
+        }
+        spinner.fail('Use --agent to specify a target agent when --no-detect is enabled')
+        process.exit(1)
+      }
+
+      agents = options.agent
+        ? [options.agent]
+        : options.detect === false
+          ? []
+          : detectInstalledAgents(projectRoot).map((a) => a.id)
+
+      if (agents.length === 0) {
+        if (jsonMode) {
+          outputSuccess<InstallResultJSON>(
+            {
+              name: shortName,
+              source: { type: 'git', uri: sourceUri },
+              agents: [],
+              path: '',
+              scope,
+              audit: buildAuditData(securityScanResult),
+            },
+            ['No agents detected. Use --agent to specify one.']
+          )
+        } else {
+          spinner.warn('No agents detected. Use --agent to specify one.')
+        }
+        return { name: shortName, ref, commitSha: '', agents: [] }
+      }
+
+      const packageType = detectPackageType(files)
+
+      if (packageType === 'AGENT_CONFIG') {
+        await installAgentConfig(shortName, files, agents, options, spinner)
+      } else {
+        await installStandardPackage(shortName, files, agents, options, spinner)
+      }
+    }
+
+    if (options.dryRun) {
+      if (jsonMode) {
+        const installPath = options.path
+          ? resolve(projectRoot, options.path)
+          : getCanonicalSkillPath(projectRoot, shortName, scope)
+        outputSuccess<InstallResultJSON>({
+          name: shortName,
+          source: { type: 'git', uri: sourceUri },
+          agents,
+          path: installPath,
+          scope,
+          audit: buildAuditData(securityScanResult),
+        })
+      }
+      return { name: shortName, ref, commitSha: '', agents }
+    }
+
+    const gitSourceRecord: GitSource = {
+      type: 'git',
+      uri: sourceUri,
+      path: resolved.gitPath ?? '',
+      ref,
+      commit: '',
+    }
+
+    const manifest = readManifest(projectRoot)
+    manifest.packages[shortName] = {
+      source: gitSourceRecord,
+      agents,
+      installedAt: new Date().toISOString(),
+      modified: false,
+    }
+    writeManifest(projectRoot, manifest)
+
+    const lockfile = readLockfile(projectRoot)
+    lockfile.packages[shortName] = {
+      source: gitSourceRecord,
+      integrity,
+      agents,
+    }
+    writeLockfile(projectRoot, lockfile)
+
+    const target = options.path ?? agents.join(', ')
+
+    const warnings: string[] = []
+    if (securityScanResult?.verdict === 'WARN') {
+      warnings.push(`Security scan passed with ${securityScanResult.findings.length} warning(s)`)
+    }
+
+    if (jsonMode) {
+      const installPath = options.path
+        ? resolve(projectRoot, options.path)
+        : getCanonicalSkillPath(projectRoot, shortName, scope)
+      outputSuccess<InstallResultJSON>(
+        {
+          name: shortName,
+          source: { type: 'git', uri: sourceUri },
+          agents,
+          path: installPath,
+          scope,
+          audit: buildAuditData(securityScanResult),
+        },
+        warnings.length > 0 ? warnings : undefined
+      )
+    } else {
+      spinner.succeed(
+        `Installed ${chalk.green(shortName)} from ${chalk.dim(sourceUri)} ${chalk.cyan(`@${ref}`)} to ${target}`
+      )
+    }
+
+    return { name: shortName, ref, commitSha: '', agents }
+  } catch (error) {
+    if (jsonMode) {
+      outputError('INSTALL_FAILED', error instanceof Error ? error.message : String(error))
+      process.exit(1)
+    }
+    spinner.fail(`Failed to install: ${error instanceof Error ? error.message : String(error)}`)
+    process.exit(1)
+  }
+}
+
 export async function installPackage(
   source: string,
   options: InstallOptions
 ): Promise<InstallResult> {
   if (looksLikeWellKnownUrl(source)) {
     return installFromWellKnown(source, options)
+  }
+
+  const agentverUri = parseAgentverUri(source)
+  if (agentverUri) {
+    return installFromPlatform(agentverUri, options)
   }
 
   const jsonMode = isJSONMode()

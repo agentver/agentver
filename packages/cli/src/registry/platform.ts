@@ -20,7 +20,7 @@ export async function platformFetch<T>(
   if (!platformUrl) {
     throw new AgentverError(
       'UNAUTHORISED',
-      'No platform URL configured. Run `agentver login <url>` to connect.'
+      'No platform URL configured. Run `agentver login` to connect.'
     )
   }
 

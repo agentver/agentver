@@ -230,7 +230,7 @@ function VersionEntry({
     },
   })
 
-  const installCommand = `agentver install @${org}/${name}@v${version.version}`
+  const installCommand = `agentver install ${org}/${name}@v${version.version}`
   const commitUrl =
     gitRepoUrl && version.gitCommitSha ? `${gitRepoUrl}/commit/${version.gitCommitSha}` : null
 
