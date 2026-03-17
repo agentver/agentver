@@ -8,6 +8,7 @@ import {
   createLockfile,
   createManifest,
 } from '../helpers/fixtures'
+import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks — must be declared before any import of the SUT
@@ -137,18 +138,6 @@ class ExitError extends Error {
   }
 }
 
-function createNoopSpinner() {
-  return {
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    text: '',
-  }
-}
-
 function setupHappyPathMocks() {
   const gitSource = createGitSource()
   const files = createFetchedFiles(2)
@@ -172,9 +161,7 @@ function setupHappyPathMocks() {
   vi.mocked(configModule.readConfig).mockReturnValue({})
   vi.mocked(configModule.getPlatformUrl).mockReturnValue(null)
   vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-    { id: 'claude-code', name: 'Claude Code', paths: ['.claude/skills'] } as ReturnType<
-      typeof agentDefs.detectInstalledAgents
-    >[0],
+    { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
   ])
 
   return { gitSource, files, resolved, fetchResult }
@@ -697,9 +684,7 @@ describe('commands/install', () => {
         `/project/.agents/skills/test-skill`
       )
       vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-        { id: 'claude-code', name: 'Claude Code', paths: ['.claude/skills'] } as ReturnType<
-          typeof agentDefs.detectInstalledAgents
-        >[0],
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
       ])
 
       return { files }

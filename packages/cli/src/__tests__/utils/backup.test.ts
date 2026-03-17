@@ -186,7 +186,11 @@ describe('utils/backup', () => {
       })
 
       const writtenManifest = vi.mocked(manifestModule.writeManifest).mock.calls[0]![1]
-      expect(writtenManifest.packages['my-skill']!.source.commit).toBe('original-sha')
+      const source = writtenManifest.packages['my-skill']!.source
+      expect(source.type).toBe('git')
+      if (source.type === 'git') {
+        expect(source.commit).toBe('original-sha')
+      }
     })
 
     it('removes the package from manifest when backup had no entry (new install rollback)', () => {

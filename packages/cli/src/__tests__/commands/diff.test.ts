@@ -1,5 +1,14 @@
+import { Command } from 'commander'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { registerDiffCommand } from '../../commands/diff'
+import * as fetcherModule from '../../git/fetcher.js'
+import * as gitModule from '../../git/index.js'
+import * as outputModule from '../../output'
+import * as canonicalModule from '../../storage/canonical.js'
+import * as lockfileModule from '../../storage/lockfile.js'
+import * as manifestModule from '../../storage/manifest.js'
 import {
+  createGitSource,
   createLockfile,
   createLockfilePackage,
   createManifest,
@@ -42,21 +51,11 @@ vi.mock('../../output', () => ({
 }))
 
 describe('diff command', () => {
-  let readManifest: ReturnType<typeof vi.fn>
-  let readLockfile: ReturnType<typeof vi.fn>
-  let resolveReadPath: ReturnType<typeof vi.fn>
-  let readFilesFromDirectory: ReturnType<typeof vi.fn>
-  let fetchFiles: ReturnType<typeof vi.fn>
-  let isJSONMode: ReturnType<typeof vi.fn>
-  let outputSuccess: ReturnType<typeof vi.fn>
-  let outputError: ReturnType<typeof vi.fn>
   let consoleSpy: ReturnType<typeof vi.spyOn>
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>
   let exitSpy: ReturnType<typeof vi.spyOn>
-  let registerDiffCommand: typeof import('../../commands/diff').registerDiffCommand
-  let Command: typeof import('commander').Command
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
 
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -64,28 +63,6 @@ describe('diff command', () => {
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called')
     })
-
-    const manifestModule = await import('../../storage/manifest.js')
-    const lockfileModule = await import('../../storage/lockfile.js')
-    const canonicalModule = await import('../../storage/canonical.js')
-    const fetcherModule = await import('../../git/fetcher.js')
-    const gitModule = await import('../../git/index.js')
-    const outputModule = await import('../../output')
-
-    readManifest = vi.mocked(manifestModule.readManifest)
-    readLockfile = vi.mocked(lockfileModule.readLockfile)
-    resolveReadPath = vi.mocked(canonicalModule.resolveReadPath)
-    readFilesFromDirectory = vi.mocked(fetcherModule.readFilesFromDirectory)
-    fetchFiles = vi.mocked(gitModule.fetchFiles)
-    isJSONMode = vi.mocked(outputModule.isJSONMode)
-    outputSuccess = vi.mocked(outputModule.outputSuccess)
-    outputError = vi.mocked(outputModule.outputError)
-
-    const commanderModule = await import('commander')
-    Command = commanderModule.Command
-
-    const diffModule = await import('../../commands/diff')
-    registerDiffCommand = diffModule.registerDiffCommand
   })
 
   afterEach(() => {
@@ -117,7 +94,7 @@ describe('diff command', () => {
     const uri = overrides?.sourceUri ?? 'github.com/org/repo'
     const commit = overrides?.commit ?? COMMIT_SHA
 
-    readManifest.mockReturnValue(
+    vi.mocked(manifestModule.readManifest).mockReturnValue(
       createManifest({
         packages: {
           [name]: createManifestPackage({
@@ -133,7 +110,7 @@ describe('diff command', () => {
       })
     )
 
-    readLockfile.mockReturnValue(
+    vi.mocked(lockfileModule.readLockfile).mockReturnValue(
       createLockfile({
         packages: {
           [name]: createLockfilePackage({
@@ -154,24 +131,26 @@ describe('diff command', () => {
 
   describe('happy path', () => {
     it('shows unified diff when local files differ from upstream', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
       setupInstalledPackage('test-skill')
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      fetchFiles.mockResolvedValue({
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
         files: [{ path: 'SKILL.md', content: 'line 1\nline 2\nline 3\n', size: 20 }],
         commitSha: COMMIT_SHA,
-        source: {},
+        source: createGitSource(),
       })
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: 'line 1\nline 2 modified\nline 3\n', size: 25 },
       ])
 
       await runDiff('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('SKILL.md')
       expect(output).toContain('-line 2')
       expect(output).toContain('+line 2 modified')
@@ -184,26 +163,28 @@ describe('diff command', () => {
 
   describe('no differences', () => {
     it('shows a clean message when local matches upstream', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
       setupInstalledPackage('test-skill')
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
       const content = 'line 1\nline 2\nline 3\n'
 
-      fetchFiles.mockResolvedValue({
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
         files: [{ path: 'SKILL.md', content, size: content.length }],
         commitSha: COMMIT_SHA,
-        source: {},
+        source: createGitSource(),
       })
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content, size: content.length },
       ])
 
       await runDiff('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('No differences')
     })
   })
@@ -214,26 +195,26 @@ describe('diff command', () => {
 
   describe('not installed', () => {
     it('errors when the package is not in the manifest', async () => {
-      isJSONMode.mockReturnValue(false)
-      readManifest.mockReturnValue(createManifest())
-      readLockfile.mockReturnValue(createLockfile())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
 
       await expect(runDiff('nonexistent')).rejects.toThrow()
 
       expect(exitSpy).toHaveBeenCalledWith(1)
-      const output = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleErrorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('nonexistent')
       expect(output).toContain('not installed')
     })
 
     it('outputs JSON error when not installed in JSON mode', async () => {
-      isJSONMode.mockReturnValue(true)
-      readManifest.mockReturnValue(createManifest())
-      readLockfile.mockReturnValue(createLockfile())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
 
       await expect(runDiff('nonexistent')).rejects.toThrow()
 
-      expect(outputError).toHaveBeenCalledWith(
+      expect(vi.mocked(outputModule.outputError)).toHaveBeenCalledWith(
         'NOT_INSTALLED',
         expect.stringContaining('nonexistent')
       )
@@ -246,28 +227,30 @@ describe('diff command', () => {
 
   describe('multiple changed files', () => {
     it('shows diff spanning several files correctly', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
       setupInstalledPackage('test-skill')
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      fetchFiles.mockResolvedValue({
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
         files: [
           { path: 'SKILL.md', content: 'original skill\n', size: 15 },
           { path: 'refs/helper.md', content: 'original helper\n', size: 16 },
         ],
         commitSha: COMMIT_SHA,
-        source: {},
+        source: createGitSource(),
       })
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: 'modified skill\n', size: 15 },
         { path: 'refs/helper.md', content: 'modified helper\n', size: 16 },
       ])
 
       await runDiff('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('SKILL.md')
       expect(output).toContain('refs/helper.md')
     })
@@ -279,25 +262,27 @@ describe('diff command', () => {
 
   describe('added file', () => {
     it('shows new files in local as additions', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
       setupInstalledPackage('test-skill')
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      fetchFiles.mockResolvedValue({
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
         files: [{ path: 'SKILL.md', content: 'original\n', size: 9 }],
         commitSha: COMMIT_SHA,
-        source: {},
+        source: createGitSource(),
       })
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: 'original\n', size: 9 },
         { path: 'new-file.md', content: 'new content\n', size: 12 },
       ])
 
       await runDiff('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('new-file.md')
       expect(output).toContain('+new content')
     })
@@ -309,27 +294,29 @@ describe('diff command', () => {
 
   describe('deleted file', () => {
     it('shows files removed from local as deletions', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
       setupInstalledPackage('test-skill')
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      fetchFiles.mockResolvedValue({
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
         files: [
           { path: 'SKILL.md', content: 'original\n', size: 9 },
           { path: 'deleted.md', content: 'to be deleted\n', size: 14 },
         ],
         commitSha: COMMIT_SHA,
-        source: {},
+        source: createGitSource(),
       })
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: 'original\n', size: 9 },
       ])
 
       await runDiff('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('deleted.md')
       expect(output).toContain('-to be deleted')
     })
@@ -341,25 +328,27 @@ describe('diff command', () => {
 
   describe('--json output', () => {
     it('outputs JSON matching the DiffResult schema', async () => {
-      isJSONMode.mockReturnValue(true)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
       setupInstalledPackage('test-skill')
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      fetchFiles.mockResolvedValue({
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
         files: [{ path: 'SKILL.md', content: 'line 1\nline 2\n', size: 13 }],
         commitSha: COMMIT_SHA,
-        source: {},
+        source: createGitSource(),
       })
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: 'line 1\nline 2 changed\n', size: 20 },
       ])
 
       await runDiff('test-skill')
 
-      expect(outputSuccess).toHaveBeenCalledOnce()
-      const data = outputSuccess.mock.calls[0]![0] as {
+      expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
         name: string
         hunks: Array<{ file: string; additions: number; deletions: number; content: string }>
       }
@@ -372,27 +361,29 @@ describe('diff command', () => {
     })
 
     it('outputs empty hunks when no differences exist', async () => {
-      isJSONMode.mockReturnValue(true)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
       setupInstalledPackage('test-skill')
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
       const content = 'identical content\n'
 
-      fetchFiles.mockResolvedValue({
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
         files: [{ path: 'SKILL.md', content, size: content.length }],
         commitSha: COMMIT_SHA,
-        source: {},
+        source: createGitSource(),
       })
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content, size: content.length },
       ])
 
       await runDiff('test-skill')
 
-      expect(outputSuccess).toHaveBeenCalledOnce()
-      const data = outputSuccess.mock.calls[0]![0] as {
+      expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
         name: string
         hunks: unknown[]
       }
@@ -408,9 +399,9 @@ describe('diff command', () => {
 
   describe('well-known source', () => {
     it('errors for well-known source packages', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'wk-skill': createManifestPackage({
@@ -419,7 +410,7 @@ describe('diff command', () => {
           },
         })
       )
-      readLockfile.mockReturnValue(createLockfile())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
 
       await expect(runDiff('wk-skill')).rejects.toThrow()
 

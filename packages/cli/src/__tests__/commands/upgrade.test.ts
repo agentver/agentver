@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PlatformMockHandle } from '../helpers/mock-platform'
 import { mockFetchResponse, setupPlatformMock } from '../helpers/mock-platform'
+import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -54,18 +55,6 @@ import * as outputModule from '../../output.js'
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function createNoopSpinner() {
-  return {
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    text: '',
-  }
-}
 
 function createProgram(): Command {
   const program = new Command()

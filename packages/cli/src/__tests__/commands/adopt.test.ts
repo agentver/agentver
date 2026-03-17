@@ -2,6 +2,7 @@ import type { ScannedFile } from '@agentver/agent-definitions'
 import { adoptResultSchema, createCLIOutputSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLockfile, createManifest, createManifestPackage } from '../helpers/fixtures'
+import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -54,18 +55,6 @@ import * as manifestModule from '../../storage/manifest'
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function createNoopSpinner() {
-  return {
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    text: '',
-  }
-}
 
 function createScannedFile(overrides?: Partial<ScannedFile>): ScannedFile {
   return {

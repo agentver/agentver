@@ -32,7 +32,6 @@ describe('log command', () => {
   let platformFetch: ReturnType<typeof vi.fn>
   let readManifest: ReturnType<typeof vi.fn>
   let existsSync: ReturnType<typeof vi.fn>
-  let _readFileSync: ReturnType<typeof vi.fn>
   let stdoutWriteSpy: ReturnType<typeof vi.spyOn>
   let stderrWriteSpy: ReturnType<typeof vi.spyOn>
   let consoleSpy: ReturnType<typeof vi.spyOn>
@@ -57,7 +56,6 @@ describe('log command', () => {
     platformFetch = vi.mocked(platformModule.platformFetch)
     readManifest = vi.mocked(manifestModule.readManifest)
     existsSync = vi.mocked(fsModule.existsSync)
-    _readFileSync = vi.mocked(fsModule.readFileSync)
 
     const commanderModule = await import('commander')
     Command = commanderModule.Command
@@ -119,7 +117,7 @@ describe('log command', () => {
 
       await runLog('test-skill')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('abc1234')
       expect(output).toContain('Initial commit')
       expect(output).toContain('def7890')
@@ -178,7 +176,7 @@ describe('log command', () => {
 
       await runLog('test-skill')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('No commits found')
     })
   })
@@ -289,7 +287,7 @@ describe('log command', () => {
       await expect(runLog()).rejects.toThrow()
       expect(exitSpy).toHaveBeenCalledWith(1)
 
-      const output = stderrWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stderrWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('Could not determine skill identity')
     })
 

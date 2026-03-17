@@ -6,6 +6,10 @@ import {
   createWellKnownSource,
 } from '../helpers/fixtures'
 
+// ---------------------------------------------------------------------------
+// Module-level mocks — must be declared before any import of the SUT
+// ---------------------------------------------------------------------------
+
 vi.mock('../../storage/manifest', () => ({
   readManifest: vi.fn(),
 }))
@@ -23,31 +27,26 @@ vi.mock('../../output.js', () => ({
   })),
 }))
 
+// ---------------------------------------------------------------------------
+// SUT import (after mocks)
+// ---------------------------------------------------------------------------
+
+import { registerListCommand } from '../../commands/list'
+
+// ---------------------------------------------------------------------------
+// Mock module imports (typed references)
+// ---------------------------------------------------------------------------
+
+import { Command } from 'commander'
+import * as outputModule from '../../output.js'
+import * as manifestModule from '../../storage/manifest'
+
 describe('list command', () => {
-  let readManifest: ReturnType<typeof vi.fn>
-  let isJSONMode: ReturnType<typeof vi.fn>
-  let outputSuccess: ReturnType<typeof vi.fn>
   let consoleSpy: ReturnType<typeof vi.spyOn>
-  let registerListCommand: typeof import('../../commands/list').registerListCommand
-  let Command: typeof import('commander').Command
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
-
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    const manifestModule = await import('../../storage/manifest')
-    const outputModule = await import('../../output.js')
-
-    readManifest = vi.mocked(manifestModule.readManifest)
-    isJSONMode = vi.mocked(outputModule.isJSONMode)
-    outputSuccess = vi.mocked(outputModule.outputSuccess)
-
-    const commanderModule = await import('commander')
-    Command = commanderModule.Command
-
-    const listModule = await import('../../commands/list')
-    registerListCommand = listModule.registerListCommand
   })
 
   afterEach(() => {
@@ -72,9 +71,9 @@ describe('list command', () => {
 
   describe('happy path', () => {
     it('lists multiple packages with name, ref, commit, and agents', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'test-skill': createManifestPackage({
@@ -99,7 +98,7 @@ describe('list command', () => {
 
       await runList()
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('test-skill')
       expect(output).toContain('another-skill')
       expect(output).toContain('Installed packages (2)')
@@ -112,12 +111,12 @@ describe('list command', () => {
 
   describe('empty state', () => {
     it('shows a clean empty state message when no packages are installed', async () => {
-      isJSONMode.mockReturnValue(false)
-      readManifest.mockReturnValue(createManifest())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
 
       await runList()
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('No packages installed')
     })
   })
@@ -128,9 +127,9 @@ describe('list command', () => {
 
   describe('pinned package', () => {
     it('shows a pinned indicator for pinned packages', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'pinned-skill': createManifestPackage({
@@ -147,7 +146,7 @@ describe('list command', () => {
 
       await runList()
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('pinned')
     })
   })
@@ -158,9 +157,9 @@ describe('list command', () => {
 
   describe('multiple agents per package', () => {
     it('shows all agent assignments correctly', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'multi-agent-skill': createManifestPackage({
@@ -177,7 +176,7 @@ describe('list command', () => {
 
       await runList()
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('claude-code')
       expect(output).toContain('cursor')
       expect(output).toContain('windsurf')
@@ -190,30 +189,34 @@ describe('list command', () => {
 
   describe('--json output', () => {
     it('outputs JSON matching the ListResult schema', async () => {
-      isJSONMode.mockReturnValue(true)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
       const packages = {
         'test-skill': createManifestPackage(),
       }
 
-      readManifest.mockReturnValue(createManifest({ packages }))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest({ packages }))
 
       await runList()
 
-      expect(outputSuccess).toHaveBeenCalledOnce()
-      const data = outputSuccess.mock.calls[0]![0] as { packages: Record<string, unknown> }
+      expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Record<string, unknown>
+      }
       expect(data).toHaveProperty('packages')
       expect(data.packages).toHaveProperty('test-skill')
     })
 
     it('outputs empty packages object when nothing is installed', async () => {
-      isJSONMode.mockReturnValue(true)
-      readManifest.mockReturnValue(createManifest())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
 
       await runList()
 
-      expect(outputSuccess).toHaveBeenCalledOnce()
-      const data = outputSuccess.mock.calls[0]![0] as { packages: Record<string, unknown> }
+      expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Record<string, unknown>
+      }
       expect(data.packages).toEqual({})
     })
   })
@@ -224,9 +227,9 @@ describe('list command', () => {
 
   describe('well-known source package', () => {
     it('renders well-known source packages with hostname', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'wk-skill': createManifestPackage({
@@ -240,7 +243,7 @@ describe('list command', () => {
 
       await runList()
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('wk-skill')
       expect(output).toContain('skills.example.com')
       expect(output).toContain('well-known')

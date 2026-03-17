@@ -1,4 +1,9 @@
+import { Command } from 'commander'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// ---------------------------------------------------------------------------
+// Module-level mocks — must be declared before any import of the SUT
+// ---------------------------------------------------------------------------
 
 vi.mock('../../registry/client', () => ({
   registryFetch: vi.fn(),
@@ -29,43 +34,37 @@ vi.mock('ora', () => ({
   })),
 }))
 
-describe('search command', () => {
-  let registryFetch: ReturnType<typeof vi.fn>
-  let isConnected: ReturnType<typeof vi.fn>
-  let searchSkillsSh: ReturnType<typeof vi.fn>
-  let toGitInstallSource: ReturnType<typeof vi.fn>
-  let fetchWellKnownIndex: ReturnType<typeof vi.fn>
-  let stdoutWriteSpy: ReturnType<typeof vi.spyOn>
-  let _stderrWriteSpy: ReturnType<typeof vi.spyOn>
-  let exitSpy: ReturnType<typeof vi.spyOn>
-  let registerSearchCommand: typeof import('../../commands/search').registerSearchCommand
-  let Command: typeof import('commander').Command
+// ---------------------------------------------------------------------------
+// SUT import (after mocks)
+// ---------------------------------------------------------------------------
 
-  beforeEach(async () => {
+import { registerSearchCommand } from '../../commands/search'
+
+// ---------------------------------------------------------------------------
+// Mock module imports (typed references)
+// ---------------------------------------------------------------------------
+
+import * as clientModule from '../../registry/client'
+import * as configModule from '../../registry/config'
+import * as skillsShModule from '../../registry/skills-sh'
+import * as wellKnownModule from '../../wellknown/index.js'
+
+// ---------------------------------------------------------------------------
+// Shared test state
+// ---------------------------------------------------------------------------
+
+describe('search command', () => {
+  let stdoutWriteSpy: ReturnType<typeof vi.spyOn>
+  let exitSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
     vi.clearAllMocks()
 
     stdoutWriteSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
-    _stderrWriteSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called')
     })
-
-    const clientModule = await import('../../registry/client')
-    const configModule = await import('../../registry/config')
-    const skillsShModule = await import('../../registry/skills-sh')
-    const wellKnownModule = await import('../../wellknown/index.js')
-
-    registryFetch = vi.mocked(clientModule.registryFetch)
-    isConnected = vi.mocked(configModule.isConnected)
-    searchSkillsSh = vi.mocked(skillsShModule.searchSkillsSh)
-    toGitInstallSource = vi.mocked(skillsShModule.toGitInstallSource)
-    fetchWellKnownIndex = vi.mocked(wellKnownModule.fetchWellKnownIndex)
-
-    const commanderModule = await import('commander')
-    Command = commanderModule.Command
-
-    const searchModule = await import('../../commands/search')
-    registerSearchCommand = searchModule.registerSearchCommand
   })
 
   afterEach(() => {
@@ -90,9 +89,9 @@ describe('search command', () => {
 
   describe('happy path', () => {
     it('returns combined results from platform and skills.sh when source is all', async () => {
-      isConnected.mockResolvedValue(true)
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
-      registryFetch.mockResolvedValue({
+      vi.mocked(clientModule.registryFetch).mockResolvedValue({
         results: [
           {
             id: 'p1',
@@ -113,7 +112,7 @@ describe('search command', () => {
         offset: 0,
       })
 
-      searchSkillsSh.mockResolvedValue([
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([
         {
           id: 'c1',
           name: 'community-skill',
@@ -124,11 +123,13 @@ describe('search command', () => {
         },
       ])
 
-      toGitInstallSource.mockReturnValue('github.com/owner/repo/community-skill')
+      vi.mocked(skillsShModule.toGitInstallSource).mockReturnValue(
+        'github.com/owner/repo/community-skill'
+      )
 
       await runSearch('testing', '--source', 'all')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('platform-skill')
       expect(output).toContain('community-skill')
     })
@@ -140,9 +141,9 @@ describe('search command', () => {
 
   describe('platform only results', () => {
     it('returns only platform results when skills.sh returns empty', async () => {
-      isConnected.mockResolvedValue(true)
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
-      registryFetch.mockResolvedValue({
+      vi.mocked(clientModule.registryFetch).mockResolvedValue({
         results: [
           {
             id: 'p1',
@@ -166,9 +167,9 @@ describe('search command', () => {
       // Default source when connected is 'platform', so skills.sh is not called
       await runSearch('testing')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('platform-skill')
-      expect(searchSkillsSh).not.toHaveBeenCalled()
+      expect(skillsShModule.searchSkillsSh).not.toHaveBeenCalled()
     })
   })
 
@@ -178,9 +179,9 @@ describe('search command', () => {
 
   describe('skills.sh only', () => {
     it('returns skills.sh results when no platform is connected', async () => {
-      isConnected.mockResolvedValue(false)
+      vi.mocked(configModule.isConnected).mockResolvedValue(false)
 
-      searchSkillsSh.mockResolvedValue([
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([
         {
           id: 'c1',
           name: 'test-skill',
@@ -191,13 +192,15 @@ describe('search command', () => {
         },
       ])
 
-      toGitInstallSource.mockReturnValue('github.com/owner/repo/test-skill')
+      vi.mocked(skillsShModule.toGitInstallSource).mockReturnValue(
+        'github.com/owner/repo/test-skill'
+      )
 
       await runSearch('test')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('test-skill')
-      expect(registryFetch).not.toHaveBeenCalled()
+      expect(clientModule.registryFetch).not.toHaveBeenCalled()
     })
   })
 
@@ -207,20 +210,20 @@ describe('search command', () => {
 
   describe('no results', () => {
     it('displays a no-results message when both sources return empty', async () => {
-      isConnected.mockResolvedValue(true)
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
-      registryFetch.mockResolvedValue({
+      vi.mocked(clientModule.registryFetch).mockResolvedValue({
         results: [],
         total: 0,
         limit: 20,
         offset: 0,
       })
 
-      searchSkillsSh.mockResolvedValue([])
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([])
 
       await runSearch('nonexistent', '--source', 'all')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('No results')
     })
   })
@@ -231,9 +234,9 @@ describe('search command', () => {
 
   describe('--type filter', () => {
     it('passes the type filter as an uppercase query parameter to the platform', async () => {
-      isConnected.mockResolvedValue(true)
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
-      registryFetch.mockResolvedValue({
+      vi.mocked(clientModule.registryFetch).mockResolvedValue({
         results: [],
         total: 0,
         limit: 20,
@@ -242,8 +245,8 @@ describe('search command', () => {
 
       await runSearch('testing', '--type', 'skill')
 
-      expect(registryFetch).toHaveBeenCalledOnce()
-      const callUrl = registryFetch.mock.calls[0]![0] as string
+      expect(clientModule.registryFetch).toHaveBeenCalledOnce()
+      const callUrl = vi.mocked(clientModule.registryFetch).mock.calls[0]![0] as string
       expect(callUrl).toContain('type=SKILL')
     })
   })
@@ -254,18 +257,18 @@ describe('search command', () => {
 
   describe('--source filter', () => {
     it('only searches community when --source community is specified', async () => {
-      isConnected.mockResolvedValue(true)
-      searchSkillsSh.mockResolvedValue([])
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([])
 
       await runSearch('testing', '--source', 'community')
 
-      expect(registryFetch).not.toHaveBeenCalled()
-      expect(searchSkillsSh).toHaveBeenCalledOnce()
+      expect(clientModule.registryFetch).not.toHaveBeenCalled()
+      expect(skillsShModule.searchSkillsSh).toHaveBeenCalledOnce()
     })
 
     it('only searches platform when --source platform is specified', async () => {
-      isConnected.mockResolvedValue(true)
-      registryFetch.mockResolvedValue({
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
+      vi.mocked(clientModule.registryFetch).mockResolvedValue({
         results: [],
         total: 0,
         limit: 20,
@@ -274,19 +277,19 @@ describe('search command', () => {
 
       await runSearch('testing', '--source', 'platform')
 
-      expect(registryFetch).toHaveBeenCalledOnce()
-      expect(searchSkillsSh).not.toHaveBeenCalled()
+      expect(clientModule.registryFetch).toHaveBeenCalledOnce()
+      expect(skillsShModule.searchSkillsSh).not.toHaveBeenCalled()
     })
 
     it('rejects invalid source values', async () => {
-      isConnected.mockResolvedValue(true)
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
       await expect(runSearch('testing', '--source', 'banana')).rejects.toThrow()
       expect(exitSpy).toHaveBeenCalledWith(1)
     })
 
     it('errors when --source platform is used without a connection', async () => {
-      isConnected.mockResolvedValue(false)
+      vi.mocked(configModule.isConnected).mockResolvedValue(false)
 
       await expect(runSearch('testing', '--source', 'platform')).rejects.toThrow()
       expect(exitSpy).toHaveBeenCalledWith(1)
@@ -299,9 +302,9 @@ describe('search command', () => {
 
   describe('skills.sh network error', () => {
     it('gracefully returns platform results when skills.sh fails', async () => {
-      isConnected.mockResolvedValue(true)
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
-      registryFetch.mockResolvedValue({
+      vi.mocked(clientModule.registryFetch).mockResolvedValue({
         results: [
           {
             id: 'p1',
@@ -323,11 +326,11 @@ describe('search command', () => {
       })
 
       // searchSkillsSh never throws — it returns empty on failure
-      searchSkillsSh.mockResolvedValue([])
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([])
 
       await runSearch('testing', '--source', 'all')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('platform-skill')
     })
   })
@@ -338,11 +341,11 @@ describe('search command', () => {
 
   describe('platform error', () => {
     it('gracefully returns skills.sh results when platform request fails', async () => {
-      isConnected.mockResolvedValue(true)
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
-      registryFetch.mockRejectedValue(new Error('Network failure'))
+      vi.mocked(clientModule.registryFetch).mockRejectedValue(new Error('Network failure'))
 
-      searchSkillsSh.mockResolvedValue([
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([
         {
           id: 'c1',
           name: 'community-skill',
@@ -353,7 +356,9 @@ describe('search command', () => {
         },
       ])
 
-      toGitInstallSource.mockReturnValue('github.com/owner/repo/community-skill')
+      vi.mocked(skillsShModule.toGitInstallSource).mockReturnValue(
+        'github.com/owner/repo/community-skill'
+      )
 
       // When platform throws, Promise.all rejects, so the whole search fails
       await expect(runSearch('testing', '--source', 'all')).rejects.toThrow()
@@ -366,9 +371,9 @@ describe('search command', () => {
 
   describe('well-known search', () => {
     it('fetches skills from a well-known domain', async () => {
-      isConnected.mockResolvedValue(false)
+      vi.mocked(configModule.isConnected).mockResolvedValue(false)
 
-      fetchWellKnownIndex.mockResolvedValue({
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockResolvedValue({
         skills: [
           {
             name: 'domain-skill',
@@ -380,9 +385,9 @@ describe('search command', () => {
 
       await runSearch('example.com', '--source', 'well-known')
 
-      const output = stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('')
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('domain-skill')
-      expect(fetchWellKnownIndex).toHaveBeenCalledOnce()
+      expect(wellKnownModule.fetchWellKnownIndex).toHaveBeenCalledOnce()
     })
   })
 })

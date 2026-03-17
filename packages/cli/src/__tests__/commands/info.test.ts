@@ -49,23 +49,31 @@ vi.mock('node:fs', async (importOriginal) => {
   }
 })
 
+// ---------------------------------------------------------------------------
+// SUT import (after mocks)
+// ---------------------------------------------------------------------------
+
+import { registerInfoCommand } from '../../commands/info'
+
+// ---------------------------------------------------------------------------
+// Mock module imports (typed references)
+// ---------------------------------------------------------------------------
+
+import * as nodeFs from 'node:fs'
+import { Command } from 'commander'
+import * as fetcherModule from '../../git/fetcher.js'
+import * as outputModule from '../../output.js'
+import * as canonicalModule from '../../storage/canonical.js'
+import * as integrityModule from '../../storage/integrity.js'
+import * as lockfileModule from '../../storage/lockfile.js'
+import * as manifestModule from '../../storage/manifest.js'
+
 describe('info command', () => {
-  let readManifest: ReturnType<typeof vi.fn>
-  let readLockfile: ReturnType<typeof vi.fn>
-  let resolveReadPath: ReturnType<typeof vi.fn>
-  let computeSha256FromFiles: ReturnType<typeof vi.fn>
-  let readFilesFromDirectory: ReturnType<typeof vi.fn>
-  let isJSONMode: ReturnType<typeof vi.fn>
-  let outputSuccess: ReturnType<typeof vi.fn>
-  let outputError: ReturnType<typeof vi.fn>
-  let readFileSync: ReturnType<typeof vi.fn>
   let consoleSpy: ReturnType<typeof vi.spyOn>
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>
   let exitSpy: ReturnType<typeof vi.spyOn>
-  let registerInfoCommand: typeof import('../../commands/info').registerInfoCommand
-  let Command: typeof import('commander').Command
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks()
 
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -73,30 +81,6 @@ describe('info command', () => {
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called')
     })
-
-    const manifestModule = await import('../../storage/manifest.js')
-    const lockfileModule = await import('../../storage/lockfile.js')
-    const canonicalModule = await import('../../storage/canonical.js')
-    const integrityModule = await import('../../storage/integrity.js')
-    const fetcherModule = await import('../../git/fetcher.js')
-    const outputModule = await import('../../output.js')
-    const fsModule = await import('node:fs')
-
-    readManifest = vi.mocked(manifestModule.readManifest)
-    readLockfile = vi.mocked(lockfileModule.readLockfile)
-    resolveReadPath = vi.mocked(canonicalModule.resolveReadPath)
-    computeSha256FromFiles = vi.mocked(integrityModule.computeSha256FromFiles)
-    readFilesFromDirectory = vi.mocked(fetcherModule.readFilesFromDirectory)
-    isJSONMode = vi.mocked(outputModule.isJSONMode)
-    outputSuccess = vi.mocked(outputModule.outputSuccess)
-    outputError = vi.mocked(outputModule.outputError)
-    readFileSync = vi.mocked(fsModule.readFileSync)
-
-    const commanderModule = await import('commander')
-    Command = commanderModule.Command
-
-    const infoModule = await import('../../commands/info')
-    registerInfoCommand = infoModule.registerInfoCommand
   })
 
   afterEach(() => {
@@ -121,9 +105,9 @@ describe('info command', () => {
 
   describe('happy path', () => {
     it('shows all metadata for an installed package', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'test-skill': createManifestPackage({
@@ -139,7 +123,7 @@ describe('info command', () => {
         })
       )
 
-      readLockfile.mockReturnValue(
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'test-skill': createLockfilePackage({
@@ -149,22 +133,24 @@ describe('info command', () => {
         })
       )
 
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: '# Test', size: 100 },
         { path: 'ref.md', content: '# Ref', size: 50 },
       ])
 
-      computeSha256FromFiles.mockReturnValue('sha256-abc123def456')
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-abc123def456')
 
-      readFileSync.mockImplementation(() => {
+      vi.mocked(nodeFs.readFileSync).mockImplementation(() => {
         throw new Error('File not found')
       })
 
       await runInfo('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('test-skill')
       expect(output).toContain('github.com/org/repo')
       expect(output).toContain('main')
@@ -180,9 +166,9 @@ describe('info command', () => {
 
   describe('SKILL.md parsing', () => {
     it('extracts title and description from SKILL.md frontmatter', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'test-skill': createManifestPackage(),
@@ -190,25 +176,27 @@ describe('info command', () => {
         })
       )
 
-      readLockfile.mockReturnValue(createLockfile())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
 
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: createSkillMd(), size: 200 },
       ])
 
-      computeSha256FromFiles.mockReturnValue('sha256-xyz')
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-xyz')
 
       const skillContent = createSkillMd({
         name: 'my-test-skill',
         description: 'A great skill for testing',
       })
-      readFileSync.mockReturnValue(skillContent)
+      vi.mocked(nodeFs.readFileSync).mockReturnValue(skillContent)
 
       await runInfo('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('my-test-skill')
       expect(output).toContain('A great skill for testing')
     })
@@ -220,24 +208,27 @@ describe('info command', () => {
 
   describe('not installed', () => {
     it('gives an error with the package name when not installed', async () => {
-      isJSONMode.mockReturnValue(false)
-      readManifest.mockReturnValue(createManifest())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
 
       await expect(runInfo('nonexistent')).rejects.toThrow()
 
       expect(exitSpy).toHaveBeenCalledWith(1)
-      const output = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleErrorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('nonexistent')
       expect(output).toContain('not installed')
     })
 
     it('outputs JSON error when not installed in JSON mode', async () => {
-      isJSONMode.mockReturnValue(true)
-      readManifest.mockReturnValue(createManifest())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
 
       await expect(runInfo('nonexistent')).rejects.toThrow()
 
-      expect(outputError).toHaveBeenCalledWith('NOT_FOUND', expect.stringContaining('nonexistent'))
+      expect(vi.mocked(outputModule.outputError)).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('nonexistent')
+      )
     })
   })
 
@@ -247,9 +238,9 @@ describe('info command', () => {
 
   describe('--json output', () => {
     it('outputs JSON matching the InfoResult schema', async () => {
-      isJSONMode.mockReturnValue(true)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'test-skill': createManifestPackage({
@@ -265,7 +256,7 @@ describe('info command', () => {
         })
       )
 
-      readLockfile.mockReturnValue(
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'test-skill': createLockfilePackage({
@@ -275,19 +266,24 @@ describe('info command', () => {
         })
       )
 
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      readFilesFromDirectory.mockResolvedValue([{ path: 'SKILL.md', content: '# Test', size: 100 }])
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Test', size: 100 },
+      ])
 
-      computeSha256FromFiles.mockReturnValue('sha256-abc123def456')
-      readFileSync.mockImplementation(() => {
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-abc123def456')
+      vi.mocked(nodeFs.readFileSync).mockImplementation(() => {
         throw new Error('File not found')
       })
 
       await runInfo('test-skill')
 
-      expect(outputSuccess).toHaveBeenCalledOnce()
-      const data = outputSuccess.mock.calls[0]![0] as Record<string, unknown>
+      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+      const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
       expect(data.name).toBe('test-skill')
       expect(data.source).toEqual({
         type: 'git',
@@ -308,9 +304,9 @@ describe('info command', () => {
 
   describe('modified flag', () => {
     it('shows locally modified warning when integrity differs', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'test-skill': createManifestPackage(),
@@ -318,7 +314,7 @@ describe('info command', () => {
         })
       )
 
-      readLockfile.mockReturnValue(
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'test-skill': createLockfilePackage({
@@ -328,20 +324,22 @@ describe('info command', () => {
         })
       )
 
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
 
-      readFilesFromDirectory.mockResolvedValue([
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: '# Modified content', size: 120 },
       ])
 
-      computeSha256FromFiles.mockReturnValue('sha256-different-hash')
-      readFileSync.mockImplementation(() => {
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different-hash')
+      vi.mocked(nodeFs.readFileSync).mockImplementation(() => {
         throw new Error('File not found')
       })
 
       await runInfo('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('yes')
     })
   })
@@ -352,9 +350,9 @@ describe('info command', () => {
 
   describe('integrity check', () => {
     it('shows the integrity hash from the lockfile', async () => {
-      isJSONMode.mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
-      readManifest.mockReturnValue(
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'test-skill': createManifestPackage(),
@@ -362,7 +360,7 @@ describe('info command', () => {
         })
       )
 
-      readLockfile.mockReturnValue(
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'test-skill': createLockfilePackage({
@@ -372,15 +370,17 @@ describe('info command', () => {
         })
       )
 
-      resolveReadPath.mockReturnValue('/tmp/project/.agents/skills/test-skill')
-      readFilesFromDirectory.mockResolvedValue([])
-      readFileSync.mockImplementation(() => {
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([])
+      vi.mocked(nodeFs.readFileSync).mockImplementation(() => {
         throw new Error('File not found')
       })
 
       await runInfo('test-skill')
 
-      const output = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('sha256-specificHashValue')
     })
   })

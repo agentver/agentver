@@ -9,6 +9,7 @@ import {
   createManifestPackage,
   createSharedGitSource,
 } from '../helpers/fixtures'
+import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -178,18 +179,6 @@ const INTEGRITY_HASH = 'sha256-testIntegrity'
 // ---------------------------------------------------------------------------
 // Shared setup
 // ---------------------------------------------------------------------------
-
-function createNoopSpinner() {
-  return {
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    text: '',
-  }
-}
 
 function setupSinglePackage(
   name: string,

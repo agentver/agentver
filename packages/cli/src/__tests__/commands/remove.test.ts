@@ -7,6 +7,7 @@ import {
   createManifestPackage,
   createSharedGitSource,
 } from '../helpers/fixtures'
+import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -111,18 +112,6 @@ class ExitError extends Error {
 // ---------------------------------------------------------------------------
 // Shared setup
 // ---------------------------------------------------------------------------
-
-function createNoopSpinner() {
-  return {
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    text: '',
-  }
-}
 
 function setupInstalledPackage(name: string, agents: string[] = ['claude-code']) {
   const source = createSharedGitSource({

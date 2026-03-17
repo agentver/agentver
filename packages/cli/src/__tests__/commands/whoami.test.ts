@@ -167,8 +167,8 @@ describe('whoami command', () => {
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Authenticated via OAuth'))
     // No user email shown since platform returned null
-    const allLogCalls = consoleLogSpy.mock.calls.map((c) => String(c[0]))
-    const hasEmail = allLogCalls.some((msg) => msg.includes('User:'))
+    const allLogCalls = consoleLogSpy.mock.calls.map((c: unknown[]) => String(c[0]))
+    const hasEmail = allLogCalls.some((msg: string) => msg.includes('User:'))
     expect(hasEmail).toBe(false)
   })
 
