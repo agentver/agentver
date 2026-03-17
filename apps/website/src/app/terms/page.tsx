@@ -63,7 +63,7 @@ function TermsContent() {
               both in accordance with their respective licences. The full licence texts are
               available in the{' '}
               <a
-                href="https://github.com/agentver/platform"
+                href="https://github.com/agentver/agentver"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-primary transition-colors hover:text-primary-bright"

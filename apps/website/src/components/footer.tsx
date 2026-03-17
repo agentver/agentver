@@ -18,7 +18,7 @@ const DEVELOPER_LINKS: { href: string; label: string; external?: boolean }[] = [
   { href: '/docs/quickstart', label: 'Getting Started' },
   { href: '/docs/cli', label: 'CLI Reference' },
   { href: '/agents', label: 'Agent Compatibility' },
-  { href: 'https://github.com/agentver/platform', label: 'GitHub', external: true },
+  { href: 'https://github.com/agentver/agentver', label: 'GitHub', external: true },
 ]
 
 const LEGAL_LINKS = [

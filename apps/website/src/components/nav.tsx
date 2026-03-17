@@ -30,7 +30,7 @@ export function Nav() {
 
         <div className="flex items-center gap-3">
           <a
-            href="https://github.com/agentver/platform"
+            href="https://github.com/agentver/agentver"
             target="_blank"
             rel="noopener noreferrer"
             className="hidden text-muted transition-colors hover:text-foreground sm:block"

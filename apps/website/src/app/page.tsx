@@ -133,7 +133,7 @@ function Hero() {
               Try the platform
             </a>
             <a
-              href="https://github.com/agentver/platform"
+              href="https://github.com/agentver/agentver"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-full border border-border px-7 py-3.5 text-muted text-sm transition-all hover:border-foreground/20 hover:text-foreground"
@@ -681,7 +681,7 @@ function GetStarted() {
                 Try the platform
               </a>
               <a
-                href="https://github.com/agentver/platform"
+                href="https://github.com/agentver/agentver"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-full border border-dark-border px-8 py-3.5 text-dark-muted transition-all hover:border-dark-muted/40 hover:text-dark-text"
