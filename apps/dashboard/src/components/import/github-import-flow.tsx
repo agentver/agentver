@@ -12,7 +12,7 @@ import {
 import { Input } from '@agentver/ui/components/input'
 import { Label } from '@agentver/ui/components/label'
 import { Separator } from '@agentver/ui/components/separator'
-import { AlertTriangle, Check, FileText, Loader2, Settings } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, FileText, Info, Loader2, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
@@ -20,7 +20,7 @@ import { AdoptionModeSelector } from '@/components/sources/adoption-mode-selecto
 import { useOrgContext } from '@/hooks/use-org-context'
 import { trpc } from '@/trpc/client'
 
-type GitHubImportStep = 'connect' | 'scan' | 'select' | 'importing' | 'done'
+type GitHubImportStep = 'scan' | 'select' | 'importing' | 'done'
 
 type DetectedFileType = 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT'
 
@@ -88,6 +88,9 @@ export function GitHubImportFlow() {
 
   const { selectedOrg } = useOrgContext()
 
+  const accounts = trpc.connections.list.useQuery()
+  const hasGitHubAccount = accounts.data?.some((a) => a.provider === 'GITHUB') ?? false
+
   const scanMutation = trpc.imports.scanGitHub.useMutation({
     onSuccess: (data) => {
       setRepoLabel(data.repo)
@@ -103,9 +106,6 @@ export function GitHubImportFlow() {
       setStep('select')
     },
     onError: (error) => {
-      if (error.message.includes('No GitHub account connected')) {
-        setStep('connect')
-      }
       toast.error(error.message)
     },
   })
@@ -211,67 +211,70 @@ export function GitHubImportFlow() {
     setAdoptionMode('MIRROR')
   }, [])
 
-  if (step === 'connect') {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Connect GitHub</CardTitle>
-          <CardDescription>
-            You need to connect your GitHub account before importing repositories.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild>
-            <Link href="/settings/connections">Connect GitHub Account</Link>
-          </Button>
-        </CardContent>
-      </Card>
-    )
-  }
-
   if (step === 'scan') {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Scan Repository</CardTitle>
-          <CardDescription>
-            Enter a GitHub repository URL or owner/repo to scan for skills and agent configs.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="repo-url">Repository</Label>
-            <div className="flex gap-2">
-              <Input
-                id="repo-url"
-                value={repoUrl}
-                onChange={(e) => setRepoUrl(e.currentTarget.value)}
-                placeholder="https://github.com/owner/repo or owner/repo"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handleScan()
-                  }
-                }}
-              />
-              <Button onClick={handleScan} disabled={scanMutation.isPending}>
-                {scanMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                    Scanning...
-                  </>
-                ) : (
-                  'Scan'
-                )}
+      <div className="space-y-4">
+        {!hasGitHubAccount && (
+          <Card className="border-blue-500/30 bg-blue-500/5">
+            <CardContent className="flex items-center gap-3 pt-6">
+              <Info className="size-5 shrink-0 text-blue-500" />
+              <div className="flex-1">
+                <p className="text-sm">
+                  Scanning as unauthenticated user. Connect your GitHub account for access to
+                  private repositories and higher rate limits.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/settings/connections">
+                  <ExternalLink className="mr-1.5 size-3" />
+                  Connect GitHub
+                </Link>
               </Button>
+            </CardContent>
+          </Card>
+        )}
+        <Card>
+          <CardHeader>
+            <CardTitle>Scan Repository</CardTitle>
+            <CardDescription>
+              Enter a GitHub repository URL or owner/repo to scan for skills and agent configs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="repo-url">Repository</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="repo-url"
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.currentTarget.value)}
+                  placeholder="https://github.com/owner/repo or owner/repo"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleScan()
+                    }
+                  }}
+                />
+                <Button onClick={handleScan} disabled={scanMutation.isPending}>
+                  {scanMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                      Scanning...
+                    </>
+                  ) : (
+                    'Scan'
+                  )}
+                </Button>
+              </div>
             </div>
-          </div>
-          <p className="text-muted-foreground text-xs">
-            We&apos;ll look for agent config files (CLAUDE.md, AGENTS.md, .cursorrules,
-            .windsurfrules, copilot-instructions.md, and more) plus skill directories.
-          </p>
-        </CardContent>
-      </Card>
+            <p className="text-muted-foreground text-xs">
+              We&apos;ll look for agent config files (CLAUDE.md, AGENTS.md, .cursorrules,
+              .windsurfrules, copilot-instructions.md, and more) plus skill directories.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 

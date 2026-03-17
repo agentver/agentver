@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { logAudit } from '@/lib/audit/logger'
 import { decryptToken, encryptToken } from '@/lib/crypto/token-encryption'
 import { GitProviderConfigError, getGitProvider } from '@/lib/git'
+import { getGitHubToken } from '@/lib/github/token'
 import {
   fetchBitbucketFileContent,
   listBitbucketRepos,
@@ -17,6 +18,7 @@ import {
   fetchFileContent,
   fetchSkillDirectoryFiles,
   getRepoDefaultBranch,
+  isGitHubApiError,
   scanRepoForSkills,
 } from '@/lib/import/github'
 import { deleteWebhook, registerWebhook } from '@/lib/import/github-webhook'
@@ -779,7 +781,9 @@ async function adoptFiles(
 
 export const importsRouter = router({
   scanGitHub: protectedProcedure.input(repoInputSchema).mutation(async ({ ctx, input }) => {
-    const { accessToken } = await getGitHubAccessToken(ctx.user.id)
+    // Soft token fetch — returns null if no GitHub account is connected,
+    // allowing unauthenticated scanning of public repositories.
+    const token = await getGitHubToken(ctx.user.id)
 
     let owner: string
     let name: string
@@ -798,9 +802,46 @@ export const importsRouter = router({
       })
     }
 
-    logger.info('Scanning GitHub repository', { owner, name, userId: ctx.user.id })
+    logger.info('Scanning GitHub repository', {
+      owner,
+      name,
+      userId: ctx.user.id,
+      authenticated: !!token,
+    })
 
-    const rawFiles = await scanRepoForSkills(accessToken, owner, name)
+    let rawFiles: Awaited<ReturnType<typeof scanRepoForSkills>>
+
+    try {
+      rawFiles = await scanRepoForSkills(owner, name, token)
+    } catch (error) {
+      if (isGitHubApiError(error)) {
+        if (error.rateLimited && !token) {
+          throw new TRPCError({
+            code: 'TOO_MANY_REQUESTS',
+            message:
+              'GitHub API rate limit exceeded. Connect your GitHub account for higher rate limits (5,000 requests/hour vs 60).',
+          })
+        }
+        if (error.rateLimited) {
+          throw new TRPCError({
+            code: 'TOO_MANY_REQUESTS',
+            message: 'GitHub API rate limit exceeded. Please try again later.',
+          })
+        }
+        if ((error.status === 404 || error.status === 403) && !token) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message:
+              'Repository not found or private. Connect your GitHub account to access private repositories and increase API rate limits.',
+          })
+        }
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Could not access repository ${owner}/${name}. It may not exist or you may not have permission.`,
+        })
+      }
+      throw error
+    }
 
     const DETECTED_TYPE_SORT_ORDER: Record<DetectedFileType, number> = {
       AGENT_CONFIG: 0,
@@ -816,7 +857,7 @@ export const importsRouter = router({
 
         if (file.downloadUrl) {
           try {
-            const content = await fetchFileContent(accessToken, file.downloadUrl)
+            const content = await fetchFileContent(file.downloadUrl, token)
             preview = content.length > 500 ? `${content.slice(0, 500)}...` : content
           } catch {
             logger.warn('Failed to fetch preview', { path: file.path })
@@ -919,7 +960,7 @@ export const importsRouter = router({
           } else {
             // Single file (config, rules, or file with download URL)
             const content = file.downloadUrl
-              ? await fetchFileContent(accessToken, file.downloadUrl)
+              ? await fetchFileContent(file.downloadUrl, accessToken)
               : ''
             filesToAdopt.push({
               path: file.path,

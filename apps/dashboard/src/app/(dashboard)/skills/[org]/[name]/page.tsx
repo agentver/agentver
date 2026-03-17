@@ -11,6 +11,7 @@ import { trpc } from '@/trpc/client'
 import { SkillHeader } from './_components/skill-header'
 import { SkillPageSkeleton } from './_components/skill-page-skeleton'
 import { SkillTabs } from './_components/skill-tabs'
+import { useCanManage } from './_components/use-can-manage'
 
 function buildGitViewUrl(
   gitRepoUrl: string | null | undefined,
@@ -29,6 +30,7 @@ export default function SkillDetailPage({
 }) {
   const { org, name } = use(params)
   const { data: pkg, isLoading } = trpc.skills.getBySlug.useQuery({ org, name })
+  const canManage = useCanManage(org, pkg?.authorId)
 
   if (isLoading) {
     return <SkillPageSkeleton />
@@ -43,8 +45,8 @@ export default function SkillDetailPage({
 
   return (
     <div className="space-y-6">
-      <SkillHeader pkg={pkg} org={org} name={name} />
-      <SkillTabs org={org} name={name} />
+      <SkillHeader pkg={pkg} org={org} name={name} canManage={canManage} />
+      <SkillTabs org={org} name={name} canManage={canManage} />
 
       {pkg.forkedFrom && <UpstreamStatus packageId={pkg.id} forkedFrom={pkg.forkedFrom} />}
 

@@ -1,6 +1,7 @@
 import { prisma } from '@agentver/database/client'
 import { TRPCError } from '@trpc/server'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getGitHubToken } from '@/lib/github/token'
 import { createTestOrgWithOwner, createTestPackage } from '~/test/factories'
 import { cleanDatabase, disconnectDatabase } from '~/test/helpers/db'
 import { createTestCaller } from '~/test/helpers/trpc'
@@ -19,6 +20,11 @@ vi.mock('@/lib/import/github', () => ({
   ]),
   fetchFileContent: vi.fn().mockResolvedValue('# Test Skill Content'),
   getRepoDefaultBranch: vi.fn().mockResolvedValue('main'),
+  isGitHubApiError: vi.fn().mockReturnValue(false),
+}))
+
+vi.mock('@/lib/github/token', () => ({
+  getGitHubToken: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/lib/import/github-webhook', () => ({
@@ -203,6 +209,7 @@ describe('imports router', () => {
     it('returns scanned files for a connected GitHub account', async () => {
       const { user } = await createTestOrgWithOwner()
       await setupGitHubAccount(user.id)
+      vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token')
 
       const caller = createTestCaller(user.id)
       const result = await caller.imports.scanGitHub({
@@ -226,6 +233,7 @@ describe('imports router', () => {
     it('accepts a repoUrl instead of owner+name', async () => {
       const { user } = await createTestOrgWithOwner()
       await setupGitHubAccount(user.id)
+      vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token')
 
       const caller = createTestCaller(user.id)
       const result = await caller.imports.scanGitHub({
@@ -236,17 +244,17 @@ describe('imports router', () => {
       expect(Array.isArray(result.files)).toBe(true)
     })
 
-    it('throws PRECONDITION_FAILED when no GitHub account is connected', async () => {
+    it('scans public repos without a connected GitHub account', async () => {
       const { user } = await createTestOrgWithOwner()
 
       const caller = createTestCaller(user.id)
+      const result = await caller.imports.scanGitHub({
+        repoOwner: 'acme',
+        repoName: 'skills',
+      })
 
-      await expect(
-        caller.imports.scanGitHub({
-          repoOwner: 'acme',
-          repoName: 'skills',
-        })
-      ).rejects.toThrow(TRPCError)
+      expect(result).toHaveProperty('repo', 'acme/skills')
+      expect(result).toHaveProperty('files')
     })
   })
 

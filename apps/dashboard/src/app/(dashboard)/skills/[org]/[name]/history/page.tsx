@@ -7,6 +7,7 @@ import { trpc } from '@/trpc/client'
 import { SkillHeader } from '../_components/skill-header'
 import { SkillPageSkeleton } from '../_components/skill-page-skeleton'
 import { SkillTabs } from '../_components/skill-tabs'
+import { useCanManage } from '../_components/use-can-manage'
 
 function formatCommitDate(dateString: string): string {
   const date = new Date(dateString)
@@ -35,6 +36,7 @@ export default function HistoryPage({
 }) {
   const { org, name } = use(params)
   const { data: pkg, isLoading: pkgLoading } = trpc.skills.getBySlug.useQuery({ org, name })
+  const canManage = useCanManage(org, pkg?.authorId)
 
   const {
     data: commits,
@@ -52,8 +54,8 @@ export default function HistoryPage({
 
   return (
     <div className="space-y-6">
-      <SkillHeader pkg={pkg} org={org} name={name} />
-      <SkillTabs org={org} name={name} />
+      <SkillHeader pkg={pkg} org={org} name={name} canManage={canManage} />
+      <SkillTabs org={org} name={name} canManage={canManage} />
 
       <Card>
         <CardHeader>

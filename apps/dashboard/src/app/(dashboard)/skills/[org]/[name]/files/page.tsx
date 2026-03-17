@@ -9,6 +9,7 @@ import { trpc } from '@/trpc/client'
 import { SkillHeader } from '../_components/skill-header'
 import { SkillPageSkeleton } from '../_components/skill-page-skeleton'
 import { SkillTabs } from '../_components/skill-tabs'
+import { useCanManage } from '../_components/use-can-manage'
 
 function getFileIcon(name: string) {
   const ext = name.split('.').pop()?.toLowerCase()
@@ -40,6 +41,7 @@ function formatFileSize(bytes: number): string {
 export default function FilesPage({ params }: { params: Promise<{ org: string; name: string }> }) {
   const { org, name } = use(params)
   const { data: pkg, isLoading: pkgLoading } = trpc.skills.getBySlug.useQuery({ org, name })
+  const canManage = useCanManage(org, pkg?.authorId)
 
   const {
     data: files,
@@ -64,8 +66,8 @@ export default function FilesPage({ params }: { params: Promise<{ org: string; n
 
   return (
     <div className="space-y-6">
-      <SkillHeader pkg={pkg} org={org} name={name} />
-      <SkillTabs org={org} name={name} />
+      <SkillHeader pkg={pkg} org={org} name={name} canManage={canManage} />
+      <SkillTabs org={org} name={name} canManage={canManage} />
 
       {selectedFile ? (
         <FileViewer

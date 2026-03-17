@@ -10,6 +10,7 @@ import { trpc } from '@/trpc/client'
 import { SkillHeader } from '../_components/skill-header'
 import { SkillPageSkeleton } from '../_components/skill-page-skeleton'
 import { SkillTabs } from '../_components/skill-tabs'
+import { useCanManage } from '../_components/use-can-manage'
 
 type ProposalStatus = 'OPEN' | 'IN_REVIEW' | 'APPROVED' | 'MERGED' | 'REJECTED' | 'CLOSED'
 type FilterTab = 'open' | 'closed' | 'all'
@@ -71,6 +72,7 @@ export default function SuggestionsListPage({
   const { org, name } = use(params)
   const [activeTab, setActiveTab] = useState<FilterTab>('open')
   const { data: pkg, isLoading: pkgLoading } = trpc.skills.getBySlug.useQuery({ org, name })
+  const canManage = useCanManage(org, pkg?.authorId)
 
   const { data: proposalsData, isLoading: proposalsLoading } = trpc.proposals.list.useQuery(
     { packageId: pkg?.id ?? '' },
@@ -100,8 +102,8 @@ export default function SuggestionsListPage({
 
   return (
     <div className="space-y-6">
-      <SkillHeader pkg={pkg} org={org} name={name} />
-      <SkillTabs org={org} name={name} />
+      <SkillHeader pkg={pkg} org={org} name={name} canManage={canManage} />
+      <SkillTabs org={org} name={name} canManage={canManage} />
 
       {/* Filter tabs */}
       <div className="flex gap-1 border-b">

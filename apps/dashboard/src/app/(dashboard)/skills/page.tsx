@@ -84,6 +84,8 @@ type ScannedFile = {
   agentId: string
   downloadUrl: string
   preview: string | null
+  projectId?: number
+  ref?: string
 }
 
 type ScanStep = 'input' | 'scanning' | 'select' | 'importing' | 'done'
@@ -99,6 +101,19 @@ const DETECTED_TYPE_LABELS: Record<DetectedFileType, string> = {
   PLUGIN: 'Plugin',
   SCRIPT: 'Script',
   PROMPT: 'Prompt',
+}
+
+type ScanProvider = 'github' | 'gitlab' | 'bitbucket'
+
+/**
+ * Detect the git provider from a URL string.
+ * Defaults to GitHub for bare owner/repo input.
+ */
+function detectProviderFromUrl(url: string): ScanProvider {
+  const cleaned = url.trim().replace(/^https?:\/\//, '')
+  if (cleaned.startsWith('gitlab.com/')) return 'gitlab'
+  if (cleaned.startsWith('bitbucket.org/')) return 'bitbucket'
+  return 'github'
 }
 
 const DETECTED_TYPE_COLOURS: Record<DetectedFileType, string> = {
@@ -126,6 +141,7 @@ function ImportFromUrlDialog({
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [repoLabel, setRepoLabel] = useState('')
   const [scanImportResult, setScanImportResult] = useState<ScanImportResult | null>(null)
+  const [scanProvider, setScanProvider] = useState<ScanProvider>('github')
 
   const { data: orgs } = trpc.organisations.list.useQuery()
   const utils = trpc.useUtils()
@@ -143,28 +159,56 @@ function ImportFromUrlDialog({
     },
   })
 
-  const scanMutation = trpc.imports.scanGitHub.useMutation({
-    onSuccess: (data) => {
-      setRepoLabel(data.repo)
-      setScannedFiles(data.files)
-      setSelectedPaths(new Set(data.files.map((f) => f.path)))
+  // Shared scan success/error handlers
+  const onScanSuccess = useCallback((data: { repo: string; files: ScannedFile[] }) => {
+    setRepoLabel(data.repo)
+    setScannedFiles(data.files)
+    setSelectedPaths(new Set(data.files.map((f) => f.path)))
 
-      if (data.files.length === 0) {
-        toast.info('No skill or config files found in this repository')
-      } else {
-        toast.success(`Found ${data.files.length} file${data.files.length === 1 ? '' : 's'}`)
-      }
+    if (data.files.length === 0) {
+      toast.info('No skill or config files found in this repository')
+    } else {
+      toast.success(`Found ${data.files.length} file${data.files.length === 1 ? '' : 's'}`)
+    }
 
-      setScanStep('select')
-    },
-    onError: (error) => {
-      setScanStep('input')
-      toast.error(error.message)
-    },
+    setScanStep('select')
+  }, [])
+
+  const onScanError = useCallback((error: { message: string }) => {
+    setScanStep('input')
+    toast.error(error.message)
+  }, [])
+
+  const scanGitHubMutation = trpc.imports.scanGitHub.useMutation({
+    onSuccess: onScanSuccess,
+    onError: onScanError,
   })
 
-  const bulkImportMutation = trpc.imports.importFromGitHub.useMutation({
+  const scanGitLabMutation = trpc.imports.scanGitLab.useMutation({
     onSuccess: (data) => {
+      onScanSuccess({
+        repo: data.repo,
+        files: data.files.map((f) => ({
+          ...f,
+          downloadUrl: '',
+          preview: f.preview ?? null,
+        })),
+      })
+    },
+    onError: onScanError,
+  })
+
+  const scanBitbucketMutation = trpc.imports.scanBitbucket.useMutation({
+    onSuccess: onScanSuccess,
+    onError: onScanError,
+  })
+
+  // Shared bulk import success/error handlers
+  const onBulkImportSuccess = useCallback(
+    (data: {
+      imported: Array<{ path: string; packageId: string; name: string }>
+      errors: Array<{ path: string; error: string }>
+    }) => {
       setScanImportResult({
         imported: data.imported,
         errors: data.errors,
@@ -180,11 +224,31 @@ function ImportFromUrlDialog({
         toast.warning(`Imported ${data.imported.length}, failed ${data.errors.length}`)
       }
     },
-    onError: (error) => {
-      setScanStep('select')
-      toast.error(error.message)
-    },
+    [utils.skills.list]
+  )
+
+  const onBulkImportError = useCallback((error: { message: string }) => {
+    setScanStep('select')
+    toast.error(error.message)
+  }, [])
+
+  const bulkImportGitHubMutation = trpc.imports.importFromGitHub.useMutation({
+    onSuccess: onBulkImportSuccess,
+    onError: onBulkImportError,
   })
+
+  const bulkImportGitLabMutation = trpc.imports.importFromGitLab.useMutation({
+    onSuccess: onBulkImportSuccess,
+    onError: onBulkImportError,
+  })
+
+  const bulkImportBitbucketMutation = trpc.imports.importFromBitbucket.useMutation({
+    onSuccess: onBulkImportSuccess,
+    onError: onBulkImportError,
+  })
+
+  const isScanPending =
+    scanGitHubMutation.isPending || scanGitLabMutation.isPending || scanBitbucketMutation.isPending
 
   const handleSingleImport = useCallback(() => {
     if (!url.trim() || !selectedOrgId) return
@@ -202,19 +266,38 @@ function ImportFromUrlDialog({
       return
     }
 
+    const provider = detectProviderFromUrl(trimmed)
+    setScanProvider(provider)
     setScanStep('scanning')
 
-    const slashMatch = trimmed
-      .replace(/^https?:\/\//, '')
-      .replace(/^github\.com\//, '')
-      .match(/^([^/\s]+)\/([^/\s]+)$/)
+    if (provider === 'gitlab') {
+      const withoutProtocol = trimmed.replace(/^https?:\/\//, '').replace(/^gitlab\.com\//, '')
+      const withoutTree = withoutProtocol.split('/-/')[0] ?? withoutProtocol
+      scanGitLabMutation.mutate({ projectPath: withoutTree })
+      return
+    }
+
+    if (provider === 'bitbucket') {
+      const withoutProtocol = trimmed.replace(/^https?:\/\//, '').replace(/^bitbucket\.org\//, '')
+      const segments = withoutProtocol.split('/').filter(Boolean)
+      if (segments.length >= 2) {
+        scanBitbucketMutation.mutate({ workspace: segments[0]!, repoSlug: segments[1]! })
+      } else {
+        scanBitbucketMutation.mutate({ repoUrl: trimmed })
+      }
+      return
+    }
+
+    // GitHub (default)
+    const withoutProtocol = trimmed.replace(/^https?:\/\//, '').replace(/^github\.com\//, '')
+    const slashMatch = withoutProtocol.match(/^([^/\s]+)\/([^/\s]+)$/)
 
     if (slashMatch?.[1] && slashMatch[2]) {
-      scanMutation.mutate({ repoOwner: slashMatch[1], repoName: slashMatch[2] })
+      scanGitHubMutation.mutate({ repoOwner: slashMatch[1], repoName: slashMatch[2] })
     } else {
-      scanMutation.mutate({ repoUrl: trimmed })
+      scanGitHubMutation.mutate({ repoUrl: trimmed })
     }
-  }, [url, scanMutation])
+  }, [url, scanGitHubMutation, scanGitLabMutation, scanBitbucketMutation])
 
   const handleBulkImport = useCallback(() => {
     if (!selectedOrgId || selectedPaths.size === 0) return
@@ -223,7 +306,50 @@ function ImportFromUrlDialog({
     if (filesToImport.length === 0) return
 
     setScanStep('importing')
-    bulkImportMutation.mutate({
+
+    if (scanProvider === 'gitlab') {
+      const firstFile = filesToImport[0]!
+      bulkImportGitLabMutation.mutate({
+        repo: repoLabel,
+        projectId: firstFile.projectId ?? 0,
+        organisationId: selectedOrgId,
+        adoptionMode: 'COPY',
+        files: filesToImport.map((f) => ({
+          path: f.path,
+          name: f.name,
+          type: f.type,
+          detectedType: f.detectedType,
+          agentId: f.agentId,
+          projectId: f.projectId ?? 0,
+          ref: f.ref ?? 'main',
+        })),
+      })
+      return
+    }
+
+    if (scanProvider === 'bitbucket') {
+      const segments = repoLabel.split('/')
+      bulkImportBitbucketMutation.mutate({
+        repo: repoLabel,
+        workspace: segments[0] ?? '',
+        repoSlug: segments[1] ?? '',
+        mainBranch: filesToImport[0]?.ref ?? 'main',
+        organisationId: selectedOrgId,
+        adoptionMode: 'COPY',
+        files: filesToImport.map((f) => ({
+          path: f.path,
+          name: f.name,
+          type: f.type,
+          detectedType: f.detectedType,
+          agentId: f.agentId,
+          downloadUrl: f.downloadUrl,
+        })),
+      })
+      return
+    }
+
+    // GitHub (default)
+    bulkImportGitHubMutation.mutate({
       repo: repoLabel,
       organisationId: selectedOrgId,
       adoptionMode: 'COPY',
@@ -236,7 +362,16 @@ function ImportFromUrlDialog({
         downloadUrl: f.downloadUrl,
       })),
     })
-  }, [selectedOrgId, selectedPaths, scannedFiles, repoLabel, bulkImportMutation])
+  }, [
+    selectedOrgId,
+    selectedPaths,
+    scannedFiles,
+    repoLabel,
+    scanProvider,
+    bulkImportGitHubMutation,
+    bulkImportGitLabMutation,
+    bulkImportBitbucketMutation,
+  ])
 
   const toggleFile = useCallback((path: string) => {
     setSelectedPaths((prev) => {
@@ -272,6 +407,7 @@ function ImportFromUrlDialog({
         setSelectedPaths(new Set())
         setRepoLabel('')
         setScanImportResult(null)
+        setScanProvider('github')
       }
       onOpenChange(nextOpen)
     },
@@ -290,8 +426,8 @@ function ImportFromUrlDialog({
           <DialogTitle>Import from URL</DialogTitle>
           <DialogDescription>
             {scanMode
-              ? 'Scan a GitHub repository to discover and import all skills.'
-              : 'Import a skill from a public GitHub repository.'}
+              ? 'Scan a repository to discover and import all skills.'
+              : 'Import a skill from a public GitHub, GitLab, or Bitbucket repository.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -334,10 +470,10 @@ function ImportFromUrlDialog({
           {!scanMode && importState !== 'success' && (
             <>
               <div className="space-y-2">
-                <Label htmlFor="import-url">GitHub URL or path</Label>
+                <Label htmlFor="import-url">Repository URL or path</Label>
                 <Input
                   id="import-url"
-                  placeholder="owner/repo or https://github.com/owner/repo"
+                  placeholder="owner/repo, github.com/..., gitlab.com/..., bitbucket.org/..."
                   value={url}
                   onChange={(e) => setUrl(e.currentTarget.value)}
                   onKeyDown={(e) => {
@@ -347,7 +483,7 @@ function ImportFromUrlDialog({
                 <p className="text-muted-foreground text-xs">
                   Accepts <code className="rounded bg-muted px-1">owner/repo</code>,{' '}
                   <code className="rounded bg-muted px-1">owner/repo/path/to/skill</code>, or a full
-                  GitHub URL.
+                  GitHub, GitLab, or Bitbucket URL.
                 </p>
               </div>
 
@@ -377,7 +513,7 @@ function ImportFromUrlDialog({
                 <div className="flex gap-2">
                   <Input
                     id="scan-url"
-                    placeholder="owner/repo or https://github.com/owner/repo"
+                    placeholder="owner/repo, github.com/..., gitlab.com/..., bitbucket.org/..."
                     value={url}
                     onChange={(e) => setUrl(e.currentTarget.value)}
                     onKeyDown={(e) => {
@@ -387,8 +523,8 @@ function ImportFromUrlDialog({
                       }
                     }}
                   />
-                  <Button onClick={handleScan} disabled={scanMutation.isPending || !url.trim()}>
-                    {scanMutation.isPending ? (
+                  <Button onClick={handleScan} disabled={isScanPending || !url.trim()}>
+                    {isScanPending ? (
                       <>
                         <Loader2 className="mr-1 size-4 animate-spin" />
                         Scanning...
@@ -402,7 +538,8 @@ function ImportFromUrlDialog({
                   </Button>
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Enter a repository URL to scan for skills, configs, and other agent files.
+                  Enter a repository URL to scan for skills, configs, and other agent files. GitLab
+                  and Bitbucket scanning requires a connected account.
                 </p>
               </div>
 

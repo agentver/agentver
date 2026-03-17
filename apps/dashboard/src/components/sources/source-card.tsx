@@ -29,9 +29,17 @@ type SourceCardProps = {
   account: ConnectedAccountInfo | undefined
   isLoading: boolean
   onBrowse: () => void
+  /** Allow browsing without a connected account (e.g. GitHub public repos) */
+  allowUnauthenticated?: boolean
 }
 
-export function SourceCard({ provider, account, isLoading, onBrowse }: SourceCardProps) {
+export function SourceCard({
+  provider,
+  account,
+  isLoading,
+  onBrowse,
+  allowUnauthenticated,
+}: SourceCardProps) {
   const isConnected = !!account
 
   return (
@@ -119,14 +127,24 @@ export function SourceCard({ provider, account, isLoading, onBrowse }: SourceCar
         ) : (
           <div className="flex items-center justify-between">
             <p className="text-muted-foreground text-sm">
-              Connect your {provider.name} account to browse and import packages.
+              {allowUnauthenticated
+                ? `Scan public ${provider.name} repositories, or connect your account for private access.`
+                : `Connect your ${provider.name} account to browse and import packages.`}
             </p>
-            <Button variant="outline" asChild>
-              <Link href="/settings/connections">
-                <ExternalLink className="mr-2 size-3" />
-                Connect
-              </Link>
-            </Button>
+            <div className="flex shrink-0 gap-2">
+              {allowUnauthenticated && (
+                <Button variant="cta" size="sm" onClick={onBrowse}>
+                  Scan public repos
+                  <ChevronRight className="ml-1 size-3" />
+                </Button>
+              )}
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/settings/connections">
+                  <ExternalLink className="mr-2 size-3" />
+                  Connect
+                </Link>
+              </Button>
+            </div>
           </div>
         )}
       </div>
