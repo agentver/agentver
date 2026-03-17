@@ -101,6 +101,22 @@ describe('storage/canonical', () => {
       expect(fs.symlinkSync).toHaveBeenCalled()
     })
 
+    it('creates symlinks with relative paths (not absolute)', () => {
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/my-skill')
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+      vi.mocked(fs.lstatSync).mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+
+      canonicalModule.createAgentSymlinks('/project', 'my-skill', ['claude'], 'project')
+
+      const symlinkTarget = vi.mocked(fs.symlinkSync).mock.calls[0]![0] as string
+      // The symlink target should be relative — it must NOT start with /
+      expect(symlinkTarget.startsWith('/')).toBe(false)
+      // It should be a relative path from the agent skill dir to the canonical dir
+      expect(symlinkTarget).toContain('..')
+    })
+
     it('skips agents with no placement path', () => {
       vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue(undefined as unknown as string)
 
@@ -119,6 +135,22 @@ describe('storage/canonical', () => {
 
       canonicalModule.createAgentSymlinks('/project', 'my-skill', ['claude'], 'project')
 
+      expect(fs.rmSync).toHaveBeenCalled()
+      expect(fs.symlinkSync).toHaveBeenCalled()
+    })
+
+    it('replaces an existing symlink pointing to the wrong target', () => {
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/my-skill')
+      // existsSync returns true (symlink exists)
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.lstatSync).mockReturnValue({
+        isSymbolicLink: () => true,
+        isDirectory: () => false,
+      } as ReturnType<typeof fs.lstatSync>)
+
+      canonicalModule.createAgentSymlinks('/project', 'my-skill', ['claude'], 'project')
+
+      // Should remove the old symlink and create a new one
       expect(fs.rmSync).toHaveBeenCalled()
       expect(fs.symlinkSync).toHaveBeenCalled()
     })

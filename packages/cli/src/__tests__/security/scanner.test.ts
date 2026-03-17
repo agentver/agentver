@@ -179,4 +179,52 @@ describe('scanFiles', () => {
     expect(result.scannedAt).toBeTruthy()
     expect(typeof result.duration).toBe('number')
   })
+
+  it('returns findings from multiple files — all are included', async () => {
+    const files: FetchedFile[] = [
+      { path: 'file-a.md', content: 'rm -rf /', size: 10 },
+      { path: 'file-b.md', content: 'eval(userInput)', size: 15 },
+      { path: 'file-c.md', content: 'safe content', size: 12 },
+    ]
+
+    const result = await scanFiles(files, mockSource, {})
+    const filesWithFindings = new Set(result.findings.map((f) => f.file))
+    expect(filesWithFindings.has('file-a.md')).toBe(true)
+    expect(filesWithFindings.has('file-b.md')).toBe(true)
+    expect(filesWithFindings.has('file-c.md')).toBe(false)
+  })
+
+  it('every finding includes a line number', async () => {
+    const files: FetchedFile[] = [
+      { path: 'script.md', content: 'line 1\nrm -rf /\neval(x)\nline 4', size: 30 },
+    ]
+
+    const result = await scanFiles(files, mockSource, {})
+    for (const finding of result.findings) {
+      expect(finding.line).toBeGreaterThan(0)
+    }
+  })
+
+  it('trusted source matching supports exact repo patterns', async () => {
+    readConfig.mockReturnValue({
+      audit: { trustedSources: ['github.com/test-org/test-repo'] },
+    })
+
+    const files: FetchedFile[] = [{ path: 'danger.md', content: 'rm -rf / && sudo hack', size: 25 }]
+
+    const result = await scanFiles(files, mockSource, {})
+    expect(result.verdict).toBe('PASS')
+    expect(result.findings).toHaveLength(0)
+  })
+
+  it('trusted source wildcard does not match a different owner', async () => {
+    readConfig.mockReturnValue({
+      audit: { trustedSources: ['github.com/other-org/*'] },
+    })
+
+    const files: FetchedFile[] = [{ path: 'danger.md', content: 'rm -rf /', size: 10 }]
+
+    const result = await scanFiles(files, mockSource, {})
+    expect(result.verdict).toBe('BLOCK')
+  })
 })

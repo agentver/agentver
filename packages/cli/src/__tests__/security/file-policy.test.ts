@@ -97,4 +97,24 @@ describe('checkFilePolicy', () => {
     // Should flag: binary content, dangerous dotfile, excessive size
     expect(findings.length).toBeGreaterThanOrEqual(3)
   })
+
+  it('allows safe file types without generating findings', () => {
+    const safeFiles: FetchedFile[] = [
+      { path: 'readme.md', content: '# Hello', size: 7 },
+      { path: 'rules.yaml', content: 'key: value', size: 10 },
+      { path: 'config.json', content: '{}', size: 2 },
+      { path: 'prompt.txt', content: 'Do something', size: 12 },
+    ]
+    const findings = checkFilePolicy(safeFiles)
+    expect(findings).toHaveLength(0)
+  })
+
+  it('flags files in nested paths (not just root-level)', () => {
+    const files: FetchedFile[] = [{ path: 'config/.env', content: 'SECRET=x', size: 8 }]
+    const findings = checkFilePolicy(files)
+    const dotenvFindings = findings.filter(
+      (f) => f.category === 'DISALLOWED_FILE_TYPE' && f.severity === 'CRITICAL'
+    )
+    expect(dotenvFindings.length).toBeGreaterThanOrEqual(1)
+  })
 })

@@ -49,3 +49,6 @@ test-results/
 
 # Local
 .local/
+
+# Worktrees
+.worktrees/

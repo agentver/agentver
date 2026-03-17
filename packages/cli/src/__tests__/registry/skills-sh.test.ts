@@ -111,5 +111,27 @@ describe('skills-sh', () => {
       const url = mockFetch.mock.calls[0]![0] as string
       expect(url).toContain('limit=5')
     })
+
+    it('URL-encodes the search query', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          query: 'my skill',
+          searchType: 'keyword',
+          skills: [],
+          count: 0,
+          duration_ms: 10,
+        }),
+      })
+
+      vi.stubGlobal('fetch', mockFetch)
+
+      await searchSkillsSh('my skill')
+
+      const url = mockFetch.mock.calls[0]![0] as string
+      // Space should be encoded as %20 or +
+      expect(url).not.toContain(' ')
+      expect(url).toMatch(/my(%20|\+)skill/)
+    })
   })
 })

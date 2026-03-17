@@ -92,4 +92,25 @@ describe('serialiseDeterministic', () => {
     expect(Object.keys(parsed.items[0])).toEqual(['a', 'z'])
     expect(Object.keys(parsed.items[1])).toEqual(['b', 'y'])
   })
+
+  it('output is valid JSON that can be parsed back without loss', () => {
+    const input = {
+      name: 'test-skill',
+      version: 2,
+      nested: { enabled: true, tags: ['a', 'b'] },
+      nullable: null,
+    }
+    const serialised = serialiseDeterministic(input)
+    const parsed = JSON.parse(serialised)
+    expect(parsed).toEqual(input)
+  })
+
+  it('handles boolean and numeric values without coercion', () => {
+    const input = { flag: false, count: 0, empty: '' }
+    const result = serialiseDeterministic(input)
+    const parsed = JSON.parse(result)
+    expect(parsed.flag).toBe(false)
+    expect(parsed.count).toBe(0)
+    expect(parsed.empty).toBe('')
+  })
 })

@@ -1,0 +1,546 @@
+import { Command } from 'commander'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createGitSource,
+  createLockfile,
+  createLockfilePackage,
+  createManifest,
+  createManifestPackage,
+  createSharedGitSource,
+} from '../helpers/fixtures'
+
+// ---------------------------------------------------------------------------
+// Module-level mocks — must be declared before any import of the SUT
+// ---------------------------------------------------------------------------
+
+vi.mock('../../storage/manifest.js', () => ({
+  readManifest: vi.fn(),
+}))
+
+vi.mock('../../storage/lockfile.js', () => ({
+  readLockfile: vi.fn(),
+}))
+
+vi.mock('../../storage/canonical.js', () => ({
+  resolveReadPath: vi.fn(),
+}))
+
+vi.mock('../../storage/integrity.js', () => ({
+  computeSha256FromFiles: vi.fn(),
+}))
+
+vi.mock('../../git/fetcher.js', () => ({
+  readFilesFromDirectory: vi.fn(),
+}))
+
+vi.mock('../../git/index.js', () => ({
+  resolveRef: vi.fn(),
+}))
+
+vi.mock('../../output', () => ({
+  isJSONMode: vi.fn(),
+  outputSuccess: vi.fn(),
+  outputError: vi.fn(),
+  createSpinner: vi.fn(() => ({
+    start: vi.fn().mockReturnThis(),
+    stop: vi.fn().mockReturnThis(),
+    succeed: vi.fn().mockReturnThis(),
+    fail: vi.fn().mockReturnThis(),
+    text: '',
+  })),
+}))
+
+// ---------------------------------------------------------------------------
+// SUT import (after mocks)
+// ---------------------------------------------------------------------------
+
+import { registerStatusCommand } from '../../commands/status'
+
+// ---------------------------------------------------------------------------
+// Mock module imports (typed references)
+// ---------------------------------------------------------------------------
+
+import * as fetcherModule from '../../git/fetcher.js'
+import * as gitModule from '../../git/index.js'
+import * as outputModule from '../../output'
+import * as canonicalModule from '../../storage/canonical.js'
+import * as integrityModule from '../../storage/integrity.js'
+import * as lockfileModule from '../../storage/lockfile.js'
+import * as manifestModule from '../../storage/manifest.js'
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('status command', () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function createProgram(): InstanceType<typeof Command> {
+    const program = new Command()
+    program.exitOverride()
+    registerStatusCommand(program)
+    return program
+  }
+
+  async function runStatus(...args: string[]): Promise<void> {
+    const program = createProgram()
+    await program.parseAsync(['node', 'agentver', 'status', ...args])
+  }
+
+  // ---------------------------------------------------------------------------
+  // All up-to-date
+  // ---------------------------------------------------------------------------
+
+  describe('all up-to-date', () => {
+    it('shows clean output when all packages match lockfile SHAs', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'test-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'test-skill': createLockfilePackage({
+              integrity: 'sha256-matching-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Test', size: 50 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-matching-hash')
+      vi.mocked(gitModule.resolveRef).mockResolvedValue({ source: createGitSource(), commitSha })
+
+      await runStatus()
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('test-skill')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Locally modified
+  // ---------------------------------------------------------------------------
+
+  describe('locally modified', () => {
+    it('shows MODIFIED status when local files differ from lockfile hash', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'test-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'test-skill': createLockfilePackage({
+              integrity: 'sha256-original-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Modified', size: 60 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different-hash')
+      vi.mocked(gitModule.resolveRef).mockResolvedValue({ source: createGitSource(), commitSha })
+
+      await runStatus('--offline')
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string; status: string; modified: boolean }>
+      }
+
+      expect(data.packages[0]!.status).toBe('modified')
+      expect(data.packages[0]!.modified).toBe(true)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Upstream available
+  // ---------------------------------------------------------------------------
+
+  describe('upstream available', () => {
+    it('shows UPDATE AVAILABLE when resolveRef returns a different SHA', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const oldCommit = 'abc1234567890abcdef1234567890abcdef1234567'
+      const newCommit = 'def7890123456789abcdef1234567890abcdef12345'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'test-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: oldCommit,
+              }),
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'test-skill': createLockfilePackage({
+              integrity: 'sha256-matching-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Test', size: 50 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-matching-hash')
+      vi.mocked(gitModule.resolveRef).mockResolvedValue({
+        source: createGitSource(),
+        commitSha: newCommit,
+      })
+
+      await runStatus()
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string; status: string; upstream: boolean }>
+      }
+
+      expect(data.packages[0]!.status).toBe('upstream')
+      expect(data.packages[0]!.upstream).toBe(true)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Both modified and upstream
+  // ---------------------------------------------------------------------------
+
+  describe('both modified and upstream', () => {
+    it('shows both indicators when local is modified and upstream has changed', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const oldCommit = 'abc1234567890abcdef1234567890abcdef1234567'
+      const newCommit = 'def7890123456789abcdef1234567890abcdef12345'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'test-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: oldCommit,
+              }),
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'test-skill': createLockfilePackage({
+              integrity: 'sha256-original-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Modified', size: 60 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different-hash')
+      vi.mocked(gitModule.resolveRef).mockResolvedValue({
+        source: createGitSource(),
+        commitSha: newCommit,
+      })
+
+      await runStatus()
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string; status: string; modified: boolean; upstream: boolean }>
+      }
+
+      expect(data.packages[0]!.status).toBe('both')
+      expect(data.packages[0]!.modified).toBe(true)
+      expect(data.packages[0]!.upstream).toBe(true)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // --offline flag
+  // ---------------------------------------------------------------------------
+
+  describe('--offline flag', () => {
+    it('skips upstream ref resolution when --offline is specified', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'test-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'test-skill': createLockfilePackage({
+              integrity: 'sha256-matching-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Test', size: 50 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-matching-hash')
+
+      await runStatus('--offline')
+
+      expect(gitModule.resolveRef).not.toHaveBeenCalled()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // --json output
+  // ---------------------------------------------------------------------------
+
+  describe('--json output', () => {
+    it('outputs JSON matching the StatusResult schema', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+
+      await runStatus('--offline')
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: unknown[]
+        summary: {
+          total: number
+          upToDate: number
+          modified: number
+          upstream: number
+          unknown: number
+        }
+      }
+
+      expect(data.packages).toEqual([])
+      expect(data.summary).toEqual({
+        total: 0,
+        upToDate: 0,
+        modified: 0,
+        upstream: 0,
+        unknown: 0,
+      })
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Package not found on disk (BROKEN state)
+  // ---------------------------------------------------------------------------
+
+  describe('package not found on disk', () => {
+    it('handles missing files gracefully without crashing', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'broken-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'broken-skill': createLockfilePackage({
+              integrity: 'sha256-some-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)
+
+      await runStatus('--offline')
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string; status: string }>
+      }
+
+      expect(data.packages).toHaveLength(1)
+      expect(data.packages[0]!.name).toBe('broken-skill')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Multiple packages
+  // ---------------------------------------------------------------------------
+
+  describe('multiple packages', () => {
+    it('reports individual status for each package', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commit1 = 'abc1234567890abcdef1234567890abcdef1234567'
+      const commit2 = 'def4567890abcdef1234567890abcdef123456789a'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'skill-a': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo-a',
+                ref: 'main',
+                commit: commit1,
+              }),
+              agents: ['claude-code'],
+            }),
+            'skill-b': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo-b',
+                ref: 'main',
+                commit: commit2,
+              }),
+              agents: ['cursor'],
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'skill-a': createLockfilePackage({ integrity: 'sha256-hash-a' }),
+            'skill-b': createLockfilePackage({ integrity: 'sha256-hash-b' }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/some-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Test', size: 50 },
+      ])
+      // skill-a matches, skill-b is modified
+      vi.mocked(integrityModule.computeSha256FromFiles)
+        .mockReturnValueOnce('sha256-hash-a')
+        .mockReturnValueOnce('sha256-hash-b-different')
+
+      await runStatus('--offline')
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string; status: string; modified: boolean }>
+        summary: { total: number; modified: number }
+      }
+
+      expect(data.packages).toHaveLength(2)
+      expect(data.summary.total).toBe(2)
+
+      const skillA = data.packages.find((p) => p.name === 'skill-a')
+      const skillB = data.packages.find((p) => p.name === 'skill-b')
+
+      expect(skillA!.status).toBe('up-to-date')
+      expect(skillA!.modified).toBe(false)
+      expect(skillB!.status).toBe('modified')
+      expect(skillB!.modified).toBe(true)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Empty state
+  // ---------------------------------------------------------------------------
+
+  describe('empty state', () => {
+    it('shows a clean empty state message when no packages are installed', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+
+      await runStatus()
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('No packages installed')
+    })
+  })
+})

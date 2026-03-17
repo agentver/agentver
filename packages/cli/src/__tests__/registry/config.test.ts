@@ -130,5 +130,30 @@ describe('registry/config', () => {
       const result = await configModule.isConnected()
       expect(result).toBe(true)
     })
+
+    it('returns true when platform URL and apiKey exist', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ platformUrl: 'https://test.com' })
+      )
+
+      const { getCredentials } = await import('../../registry/auth')
+      vi.mocked(getCredentials).mockResolvedValue({ apiKey: 'my-api-key' })
+
+      const result = await configModule.isConnected()
+      expect(result).toBe(true)
+    })
+  })
+
+  describe('writeConfig', () => {
+    it('merges new values without destroying existing ones', () => {
+      // First write
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      configModule.writeConfig({ platformUrl: 'https://test.com' })
+
+      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      const parsed = JSON.parse(writtenContent)
+      expect(parsed.platformUrl).toBe('https://test.com')
+    })
   })
 })

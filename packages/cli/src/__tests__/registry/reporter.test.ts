@@ -72,6 +72,24 @@ describe('registry/reporter', () => {
         })
       )
     })
+
+    it('does not throw on network error — fire and forget', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://platform.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
+
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+
+      expect(() =>
+        reporterModule.reportInstallation(
+          'my-skill',
+          { type: 'git' as const, uri: 'test', path: '', ref: 'main', commit: 'abc1234' },
+          ['claude'],
+          'sha-123'
+        )
+      ).not.toThrow()
+
+      await vi.advanceTimersByTimeAsync(0)
+    })
   })
 
   describe('reportRemoval', () => {

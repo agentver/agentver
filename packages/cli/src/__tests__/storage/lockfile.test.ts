@@ -132,5 +132,35 @@ describe('storage/lockfile', () => {
       )
       expect(fs.renameSync).toHaveBeenCalled()
     })
+
+    it('writes to tmp file before renaming — crash during write leaves no corrupt lockfile', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      // Simulate a crash during writeFileSync (once only — prevent leaking to next test)
+      vi.mocked(fs.writeFileSync).mockImplementationOnce(() => {
+        throw new Error('ENOSPC: no space left on device')
+      })
+
+      expect(() => lockfileModule.writeLockfile('/project', { version: 2, packages: {} })).toThrow(
+        'ENOSPC'
+      )
+
+      // renameSync should never be called — the original file is untouched
+      expect(fs.renameSync).not.toHaveBeenCalled()
+    })
+
+    it('rename target is the actual lockfile path, not the tmp path', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      lockfileModule.writeLockfile('/project', { version: 2, packages: {} })
+
+      const renameCall = vi.mocked(fs.renameSync).mock.calls[0]!
+      const sourcePath = renameCall[0] as string
+      const targetPath = renameCall[1] as string
+
+      expect(sourcePath).toContain('.tmp')
+      expect(targetPath).toContain('lockfile.json')
+      expect(targetPath).not.toContain('.tmp')
+    })
   })
 })
