@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   description:
     'Open-source version control for AI agent skills, plugins, configs, and prompts. One CLI, 43+ agents, zero lock-in.',
   icons: {
-    icon: '/favicon.svg',
+    icon: '/favicon.png',
   },
   openGraph: {
     title: 'Agentver - The GitHub for AI Agents',

@@ -204,7 +204,7 @@ function CliHero() {
               </p>
               <div className="mt-6">
                 <a
-                  href="https://github.com/agentver/cli"
+                  href="https://github.com/agentver/agentver"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 font-medium text-primary text-sm transition-colors hover:text-primary-bright"
