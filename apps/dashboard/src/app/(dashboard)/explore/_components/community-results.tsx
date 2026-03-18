@@ -297,38 +297,23 @@ export function CommunityResults({ query }: CommunityResultsProps) {
 
   const searchEnabled = query.length > 0
 
-  const { data, isLoading, isError } = trpc.search.searchExternal.useQuery(
+  const searchQuery = trpc.search.searchExternal.useQuery(
     { query, limit: 20 },
     { enabled: searchEnabled, retry: 1 }
   )
+
+  const featuredQuery = trpc.search.featured.useQuery(
+    { limit: 8 },
+    { enabled: !searchEnabled, retry: 1 }
+  )
+
+  const activeQuery = searchEnabled ? searchQuery : featuredQuery
+  const { data, isLoading, isError } = activeQuery
 
   const handleImport = useCallback((skill: SkillsShResult) => {
     setImportSkill(skill)
     setDialogOpen(true)
   }, [])
-
-  if (!searchEnabled) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-border border-dashed py-20 text-center">
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-          <Search className="size-5" />
-        </div>
-        <p className="mt-4 font-display font-semibold text-lg">Search community skills</p>
-        <p className="mt-1 max-w-sm text-muted-foreground text-sm">
-          Enter a search term to discover skills from{' '}
-          <a
-            href="https://skills.sh"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-foreground"
-          >
-            skills.sh
-          </a>
-          , the open skill registry.
-        </p>
-      </div>
-    )
-  }
 
   if (isLoading) {
     return (
@@ -356,7 +341,7 @@ export function CommunityResults({ query }: CommunityResultsProps) {
 
   const skills = data?.skills ?? []
 
-  if (skills.length === 0) {
+  if (skills.length === 0 && searchEnabled) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-border border-dashed py-20 text-center">
         <div className="flex size-12 items-center justify-center rounded-2xl bg-primary-light text-primary">
@@ -373,6 +358,25 @@ export function CommunityResults({ query }: CommunityResultsProps) {
   return (
     <>
       <FadeIn>
+        {!searchEnabled && (
+          <div className="mb-6">
+            <h3 className="font-display font-semibold text-lg tracking-tight">
+              Popular Community Skills
+            </h3>
+            <p className="mt-1 text-muted-foreground text-sm">
+              Discover popular skills from{' '}
+              <a
+                href="https://skills.sh"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                skills.sh
+              </a>
+              , or search above for something specific.
+            </p>
+          </div>
+        )}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {skills.map((skill) => (
             <CommunitySkillCard key={skill.id} skill={skill} onImport={handleImport} />

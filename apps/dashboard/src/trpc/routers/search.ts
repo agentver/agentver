@@ -8,6 +8,7 @@ import { publicProcedure, router } from '../init'
 /** TTL constants in seconds */
 const SEARCH_CACHE_TTL = 60
 const TRENDING_CACHE_TTL = 300
+const FEATURED_COMMUNITY_CACHE_TTL = 3600
 
 /** Hash search input to produce a stable, short cache key. */
 function hashSearchInput(input: Record<string, unknown>): string {
@@ -68,6 +69,17 @@ function buildOrderClause(sort: SortOption): string {
 }
 
 export const searchRouter = router({
+  featured: publicProcedure
+    .input(z.object({ limit: z.number().min(1).max(20).default(8) }))
+    .query(async ({ input }) => {
+      const cacheKey = `agentver:featured-community:${input.limit}`
+
+      return withCache(cacheKey, FEATURED_COMMUNITY_CACHE_TTL, async () => {
+        const { searchSkillsSh } = await import('@/lib/registries/skills-sh')
+        return searchSkillsSh('claude', input.limit)
+      })
+    }),
+
   searchExternal: publicProcedure
     .input(
       z.object({
