@@ -5,6 +5,7 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit/logger'
 import { GitProviderConfigError, getGitProvider } from '@/lib/git'
+import { fetchSkillFolderFromGitHub, fetchSkillMdFromGitHub } from '@/lib/github/public-fetch'
 import {
   commitFiles,
   deleteSkillFromGitHub,
@@ -266,123 +267,6 @@ function parseGitHubSegments(remainder: string): ParsedGitUrl {
   }
 }
 
-/**
- * Fetch a SKILL.md from a public GitHub repo using raw.githubusercontent.com.
- * Tries the given path, then falls back to the repo root.
- */
-async function fetchSkillMdFromGitHub(
-  owner: string,
-  repo: string,
-  path: string | null
-): Promise<{ content: string; resolvedPath: string; branch: string }> {
-  const candidatePaths = path
-    ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, `${path}/skill.md`, `${path}/agentver.yml`]
-    : ['SKILL.md', 'agentver.yaml', 'skill.md', 'agentver.yml']
-
-  // Fast path: try raw URLs for common branch names
-  for (const candidate of candidatePaths) {
-    for (const branch of ['main', 'master']) {
-      const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${candidate}`
-      const response = await fetch(url, {
-        headers: { Accept: 'text/plain' },
-        signal: AbortSignal.timeout(10_000),
-      })
-      if (response.ok) {
-        return { content: await response.text(), resolvedPath: candidate, branch }
-      }
-    }
-  }
-
-  // Fallback: GitHub Contents API resolves the actual default branch automatically,
-  // which handles repos that use non-standard branch names (trunk, develop, etc.)
-  for (const candidate of candidatePaths) {
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${candidate}`
-    const apiResponse = await fetch(apiUrl, {
-      headers: { Accept: 'application/vnd.github.v3+json' },
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (apiResponse.ok) {
-      const data = (await apiResponse.json()) as {
-        content?: string
-        encoding?: string
-        download_url?: string | null
-      }
-      if (data.content && data.encoding === 'base64') {
-        const content = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8')
-        return { content, resolvedPath: candidate, branch: 'default' }
-      }
-    }
-  }
-
-  throw new TRPCError({
-    code: 'NOT_FOUND',
-    message: `Could not find SKILL.md or agentver.yaml in ${owner}/${repo}${path ? `/${path}` : ''}. Ensure the file exists on the repository's default branch.`,
-  })
-}
-
-type GitHubDirectoryEntry = {
-  name: string
-  path: string
-  type: 'file' | 'dir' | 'symlink' | 'submodule'
-  download_url: string | null
-}
-
-/**
- * Fetch all files in a skill folder from a public GitHub repo.
- * Lists the directory via the GitHub Contents API, then fetches each file's content.
- * Only fetches files (not subdirectories) to keep it flat.
- */
-async function fetchSkillFolderFromGitHub(
-  owner: string,
-  repo: string,
-  folderPath: string,
-  branch: string
-): Promise<Array<{ path: string; content: string }>> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${folderPath}?ref=${branch}`
-
-  const response = await fetch(url, {
-    headers: { Accept: 'application/vnd.github.v3+json' },
-    signal: AbortSignal.timeout(10_000),
-  })
-
-  if (!response.ok) {
-    logger.warn('Failed to list skill folder contents', {
-      owner,
-      repo,
-      folderPath,
-      branch,
-      status: response.status,
-    })
-    return []
-  }
-
-  const entries = (await response.json()) as GitHubDirectoryEntry[]
-  const files: Array<{ path: string; content: string }> = []
-
-  for (const entry of entries) {
-    if (entry.type !== 'file' || !entry.download_url) continue
-
-    try {
-      const fileResponse = await fetch(entry.download_url, {
-        headers: { Accept: 'text/plain' },
-        signal: AbortSignal.timeout(10_000),
-      })
-
-      if (fileResponse.ok) {
-        const content = await fileResponse.text()
-        files.push({ path: entry.name, content })
-      }
-    } catch (error) {
-      logger.warn('Failed to fetch file from skill folder', {
-        path: entry.path,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  return files
-}
-
 // ---------------------------------------------------------------------------
 // GitLab: public fetch helpers (no auth required)
 // ---------------------------------------------------------------------------
@@ -442,7 +326,13 @@ async function fetchSkillMdFromGitLab(
 ): Promise<{ content: string; resolvedPath: string; branch: string }> {
   const projectId = gitlabProjectId(owner, repo)
   const candidatePaths = path
-    ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, 'SKILL.md']
+    ? [
+        `${path}/SKILL.md`,
+        `skills/${path}/SKILL.md`,
+        `${path}/agentver.yaml`,
+        `skills/${path}/agentver.yaml`,
+        'SKILL.md',
+      ]
     : ['SKILL.md', 'agentver.yaml']
 
   const branches = ref ? [ref] : ['main', 'master']
@@ -463,7 +353,8 @@ async function fetchSkillMdFromGitLab(
 }
 
 /**
- * Fetch all files in a skill folder from a public GitLab repo.
+ * Fetch all files in a skill folder from a public GitLab repo, including subdirectories.
+ * Uses the recursive tree API to get the full directory structure in one call.
  */
 async function fetchSkillFolderFromGitLab(
   owner: string,
@@ -473,7 +364,7 @@ async function fetchSkillFolderFromGitLab(
 ): Promise<Array<{ path: string; content: string }>> {
   const projectId = gitlabProjectId(owner, repo)
   const encodedFolder = encodeURIComponent(folderPath)
-  const treeUrl = `https://gitlab.com/api/v4/projects/${projectId}/repository/tree?path=${encodedFolder}&ref=${branch}&per_page=100`
+  const treeUrl = `https://gitlab.com/api/v4/projects/${projectId}/repository/tree?path=${encodedFolder}&ref=${branch}&per_page=100&recursive=true`
 
   const response = await fetch(treeUrl, {
     signal: AbortSignal.timeout(10_000),
@@ -496,10 +387,15 @@ async function fetchSkillFolderFromGitLab(
   for (const entry of entries) {
     if (entry.type !== 'blob') continue
 
+    // Compute path relative to the root skill folder
+    const relativePath = entry.path.startsWith(`${folderPath}/`)
+      ? entry.path.slice(folderPath.length + 1)
+      : entry.name
+
     try {
       const content = await gitlabFetchRaw(projectId, entry.path, branch)
       if (content !== null) {
-        files.push({ path: entry.name, content })
+        files.push({ path: relativePath, content })
       }
     } catch (error) {
       logger.warn('Failed to fetch file from GitLab skill folder', {
@@ -566,7 +462,13 @@ async function fetchSkillMdFromBitbucket(
   ref?: string
 ): Promise<{ content: string; resolvedPath: string; branch: string }> {
   const candidatePaths = path
-    ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, 'SKILL.md']
+    ? [
+        `${path}/SKILL.md`,
+        `skills/${path}/SKILL.md`,
+        `${path}/agentver.yaml`,
+        `skills/${path}/agentver.yaml`,
+        'SKILL.md',
+      ]
     : ['SKILL.md', 'agentver.yaml']
 
   const branches = ref ? [ref] : ['main', 'master']
@@ -587,7 +489,8 @@ async function fetchSkillMdFromBitbucket(
 }
 
 /**
- * Fetch all files in a skill folder from a public Bitbucket repo.
+ * Fetch all files in a skill folder from a public Bitbucket repo, including subdirectories.
+ * Recursively lists directory contents (up to 2 levels deep).
  */
 async function fetchSkillFolderFromBitbucket(
   owner: string,
@@ -595,44 +498,58 @@ async function fetchSkillFolderFromBitbucket(
   folderPath: string,
   branch: string
 ): Promise<Array<{ path: string; content: string }>> {
-  const listUrl = `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/src/${branch}/${folderPath}?pagelen=100`
-
-  const response = await fetch(listUrl, {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(10_000),
-  })
-
-  if (!response.ok) {
-    logger.warn('Failed to list Bitbucket skill folder', {
-      owner,
-      repo,
-      folderPath,
-      branch,
-      status: response.status,
-    })
-    return []
-  }
-
-  const data = (await response.json()) as BitbucketSrcResponse
+  const MAX_DEPTH = 2
   const files: Array<{ path: string; content: string }> = []
 
-  for (const entry of data.values) {
-    if (entry.type !== 'commit_file') continue
+  async function fetchDir(dirPath: string, depth: number): Promise<void> {
+    if (depth > MAX_DEPTH) return
 
-    try {
-      const content = await bitbucketFetchRaw(owner, repo, entry.path, branch)
-      if (content !== null) {
-        const fileName = entry.path.split('/').pop() ?? entry.path
-        files.push({ path: fileName, content })
+    const listUrl = `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/src/${branch}/${dirPath}?pagelen=100`
+    const response = await fetch(listUrl, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    })
+
+    if (!response.ok) {
+      if (depth === 0) {
+        logger.warn('Failed to list Bitbucket skill folder', {
+          owner,
+          repo,
+          folderPath: dirPath,
+          branch,
+          status: response.status,
+        })
       }
-    } catch (error) {
-      logger.warn('Failed to fetch file from Bitbucket skill folder', {
-        path: entry.path,
-        error: error instanceof Error ? error.message : String(error),
-      })
+      return
+    }
+
+    const data = (await response.json()) as BitbucketSrcResponse
+
+    for (const entry of data.values) {
+      // Compute path relative to the root skill folder
+      const relativePath = entry.path.startsWith(`${folderPath}/`)
+        ? entry.path.slice(folderPath.length + 1)
+        : (entry.path.split('/').pop() ?? entry.path)
+
+      if (entry.type === 'commit_file') {
+        try {
+          const content = await bitbucketFetchRaw(owner, repo, entry.path, branch)
+          if (content !== null) {
+            files.push({ path: relativePath, content })
+          }
+        } catch (error) {
+          logger.warn('Failed to fetch file from Bitbucket skill folder', {
+            path: entry.path,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      } else if (entry.type === 'commit_directory') {
+        await fetchDir(entry.path, depth + 1)
+      }
     }
   }
 
+  await fetchDir(folderPath, 0)
   return files
 }
 

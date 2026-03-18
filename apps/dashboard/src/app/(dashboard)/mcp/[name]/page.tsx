@@ -161,7 +161,7 @@ function AddToSetupDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add {serverDisplayName} to My Setup</DialogTitle>
           <DialogDescription>
@@ -208,9 +208,9 @@ function AddToSetupDialog({
             </div>
           )}
 
-          <div>
-            <Label className="mb-1.5">Configuration preview</Label>
-            <pre className="overflow-x-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs">
+          <div className="space-y-2">
+            <Label>Configuration preview</Label>
+            <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs">
               {configSnippet}
             </pre>
           </div>

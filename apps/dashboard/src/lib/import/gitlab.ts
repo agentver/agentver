@@ -147,6 +147,7 @@ export async function scanGitLabRepo(
   defaultBranch: string
 ): Promise<ScannedGitLabFile[]> {
   const skillPaths = [
+    'skills',
     '.claude/skills',
     '.cursor/skills',
     '.agents/skills',
@@ -236,6 +237,7 @@ export async function scanGitLabRepo(
   }
 
   const skillPathAgentMap: Record<string, string> = {
+    skills: 'multi-agent',
     '.claude': 'claude-code',
     '.cursor': 'cursor',
     '.agents': 'codex',

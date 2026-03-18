@@ -169,7 +169,7 @@ function ImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add {skill.name} to Agentver</DialogTitle>
           <DialogDescription>
@@ -177,12 +177,12 @@ function ImportDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 py-2">
           {/* Direct import section */}
           {orgs && orgs.length > 0 && importState !== 'success' && (
-            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-              <Label className="font-medium text-sm">Import to organisation</Label>
-              <Select value={selectedOrgId} onValueChange={setSelectedOrgId} modal={false}>
+            <div className="space-y-3">
+              <Label>Import to organisation</Label>
+              <Select value={selectedOrgId} onValueChange={setSelectedOrgId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select an organisation" />
                 </SelectTrigger>
@@ -240,19 +240,17 @@ function ImportDialog({
           )}
 
           {/* CLI install command */}
-          <div>
-            <label className="mb-1.5 block font-medium text-sm">Install command</label>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 overflow-x-auto rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm">
-                {installCommand}
-              </code>
-              <Button variant="outline" size="sm" onClick={handleCopy} className="shrink-0">
+          <div className="space-y-2">
+            <Label>Install command</Label>
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-3 font-mono text-sm">
+              <code className="flex-1 break-all">{installCommand}</code>
+              <Button variant="ghost" size="icon" onClick={handleCopy} className="shrink-0">
                 {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
               </Button>
             </div>
           </div>
 
-          <div className="rounded-lg border border-border bg-muted/50 p-3 text-muted-foreground text-sm">
+          <div className="rounded-lg border bg-muted/50 p-3 text-muted-foreground text-sm">
             <p>
               <strong className="text-foreground">Source:</strong>{' '}
               <a
