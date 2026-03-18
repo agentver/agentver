@@ -216,6 +216,13 @@ export const mcpCatalogueRouter = router({
   }),
 
   /**
+   * Get the total number of MCP server definitions in the catalogue.
+   */
+  count: publicProcedure.query(async () => {
+    return prisma.mcpServerDefinition.count()
+  }),
+
+  /**
    * Add an MCP server from the catalogue to an organisation as an AGENT_CONFIG package.
    */
   addToOrg: protectedProcedure

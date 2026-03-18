@@ -93,12 +93,12 @@ export function ExploreResults({ query, category, sort }: ExploreResultsProps) {
           {query ? <Search className="size-5" /> : <Package className="size-5" />}
         </div>
         <p className="mt-4 font-display font-semibold text-lg">
-          {query ? 'No results found' : 'No public skills yet'}
+          {query ? 'No results found' : 'Registry Skills'}
         </p>
         <p className="mt-1 max-w-sm text-muted-foreground text-sm">
           {query
             ? `No skills matching "${query}". Try a different search term.`
-            : 'Be the first to publish a skill to the marketplace.'}
+            : 'Registry skills will appear here. Check out MCP Servers and Community Skills below!'}
         </p>
       </div>
     )

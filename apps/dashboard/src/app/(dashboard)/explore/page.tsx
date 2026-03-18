@@ -2,10 +2,12 @@
 
 import { Suspense, useState } from 'react'
 import { FadeIn } from '@/components/fade-in'
+import { trpc } from '@/trpc/client'
 import { CategorySidebar } from './_components/category-sidebar'
 import { CommunityResults } from './_components/community-results'
 import { ExploreResults } from './_components/explore-results'
 import { McpCategorySidebar } from './_components/mcp-category-sidebar'
+import { McpPreviewSection } from './_components/mcp-preview'
 import { McpResults } from './_components/mcp-results'
 import { SearchBar } from './_components/search-bar'
 import { type SortOption, SortSelect } from './_components/sort-select'
@@ -37,6 +39,18 @@ export default function ExplorePage() {
   )
 }
 
+function StatsBar() {
+  const { data: mcpCount } = trpc.mcpCatalogue.count.useQuery()
+
+  if (!mcpCount) return null
+
+  return (
+    <p className="text-muted-foreground text-sm">
+      {mcpCount} MCP servers &middot; 500+ community skills via skills.sh
+    </p>
+  )
+}
+
 function ExplorePageContent() {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
@@ -62,6 +76,9 @@ function ExplorePageContent() {
           <p className="text-muted-foreground">
             Discover packages, community skills, and MCP servers from the registry.
           </p>
+          <div className="mt-2">
+            <StatsBar />
+          </div>
         </div>
       </FadeIn>
 
@@ -126,9 +143,14 @@ function ExplorePageContent() {
 
             {/* Trending section (Agentver only) */}
             {showTrending && (
-              <FadeIn>
-                <TrendingSection />
-              </FadeIn>
+              <>
+                <FadeIn>
+                  <TrendingSection />
+                </FadeIn>
+                <FadeIn delay={50}>
+                  <McpPreviewSection onViewAll={() => handleSourceChange('mcp')} />
+                </FadeIn>
+              </>
             )}
 
             {/* Results grid */}

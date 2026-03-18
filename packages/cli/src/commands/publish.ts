@@ -10,6 +10,7 @@ import { scanFiles } from '../security/index.js'
 
 type PublishOptions = {
   version?: string
+  public?: boolean
   dryRun?: boolean
   skipAudit?: boolean
   json?: boolean
@@ -89,6 +90,7 @@ export function registerPublishCommand(program: Command): void {
     .command('publish [path]')
     .description('Publish a skill to the registry')
     .option('--version <semver>', 'Version to publish (uses frontmatter version if omitted)')
+    .option('--public', 'Set package visibility to public')
     .option('--dry-run', 'Validate without publishing')
     .option('--skip-audit', 'Skip security scan')
     .option('--json', 'Output as JSON')
@@ -223,6 +225,7 @@ export function registerPublishCommand(program: Command): void {
             body: {
               files: filesToPublish,
               version,
+              ...(options.public ? { visibility: 'PUBLIC' as const } : {}),
             },
           }
         )
