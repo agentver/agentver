@@ -28,7 +28,7 @@ process.env.MICROSOFT_CLIENT_SECRET =
 // Use the prisma binary directly — bunx may not be on PATH in child processes
 const rootDir = new URL('../../../../', import.meta.url).pathname
 const prismaBin = resolve(rootDir, 'node_modules/.bin/prisma')
-execSync(`${prismaBin} db push --skip-generate`, {
+execSync(`${prismaBin} db push`, {
   stdio: 'inherit',
   cwd: `${rootDir}packages/database`,
   env: { ...process.env },
