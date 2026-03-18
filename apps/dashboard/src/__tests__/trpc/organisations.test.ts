@@ -614,6 +614,154 @@ describe('organisations router', () => {
     })
   })
 
+  describe('create rate limits', () => {
+    it('rejects creation when user already owns 5 organisations', async () => {
+      const user = await createTestUser()
+      const caller = createTestCaller(user.id)
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+
+      for (let i = 0; i < 5; i++) {
+        const org = await createTestOrg()
+        await prisma.organisation.update({
+          where: { id: org.id },
+          data: { createdAt: twoHoursAgo },
+        })
+        await prisma.organisationMember.create({
+          data: { userId: user.id, organisationId: org.id, role: 'OWNER' },
+        })
+      }
+
+      await expect(
+        caller.organisations.create({ name: 'Sixth Org', slug: 'sixth-org' })
+      ).rejects.toThrow(expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }))
+    })
+
+    it('allows creation when user owns fewer than 5 organisations', async () => {
+      const user = await createTestUser()
+      const caller = createTestCaller(user.id)
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+
+      for (let i = 0; i < 4; i++) {
+        const org = await createTestOrg()
+        await prisma.organisation.update({
+          where: { id: org.id },
+          data: { createdAt: twoHoursAgo },
+        })
+        await prisma.organisationMember.create({
+          data: { userId: user.id, organisationId: org.id, role: 'OWNER' },
+        })
+      }
+
+      const result = await caller.organisations.create({ name: 'Fifth Org', slug: 'fifth-org' })
+      expect(result.slug).toBe('fifth-org')
+    })
+
+    it('does not count non-OWNER memberships towards the limit', async () => {
+      const user = await createTestUser()
+      const caller = createTestCaller(user.id)
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+
+      for (let i = 0; i < 5; i++) {
+        const org = await createTestOrg()
+        await prisma.organisation.update({
+          where: { id: org.id },
+          data: { createdAt: twoHoursAgo },
+        })
+        await prisma.organisationMember.create({
+          data: { userId: user.id, organisationId: org.id, role: 'MEMBER' },
+        })
+      }
+
+      const result = await caller.organisations.create({ name: 'New Org', slug: 'new-org' })
+      expect(result.slug).toBe('new-org')
+    })
+
+    it('rejects creation when 3 orgs were created in the last hour', async () => {
+      const user = await createTestUser()
+      const caller = createTestCaller(user.id)
+
+      for (let i = 0; i < 3; i++) {
+        await caller.organisations.create({ name: `Org ${i}`, slug: `org-${i}` })
+      }
+
+      await expect(
+        caller.organisations.create({ name: 'Fourth Org', slug: 'fourth-org' })
+      ).rejects.toThrow(expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }))
+    })
+  })
+
+  describe('leave', () => {
+    it('allows a member to leave an organisation', async () => {
+      const member = await createTestUser()
+      const { org } = await createTestOrgWithOwner()
+
+      await prisma.organisationMember.create({
+        data: { organisationId: org.id, userId: member.id, role: 'MEMBER' },
+      })
+
+      const caller = createTestCaller(member.id)
+      await caller.organisations.leave({ organisationId: org.id })
+
+      const membership = await prisma.organisationMember.findUnique({
+        where: { userId_organisationId: { userId: member.id, organisationId: org.id } },
+      })
+      expect(membership).toBeNull()
+    })
+
+    it('allows an admin to leave an organisation', async () => {
+      const admin = await createTestUser()
+      const { org } = await createTestOrgWithOwner()
+
+      await prisma.organisationMember.create({
+        data: { organisationId: org.id, userId: admin.id, role: 'ADMIN' },
+      })
+
+      const caller = createTestCaller(admin.id)
+      await caller.organisations.leave({ organisationId: org.id })
+
+      const membership = await prisma.organisationMember.findUnique({
+        where: { userId_organisationId: { userId: admin.id, organisationId: org.id } },
+      })
+      expect(membership).toBeNull()
+    })
+
+    it('allows an owner to leave when another owner exists', async () => {
+      const owner2 = await createTestUser()
+      const { user: owner1, org } = await createTestOrgWithOwner()
+
+      await prisma.organisationMember.create({
+        data: { organisationId: org.id, userId: owner2.id, role: 'OWNER' },
+      })
+
+      const caller = createTestCaller(owner1.id)
+      await caller.organisations.leave({ organisationId: org.id })
+
+      const membership = await prisma.organisationMember.findUnique({
+        where: { userId_organisationId: { userId: owner1.id, organisationId: org.id } },
+      })
+      expect(membership).toBeNull()
+    })
+
+    it('prevents the last owner from leaving', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      await expect(caller.organisations.leave({ organisationId: org.id })).rejects.toThrow(
+        expect.objectContaining({ code: 'BAD_REQUEST' })
+      )
+    })
+
+    it('throws NOT_FOUND when user is not a member', async () => {
+      const nonMember = await createTestUser()
+      const { org } = await createTestOrgWithOwner()
+      const caller = createTestCaller(nonMember.id)
+
+      await expect(caller.organisations.leave({ organisationId: org.id })).rejects.toThrow(
+        expect.objectContaining({ code: 'NOT_FOUND' })
+      )
+    })
+  })
+
   describe('connectSkillsRepo', () => {
     it('allows an OWNER to connect a skills repository', async () => {
       const { user: owner, org } = await createTestOrgWithOwner()
