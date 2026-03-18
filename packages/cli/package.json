@@ -1,6 +1,6 @@
 {
   "name": "@agentver/cli",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "description": "Team-grade skill management for AI coding assistants — version, audit, and deploy to 43+ agents",
   "bin": {
