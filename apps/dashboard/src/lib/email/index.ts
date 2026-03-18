@@ -19,13 +19,6 @@ export function getEmailProvider(): EmailProvider {
       cachedProvider = new PostmarkEmailProvider()
       break
     }
-    case 'smtp': {
-      const { SmtpEmailProvider } = require('./providers/smtp') as {
-        SmtpEmailProvider: ProviderModule
-      }
-      cachedProvider = new SmtpEmailProvider()
-      break
-    }
     default: {
       const { ConsoleEmailProvider } = require('./providers/console') as {
         ConsoleEmailProvider: ProviderModule
