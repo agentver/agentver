@@ -6,6 +6,8 @@ import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 const PUBLIC_ROUTE_PATTERNS = [
   /^\/sign-in(.*)/,
   /^\/sign-up(.*)/,
+  /^\/forgot-password(.*)/,
+  /^\/reset-password(.*)/,
   /^\/auth\/token$/,
   /^\/api\/v1\/(.*)/,
   /^\/api\/webhooks\/(.*)/,
