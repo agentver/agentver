@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import ora from 'ora'
+import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { registryFetch } from '../registry/client'
 import { isConnected } from '../registry/config'
 import { type SkillsShResult, searchSkillsSh, toGitInstallSource } from '../registry/skills-sh'
@@ -136,19 +136,33 @@ export function registerSearchCommand(program: Command): void {
 
         if (requestedSource) {
           if (!['platform', 'community', 'well-known', 'all'].includes(requestedSource)) {
-            process.stderr.write(
-              chalk.red(
-                `Invalid source "${requestedSource}". Use: platform, community, well-known, or all\n`
+            if (isJSONMode()) {
+              outputError(
+                'INVALID_SOURCE',
+                `Invalid source "${requestedSource}". Use: platform, community, well-known, or all`
               )
-            )
+            } else {
+              process.stderr.write(
+                chalk.red(
+                  `Invalid source "${requestedSource}". Use: platform, community, well-known, or all\n`
+                )
+              )
+            }
             process.exit(1)
           }
           source = requestedSource as SearchSource
 
           if (source === 'platform' && !connected) {
-            process.stderr.write(
-              chalk.red('Not connected to a platform. Run `agentver login <url>` to connect.\n')
-            )
+            if (isJSONMode()) {
+              outputError(
+                'AUTH_REQUIRED',
+                'Not connected to a platform. Run `agentver login <url>` to connect.'
+              )
+            } else {
+              process.stderr.write(
+                chalk.red('Not connected to a platform. Run `agentver login <url>` to connect.\n')
+              )
+            }
             process.exit(1)
           }
         } else {
@@ -157,7 +171,7 @@ export function registerSearchCommand(program: Command): void {
 
         // Well-known search is a separate flow — query is treated as a domain name
         if (source === 'well-known') {
-          const spinner = ora(`Fetching skills from ${query}...`).start()
+          const spinner = createSpinner(`Fetching skills from ${query}...`).start()
 
           try {
             const baseUrl = query.startsWith('https://') ? query : `https://${query}`
@@ -166,17 +180,26 @@ export function registerSearchCommand(program: Command): void {
 
             spinner.stop()
 
-            renderWellKnownResults(hostname, index.skills)
+            if (isJSONMode()) {
+              outputSuccess(index.skills)
+            } else {
+              renderWellKnownResults(hostname, index.skills)
+            }
           } catch (error) {
-            spinner.fail(
-              `Well-known search failed: ${error instanceof Error ? error.message : String(error)}`
-            )
+            const message = error instanceof Error ? error.message : String(error)
+            if (isJSONMode()) {
+              spinner.stop()
+              outputError('SEARCH_FAILED', message)
+            } else {
+              spinner.fail(`Well-known search failed: ${message}`)
+            }
             process.exit(1)
           }
           return
         }
 
-        const spinner = ora('Searching...').start()
+        const spinner = createSpinner('Searching...').start()
+        const json = isJSONMode()
 
         try {
           let platformResults: PlatformSearchResult[] = []
@@ -218,6 +241,15 @@ export function registerSearchCommand(program: Command): void {
 
           const hasResults = platformResults.length > 0 || communityResults.length > 0
 
+          if (json) {
+            outputSuccess({
+              platform: platformResults,
+              community: communityResults,
+              total: platformTotal,
+            })
+            return
+          }
+
           if (!hasResults) {
             renderNoResults(query)
             return
@@ -241,7 +273,13 @@ export function registerSearchCommand(program: Command): void {
             )
           }
         } catch (error) {
-          spinner.fail(`Search failed: ${error instanceof Error ? error.message : String(error)}`)
+          const message = error instanceof Error ? error.message : String(error)
+          if (json) {
+            spinner.stop()
+            outputError('SEARCH_FAILED', message)
+          } else {
+            spinner.fail(`Search failed: ${message}`)
+          }
           process.exit(1)
         }
       }

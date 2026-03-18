@@ -81,15 +81,15 @@ describe('git/fetcher', () => {
       expect(fetcherModule.buildRepoUrl(source)).toBe('https://gitlab.com/group/project.git')
     })
 
-    it('works for generic hosts', () => {
+    it('works for custom hosts', () => {
       const source: GitSource = {
-        host: 'generic',
+        host: 'gitea.example.com',
         owner: 'org',
         repo: 'repo',
         path: '',
         ref: 'HEAD',
       }
-      expect(fetcherModule.buildRepoUrl(source)).toBe('https://generic/org/repo.git')
+      expect(fetcherModule.buildRepoUrl(source)).toBe('https://gitea.example.com/org/repo.git')
     })
   })
 

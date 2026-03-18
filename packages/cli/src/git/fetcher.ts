@@ -94,6 +94,8 @@ export async function readFilesFromDirectory(
     const fullPath = join(dirPath, name)
     const relativePath = basePath ? `${basePath}/${name}` : name
 
+    if (relativePath.includes('..')) continue
+
     if (entry.isDirectory()) {
       const nested = await readFilesFromDirectory(fullPath, relativePath)
       files.push(...nested)
@@ -184,7 +186,9 @@ async function fetchGitHubApi(source: GitSource, commitSha: string): Promise<Fet
         const fileData = (await fileResponse.json()) as GitHubContentFile
         if (fileData.content) {
           const content = Buffer.from(fileData.content, 'base64').toString('utf-8')
-          const relativePath = source.path ? item.path.slice(source.path.length + 1) : item.path
+          const prefix = source.path ? `${source.path}/` : ''
+          const relativePath =
+            prefix && item.path.startsWith(prefix) ? item.path.slice(prefix.length) : item.path
           files.push({ path: relativePath, content, size: item.size })
           continue
         }
@@ -209,7 +213,11 @@ async function fetchGitHubApi(source: GitSource, commitSha: string): Promise<Fet
           blobData.encoding === 'base64'
             ? Buffer.from(blobData.content, 'base64').toString('utf-8')
             : blobData.content
-        const relativePath = source.path ? item.path.slice(source.path.length + 1) : item.path
+        const blobPrefix = source.path ? `${source.path}/` : ''
+        const relativePath =
+          blobPrefix && item.path.startsWith(blobPrefix)
+            ? item.path.slice(blobPrefix.length)
+            : item.path
         files.push({ path: relativePath, content, size: blobData.size })
       }
     }
@@ -221,7 +229,6 @@ async function fetchGitHubApi(source: GitSource, commitSha: string): Promise<Fet
 async function fetchGitLabApi(source: GitSource, commitSha: string): Promise<FetchedFile[]> {
   const projectId = encodeURIComponent(`${source.owner}/${source.repo}`)
   const path = source.path || ''
-  const treeUrl = `https://gitlab.com/api/v4/projects/${projectId}/repository/tree?path=${encodeURIComponent(path)}&ref=${commitSha}&recursive=true&per_page=100`
 
   const headers: Record<string, string> = { 'User-Agent': 'agentver-cli' }
   const token = process.env.GITLAB_TOKEN
@@ -229,20 +236,36 @@ async function fetchGitLabApi(source: GitSource, commitSha: string): Promise<Fet
     headers['PRIVATE-TOKEN'] = token
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
+  const tree: GitLabTreeItem[] = []
+  let nextUrl: string | null =
+    `https://gitlab.com/api/v4/projects/${projectId}/repository/tree?path=${encodeURIComponent(path)}&ref=${commitSha}&recursive=true&per_page=100`
+
+  while (nextUrl) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(nextUrl, { headers, signal: controller.signal })
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        throw new AgentverError('INTERNAL_ERROR', `GitLab tree API returned ${response.status}`)
+      }
+
+      const page = (await response.json()) as GitLabTreeItem[]
+      tree.push(...page)
+
+      nextUrl = parseGitLabNextPage(response.headers.get('link'))
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof AgentverError) throw error
+      throw new AgentverError('INTERNAL_ERROR', `GitLab API fetch failed: ${String(error)}`)
+    }
+  }
+
+  const files: FetchedFile[] = []
 
   try {
-    const response = await fetch(treeUrl, { headers, signal: controller.signal })
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      throw new AgentverError('INTERNAL_ERROR', `GitLab tree API returned ${response.status}`)
-    }
-
-    const tree = (await response.json()) as GitLabTreeItem[]
-    const files: FetchedFile[] = []
-
     for (const item of tree) {
       if (item.type !== 'blob') continue
 
@@ -267,7 +290,11 @@ async function fetchGitLabApi(source: GitSource, commitSha: string): Promise<Fet
           continue
         }
 
-        const relativePath = path ? item.path.slice(path.length + 1) : item.path
+        const gitlabPrefix = path ? `${path}/` : ''
+        const relativePath =
+          gitlabPrefix && item.path.startsWith(gitlabPrefix)
+            ? item.path.slice(gitlabPrefix.length)
+            : item.path
         files.push({ path: relativePath, content, size: content.length })
       } catch (error) {
         clearTimeout(fileTimeoutId)
@@ -277,7 +304,6 @@ async function fetchGitLabApi(source: GitSource, commitSha: string): Promise<Fet
 
     return files
   } catch (error) {
-    clearTimeout(timeoutId)
     if (error instanceof AgentverError) throw error
     throw new AgentverError('INTERNAL_ERROR', `GitLab API fetch failed: ${String(error)}`)
   }
@@ -484,6 +510,12 @@ async function gitHubFetch(url: string): Promise<Response> {
     clearTimeout(timeoutId)
     throw error
   }
+}
+
+function parseGitLabNextPage(linkHeader: string | null): string | null {
+  if (!linkHeader) return null
+  const match = /<([^>]+)>;\s*rel="next"/.exec(linkHeader)
+  return match?.[1] ?? null
 }
 
 function isEnoent(error: unknown): boolean {

@@ -145,7 +145,7 @@ export function registerPublishCommand(program: Command): void {
 
           // Create a minimal GitSource for the scanner
           const scanSource: GitSource = {
-            host: 'generic',
+            host: 'local',
             owner: namespace.org,
             repo: namespace.name,
             path: '',

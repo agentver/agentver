@@ -5,6 +5,7 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
+  renameSync: vi.fn(),
   rmSync: vi.fn(),
 }))
 
@@ -32,9 +33,13 @@ describe('storage/patches', () => {
         recursive: true,
       })
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        expect.stringContaining('my-skill.patch'),
+        expect.stringContaining('my-skill.patch.tmp'),
         '--- a/file\n+++ b/file\n',
         'utf-8'
+      )
+      expect(fs.renameSync).toHaveBeenCalledWith(
+        expect.stringContaining('my-skill.patch.tmp'),
+        expect.stringContaining('my-skill.patch')
       )
       expect(result).toContain('my-skill.patch')
     })
@@ -129,9 +134,13 @@ describe('storage/patches', () => {
       expect(applyResult.applied).toBe(true)
       expect(applyResult.conflicts).toHaveLength(0)
       expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
-        expect.stringContaining('index.md'),
+        expect.stringContaining('index.md.tmp'),
         'line 1\nmodified line 2\nline 3',
         'utf-8'
+      )
+      expect(vi.mocked(fs.renameSync)).toHaveBeenCalledWith(
+        expect.stringContaining('index.md.tmp'),
+        expect.stringContaining('index.md')
       )
     })
   })

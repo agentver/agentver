@@ -5,6 +5,7 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }))
 
 vi.mock('node:os', () => ({
@@ -83,24 +84,20 @@ describe('registry/auth', () => {
   })
 
   describe('clearCredentials', () => {
-    it('overwrites credentials file with empty object', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true)
-
+    it('deletes the credentials file', () => {
       authModule.clearCredentials()
 
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        expect.stringContaining('credentials.json'),
-        '{}',
-        { mode: 0o600 }
-      )
+      expect(fs.unlinkSync).toHaveBeenCalledWith(expect.stringContaining('credentials.json'))
     })
 
-    it('does nothing when file does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false)
+    it('handles gracefully when file does not exist', () => {
+      const enoentError = new Error('ENOENT: no such file or directory') as NodeJS.ErrnoException
+      enoentError.code = 'ENOENT'
+      vi.mocked(fs.unlinkSync).mockImplementation(() => {
+        throw enoentError
+      })
 
-      authModule.clearCredentials()
-
-      expect(fs.writeFileSync).not.toHaveBeenCalled()
+      expect(() => authModule.clearCredentials()).not.toThrow()
     })
   })
 

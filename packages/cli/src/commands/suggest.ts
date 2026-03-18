@@ -233,6 +233,9 @@ export function registerSuggestCommand(program: Command): void {
         const validTargets = targets.filter((n) => !unsupportedTargets.includes(n))
 
         if (validTargets.length === 0) {
+          if (json) {
+            outputError('NO_VALID_TARGETS', 'No valid targets for suggestion.')
+          }
           process.exit(1)
         }
 
@@ -352,7 +355,7 @@ export function registerSuggestCommand(program: Command): void {
           )
         }
 
-        if (failed.length > 0 && succeeded.length === 0) {
+        if (failed.length > 0 && succeeded.length === 0 && !json) {
           process.exit(1)
         }
       }

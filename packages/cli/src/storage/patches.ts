@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const PATCHES_DIR = '.agentver/patches'
@@ -36,7 +36,9 @@ export function savePatch(projectRoot: string, packageName: string, patchContent
     mkdirSync(dir, { recursive: true })
   }
 
-  writeFileSync(patchPath, patchContent, 'utf-8')
+  const tmpPath = `${patchPath}.tmp`
+  writeFileSync(tmpPath, patchContent, 'utf-8')
+  renameSync(tmpPath, patchPath)
   return patchPath
 }
 
@@ -127,7 +129,9 @@ function applyFilePatch(projectRoot: string, filePatch: FilePatch): boolean {
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
     }
-    writeFileSync(fullPath, content, 'utf-8')
+    const tmpPath = `${fullPath}.tmp`
+    writeFileSync(tmpPath, content, 'utf-8')
+    renameSync(tmpPath, fullPath)
     return true
   }
 
@@ -152,7 +156,9 @@ function applyFilePatch(projectRoot: string, filePatch: FilePatch): boolean {
     offset = result.offset
   }
 
-  writeFileSync(fullPath, currentLines.join('\n'), 'utf-8')
+  const tmpPath = `${fullPath}.tmp`
+  writeFileSync(tmpPath, currentLines.join('\n'), 'utf-8')
+  renameSync(tmpPath, fullPath)
   return true
 }
 

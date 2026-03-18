@@ -191,9 +191,11 @@ export function registerSuggestionsCommand(program: Command): void {
         console.log()
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        spinner.fail(`Failed to fetch suggestions: ${message}`)
         if (json) {
+          spinner.stop()
           outputError('FETCH_FAILED', message)
+        } else {
+          spinner.fail(`Failed to fetch suggestions: ${message}`)
         }
         process.exit(1)
       }
