@@ -10,6 +10,12 @@ export function getEmailProvider(): EmailProvider {
   const provider = process.env.EMAIL_PROVIDER ?? 'console'
 
   switch (provider) {
+    case 'postmark': {
+      const { PostmarkEmailProvider } =
+        require('./providers/postmark') as typeof import('./providers/postmark')
+      cachedProvider = new PostmarkEmailProvider()
+      break
+    }
     case 'smtp': {
       const { SmtpEmailProvider } = require('./providers/smtp') as typeof import('./providers/smtp')
       cachedProvider = new SmtpEmailProvider()
