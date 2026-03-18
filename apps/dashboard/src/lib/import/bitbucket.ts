@@ -205,6 +205,7 @@ export async function scanBitbucketRepo(
   const commit = mainBranch
 
   const skillPaths = [
+    'skills',
     '.claude/skills',
     '.cursor/skills',
     '.agents/skills',
@@ -285,6 +286,7 @@ export async function scanBitbucketRepo(
   }
 
   const skillPathAgentMap: Record<string, string> = {
+    skills: 'multi-agent',
     '.claude': 'claude-code',
     '.cursor': 'cursor',
     '.agents': 'codex',

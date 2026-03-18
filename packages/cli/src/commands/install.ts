@@ -15,7 +15,7 @@ import type { Command } from 'commander'
 import type ora from 'ora'
 import prompts from 'prompts'
 import { fetchFiles, parseGitSource, resolveRef } from '../git/index.js'
-import type { FetchedFile } from '../git/types.js'
+import type { FetchedFile, ResolvedRef } from '../git/types.js'
 import {
   createSpinner,
   isJSONMode,
@@ -681,7 +681,21 @@ export async function installPackage(
     const resolved = await resolveRef(gitSource)
 
     spinner.text = `Fetching files from ${gitSource.host}/${gitSource.owner}/${gitSource.repo}`
-    const result = await fetchFiles(resolved)
+    let result = await fetchFiles(resolved)
+
+    // If no files found and the source has a specific path, try with skills/ prefix.
+    // This handles the common skills.sh community pattern where skills live under a
+    // top-level skills/ directory (e.g. skills/seo-audit/SKILL.md instead of seo-audit/SKILL.md).
+    if (result.files.length === 0 && gitSource.path) {
+      const prefixedResolved: ResolvedRef = {
+        ...resolved,
+        source: { ...gitSource, path: `skills/${gitSource.path}` },
+      }
+      const prefixedResult = await fetchFiles(prefixedResolved)
+      if (prefixedResult.files.length > 0) {
+        result = prefixedResult
+      }
+    }
 
     if (result.files.length === 0) {
       if (jsonMode) {

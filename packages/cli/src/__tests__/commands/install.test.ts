@@ -655,6 +655,121 @@ describe('commands/install', () => {
   })
 
   // -------------------------------------------------------------------------
+  // skills/ prefix retry when direct path returns no files
+  // -------------------------------------------------------------------------
+
+  describe('skills/ prefix retry fallback', () => {
+    it('retries with skills/ prefix and succeeds when direct path returns no files', async () => {
+      const gitSource = createGitSource({ path: 'my-skill' })
+      const files = createFetchedFiles(2)
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const emptyResult: FetchResult = { files: [], commitSha: RESOLVED_SHA, source: gitSource }
+      const prefixedSource = { ...gitSource, path: `skills/${gitSource.path}` }
+      const prefixedResult: FetchResult = {
+        files,
+        commitSha: RESOLVED_SHA,
+        source: prefixedSource,
+      }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      // First call (direct path) returns empty, second call (skills/ prefix) returns files
+      vi.mocked(gitIndex.fetchFiles)
+        .mockResolvedValueOnce(emptyResult)
+        .mockResolvedValueOnce(prefixedResult)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        '/project/.agents/skills/my-skill'
+      )
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue(null)
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      const result = await installPackage('github.com/test-org/test-repo/my-skill@main', {
+        agent: 'claude-code',
+      })
+
+      expect(gitIndex.fetchFiles).toHaveBeenCalledTimes(2)
+      // Second call should use the skills/-prefixed source
+      const secondCallArg = vi.mocked(gitIndex.fetchFiles).mock.calls[1]![0] as ResolvedRef
+      expect(secondCallArg.source.path).toBe('skills/my-skill')
+      // Install should succeed
+      expect(result).toBeDefined()
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not retry with skills/ prefix when direct path returns files', async () => {
+      setupHappyPathMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      // fetchFiles should only be called once — no retry needed
+      expect(gitIndex.fetchFiles).toHaveBeenCalledTimes(1)
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+    })
+
+    it('exits when both direct and skills/-prefixed paths return no files', async () => {
+      const gitSource = createGitSource({ path: 'nonexistent-skill' })
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const emptyResult: FetchResult = { files: [], commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      // Both calls return empty
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(emptyResult)
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue(null)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      await expect(
+        installPackage('github.com/test-org/test-repo/nonexistent-skill@main', {
+          agent: 'claude-code',
+        })
+      ).rejects.toThrow(ExitError)
+
+      // Should have tried both the direct path and the skills/ prefix
+      expect(gitIndex.fetchFiles).toHaveBeenCalledTimes(2)
+      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(manifestModule.writeManifest).not.toHaveBeenCalled()
+    })
+
+    it('does not retry when source has no path (repo root)', async () => {
+      const gitSource = createGitSource({ path: '' })
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const emptyResult: FetchResult = { files: [], commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(emptyResult)
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue(null)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      await expect(
+        installPackage('github.com/test-org/test-repo@main', { agent: 'claude-code' })
+      ).rejects.toThrow(ExitError)
+
+      // Should NOT retry — no path means no skills/ prefix to try
+      expect(gitIndex.fetchFiles).toHaveBeenCalledTimes(1)
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // Well-known URL install path
   // -------------------------------------------------------------------------
 
