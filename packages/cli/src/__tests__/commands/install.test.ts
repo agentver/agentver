@@ -918,18 +918,19 @@ describe('commands/install', () => {
   })
 
   // -------------------------------------------------------------------------
-  // resolveSource with platform name resolution
+  // Short name platform resolution (org/package format)
   // -------------------------------------------------------------------------
 
-  describe('resolveSource platform name resolution', () => {
-    it('resolves short name via platform when platformUrl is configured', async () => {
+  describe('short name platform resolution', () => {
+    it('resolves org/package via platform when platformUrl is configured (git-backed)', async () => {
       setupHappyPathMocks()
       vi.mocked(configModule.readConfig).mockReturnValue({
         platformUrl: 'https://app.agentver.com',
       })
       vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
 
-      // Mock global fetch for the platform resolve endpoint
+      // Platform returns a git-backed package — installFromPlatform delegates to installPackage
+      // with the full git URL, which then goes through the git flow
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
@@ -937,11 +938,11 @@ describe('commands/install', () => {
             gitUri: 'github.com/resolved-org/resolved-repo',
             gitPath: 'skills/resolved-skill',
             gitRef: 'main',
+            source: 'git',
           }),
       })
       globalThis.fetch = mockFetch
 
-      // The resolved source is then parsed via parseGitSource
       const resolvedGitSource = createGitSource({
         host: 'github.com',
         owner: 'resolved-org',
@@ -951,10 +952,10 @@ describe('commands/install', () => {
       })
       vi.mocked(gitIndex.parseGitSource).mockReturnValue(resolvedGitSource)
 
-      const result = await installPackage('my-skill', { agent: 'claude-code' })
+      const result = await installPackage('my-org/my-skill', { agent: 'claude-code' })
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/v1/resolve?name=my-skill'),
+        expect.stringContaining('/api/v1/resolve?name=my-org%2Fmy-skill'),
         expect.objectContaining({
           headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
         })
@@ -963,7 +964,36 @@ describe('commands/install', () => {
       expect(result!.name).toBe('resolved-skill')
     })
 
-    it('appends user-specified ref instead of platform-provided ref', async () => {
+    it('installs directly from platform when source is platform-hosted', async () => {
+      setupHappyPathMocks()
+      vi.mocked(configModule.readConfig).mockReturnValue({
+        platformUrl: 'https://app.agentver.com',
+      })
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
+
+      // Platform returns a platform-hosted package with files
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            gitUri: 'agentver://my-org/skills',
+            gitPath: 'my-skill',
+            gitRef: 'main',
+            source: 'platform',
+            files: [{ path: 'SKILL.md', content: '# My Skill\nSome content' }],
+          }),
+      })
+      globalThis.fetch = mockFetch
+
+      const result = await installPackage('my-org/my-skill', { agent: 'claude-code' })
+
+      expect(result).toBeDefined()
+      expect(result!.name).toBe('my-skill')
+      // Should NOT call parseGitSource — files come directly from platform
+      expect(gitIndex.parseGitSource).not.toHaveBeenCalled()
+    })
+
+    it('passes user-specified ref through to platform resolution', async () => {
       setupHappyPathMocks()
       vi.mocked(configModule.readConfig).mockReturnValue({
         platformUrl: 'https://app.agentver.com',
@@ -977,6 +1007,7 @@ describe('commands/install', () => {
             gitUri: 'github.com/resolved-org/resolved-repo',
             gitPath: 'skills/resolved-skill',
             gitRef: 'main',
+            source: 'git',
           }),
       })
       globalThis.fetch = mockFetch
@@ -990,34 +1021,47 @@ describe('commands/install', () => {
       })
       vi.mocked(gitIndex.parseGitSource).mockReturnValue(resolvedGitSource)
 
-      await installPackage('my-skill@v2.0', { agent: 'claude-code' })
+      await installPackage('my-org/my-skill@v2.0', { agent: 'claude-code' })
 
-      // parseGitSource should have been called with the resolved URL containing the user ref
+      // The recursive installPackage call should receive the full git URL with user ref
       expect(gitIndex.parseGitSource).toHaveBeenCalledWith(expect.stringContaining('@v2.0'))
     })
 
-    it('exits with VALIDATION_ERROR when short name used without platformUrl', async () => {
+    it('exits when short name used without platformUrl', async () => {
       setupHappyPathMocks()
       vi.mocked(configModule.readConfig).mockReturnValue({})
 
-      // 'my-skill' does not look like a git URL (no dots in first segment, fewer than 3 segments)
-      // so resolveSource will try platform resolution and fail
-      await expect(installPackage('my-skill', { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage('my-org/my-skill', { agent: 'claude-code' })).rejects.toThrow(
+        ExitError
+      )
 
       expect(process.exit).toHaveBeenCalledWith(1)
     })
 
-    it('outputs INSTALL_FAILED JSON error when short name used without platformUrl in JSON mode', async () => {
+    it('outputs VALIDATION_ERROR JSON when short name used without platformUrl in JSON mode', async () => {
       setupHappyPathMocks()
       vi.mocked(configModule.readConfig).mockReturnValue({})
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await expect(installPackage('my-skill', { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage('my-org/my-skill', { agent: 'claude-code' })).rejects.toThrow(
+        ExitError
+      )
 
       expect(outputModule.outputError).toHaveBeenCalledWith(
-        'INSTALL_FAILED',
+        'VALIDATION_ERROR',
         expect.stringContaining("doesn't look like a Git URL")
       )
+    })
+
+    it('rejects single-segment package names', async () => {
+      setupHappyPathMocks()
+      vi.mocked(configModule.readConfig).mockReturnValue({
+        platformUrl: 'https://app.agentver.com',
+      })
+
+      await expect(installPackage('my-skill', { agent: 'claude-code' })).rejects.toThrow(ExitError)
+
+      expect(process.exit).toHaveBeenCalledWith(1)
     })
   })
 
