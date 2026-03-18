@@ -76,7 +76,7 @@ export const searchRouter = router({
 
       return withCache(cacheKey, FEATURED_COMMUNITY_CACHE_TTL, async () => {
         const { searchSkillsSh } = await import('@/lib/registries/skills-sh')
-        return searchSkillsSh('claude', input.limit)
+        return searchSkillsSh('', input.limit)
       })
     }),
 

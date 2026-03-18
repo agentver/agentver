@@ -423,4 +423,33 @@ describe('publish command', () => {
 
     expect(platformFetch).toHaveBeenCalled()
   })
+
+  // -------------------------------------------------------------------------
+  // --public flag
+  // -------------------------------------------------------------------------
+
+  it('sends visibility PUBLIC in request body when --public flag is set', async () => {
+    setupHappyPath()
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'publish', '--public'])
+
+    expect(platformFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/publish'),
+      expect.objectContaining({
+        body: expect.objectContaining({ visibility: 'PUBLIC' }),
+      })
+    )
+  })
+
+  it('does not include visibility in request body when --public flag is omitted', async () => {
+    setupHappyPath()
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'publish'])
+
+    const call = vi.mocked(platformFetch).mock.calls[0]
+    const body = (call?.[1] as { body: Record<string, unknown> } | undefined)?.body
+    expect(body).not.toHaveProperty('visibility')
+  })
 })

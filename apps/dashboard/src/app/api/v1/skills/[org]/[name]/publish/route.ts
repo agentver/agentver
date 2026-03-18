@@ -69,47 +69,54 @@ export async function POST(
   }
 
   try {
-    // Find or auto-create the Package record
-    const existingPkg = await prisma.package.findFirst({
-      where: { name, organisationId: orgRecord.id },
-    })
+    const skillMd = files.find((f) => f.path === 'SKILL.md' || f.path.endsWith('/SKILL.md'))
 
-    let pkg = existingPkg
-    if (!pkg) {
-      const skillMd = files.find((f) => f.path === 'SKILL.md' || f.path.endsWith('/SKILL.md'))
-      if (!skillMd) {
+    // For new packages SKILL.md is required — check existence before blocking
+    if (!skillMd) {
+      const existingCheck = await prisma.package.findFirst({
+        where: { name, organisationId: orgRecord.id },
+        select: { id: true },
+      })
+      if (!existingCheck) {
         return NextResponse.json({ error: 'SKILL.md required for new packages' }, { status: 400 })
       }
-
-      const { rawData } = parseFrontmatter(skillMd.content)
-
-      pkg = await prisma.package.create({
-        data: {
-          name,
-          slug: `${org}/${name}`,
-          description: typeof rawData.description === 'string' ? rawData.description : '',
-          type: 'SKILL',
-          visibility: visibility ?? 'PRIVATE',
-          tags: Array.isArray(rawData.tags) ? (rawData.tags as string[]) : [],
-          compatibilityAgents: Array.isArray(rawData.compatibility)
-            ? (rawData.compatibility as string[])
-            : [],
-          readme: skillMd.content,
-          organisationId: orgRecord.id,
-          authorId: authResult.userId,
-        },
-      })
-
-      logger.info('Auto-created package for new skill', { org, name, packageId: pkg.id })
     }
 
-    // Update visibility if explicitly requested on an existing package
-    if (visibility && existingPkg) {
-      await prisma.package.update({
-        where: { id: pkg.id },
-        data: { visibility },
-      })
-    }
+    const rawData: Record<string, unknown> = skillMd
+      ? parseFrontmatter(skillMd.content).rawData
+      : {}
+
+    // Validate frontmatter arrays to avoid unsafe casts and unbounded input
+    const safeTags = z
+      .array(z.string().max(64))
+      .max(20)
+      .catch([])
+      .parse(rawData.tags ?? [])
+    const safeCompatibility = z
+      .array(z.string().max(64))
+      .max(20)
+      .catch([])
+      .parse(rawData.compatibility ?? [])
+
+    // Atomic upsert — safe under concurrent publishes (avoids TOCTOU P2002 on unique organisationId+name)
+    const pkg = await prisma.package.upsert({
+      where: { organisationId_name: { organisationId: orgRecord.id, name } },
+      create: {
+        name,
+        slug: `${org}/${name}`,
+        description: typeof rawData.description === 'string' ? rawData.description : '',
+        type: 'SKILL',
+        visibility: visibility ?? 'PRIVATE',
+        tags: safeTags,
+        compatibilityAgents: safeCompatibility,
+        readme: skillMd?.content ?? '',
+        organisationId: orgRecord.id,
+        authorId: authResult.userId,
+      },
+      update: visibility ? { visibility } : {},
+    })
+
+    logger.info('Package upserted for skill publish', { org, name, packageId: pkg.id })
 
     const gitService = getGitProvider()
     const commitMessage = version ? `Publish ${name}@${version}` : `Publish ${name}`
@@ -128,7 +135,9 @@ export async function POST(
     if (version) {
       await gitService.createVersion(org, name, version, `Release ${version}`, result.commitSha)
 
-      const allContent = files.map((f) => f.content).join('\n')
+      // Sort by path so identical file sets always produce the same hash regardless of upload order
+      const sortedFiles = [...files].sort((a, b) => a.path.localeCompare(b.path))
+      const allContent = sortedFiles.map((f) => f.content).join('\n')
       const sha256 = createHash('sha256').update(allContent).digest('hex')
       const size = Buffer.byteLength(allContent, 'utf-8')
 

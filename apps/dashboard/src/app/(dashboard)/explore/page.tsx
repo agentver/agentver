@@ -40,8 +40,7 @@ export default function ExplorePage() {
 }
 
 function StatsBar() {
-  const { data } = trpc.mcpCatalogue.list.useQuery({ limit: 100 })
-  const mcpCount = data?.items.length ?? 0
+  const { data: mcpCount } = trpc.mcpCatalogue.count.useQuery()
 
   if (!mcpCount) return null
 
