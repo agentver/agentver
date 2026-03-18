@@ -1,17 +1,23 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateEnum
 CREATE TYPE "OrganisationRole" AS ENUM ('OWNER', 'ADMIN', 'MEMBER', 'VIEWER');
 
 -- CreateEnum
-CREATE TYPE "PackageType" AS ENUM ('SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT');
+CREATE TYPE "PackageType" AS ENUM ('SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE');
+
+-- CreateEnum
+CREATE TYPE "VersionStatus" AS ENUM ('PUBLISHED', 'DEPRECATED', 'YANKED');
 
 -- CreateEnum
 CREATE TYPE "Visibility" AS ENUM ('PUBLIC', 'PRIVATE', 'TEAM');
 
 -- CreateEnum
+CREATE TYPE "PackageStatus" AS ENUM ('ACTIVE', 'ARCHIVED', 'DEPRECATED');
+
+-- CreateEnum
 CREATE TYPE "ApiKeyScope" AS ENUM ('READ', 'WRITE', 'ADMIN');
+
+-- CreateEnum
+CREATE TYPE "SecretSharing" AS ENUM ('INDIVIDUAL', 'TEAM', 'ORG');
 
 -- CreateEnum
 CREATE TYPE "ConnectedProvider" AS ENUM ('GITHUB', 'GOOGLE', 'MICROSOFT', 'GITLAB', 'BITBUCKET');
@@ -23,20 +29,25 @@ CREATE TYPE "ProposalStatus" AS ENUM ('OPEN', 'IN_REVIEW', 'APPROVED', 'MERGED',
 CREATE TYPE "ReviewDecision" AS ENUM ('APPROVED', 'CHANGES_REQUESTED', 'COMMENTED');
 
 -- CreateEnum
-CREATE TYPE "NotificationType" AS ENUM ('PROPOSAL_OPENED', 'PROPOSAL_APPROVED', 'PROPOSAL_MERGED', 'PROPOSAL_REJECTED', 'PROPOSAL_COMMENTED', 'REVIEW_REQUESTED', 'PACKAGE_FORKED', 'PACKAGE_UPDATED', 'VERSION_PUBLISHED', 'MEMBER_INVITED', 'COLLECTION_SHARED', 'UPSTREAM_CHANGED');
+CREATE TYPE "NotificationType" AS ENUM ('PROPOSAL_OPENED', 'PROPOSAL_APPROVED', 'PROPOSAL_MERGED', 'PROPOSAL_REJECTED', 'PROPOSAL_COMMENTED', 'REVIEW_REQUESTED', 'PACKAGE_FORKED', 'PACKAGE_UPDATED', 'VERSION_PUBLISHED', 'MEMBER_INVITED', 'COLLECTION_SHARED', 'UPSTREAM_CHANGED', 'SECRET_ROTATION_DUE', 'SECRET_EXPIRING', 'BUNDLE_UPDATED');
 
 -- CreateEnum
 CREATE TYPE "DraftStatus" AS ENUM ('ACTIVE', 'MERGED', 'DISCARDED');
 
+-- CreateEnum
+CREATE TYPE "SubscriptionStatus" AS ENUM ('TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELLED', 'UNPAID');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
-    "clerkId" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "username" TEXT,
     "name" TEXT,
     "image" TEXT,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
     "isVerifiedPublisher" BOOLEAN NOT NULL DEFAULT false,
+    "suspended" BOOLEAN NOT NULL DEFAULT false,
+    "suspendedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -74,6 +85,23 @@ CREATE TABLE "organisation_members" (
 );
 
 -- CreateTable
+CREATE TABLE "organisation_invitations" (
+    "id" TEXT NOT NULL,
+    "organisationId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "role" "OrganisationRole" NOT NULL DEFAULT 'MEMBER',
+    "token" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "acceptedAt" TIMESTAMP(3),
+    "declinedAt" TIMESTAMP(3),
+    "invitedById" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastSentAt" TIMESTAMP(3),
+
+    CONSTRAINT "organisation_invitations_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "teams" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -103,6 +131,8 @@ CREATE TABLE "packages" (
     "description" TEXT,
     "type" "PackageType" NOT NULL DEFAULT 'SKILL',
     "visibility" "Visibility" NOT NULL DEFAULT 'PRIVATE',
+    "status" "PackageStatus" NOT NULL DEFAULT 'ACTIVE',
+    "deprecationNote" TEXT,
     "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "compatibilityAgents" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "readme" TEXT,
@@ -129,6 +159,7 @@ CREATE TABLE "package_versions" (
     "packageId" TEXT NOT NULL,
     "version" TEXT NOT NULL,
     "changelog" TEXT,
+    "status" "VersionStatus" NOT NULL DEFAULT 'PUBLISHED',
     "fileManifest" JSONB,
     "storagePath" TEXT,
     "sha256" TEXT,
@@ -164,6 +195,10 @@ CREATE TABLE "installation_reports" (
     "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "sourceUri" TEXT,
+    "sourcePath" TEXT,
+    "sourceRef" TEXT,
+    "sourceCommit" TEXT,
 
     CONSTRAINT "installation_reports_pkey" PRIMARY KEY ("id")
 );
@@ -183,6 +218,38 @@ CREATE TABLE "api_keys" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "api_keys_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "secret_vault" (
+    "id" TEXT NOT NULL,
+    "organisationId" TEXT NOT NULL,
+    "teamId" TEXT,
+    "key" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
+    "encryptedValue" TEXT NOT NULL,
+    "sharing" "SecretSharing" NOT NULL DEFAULT 'INDIVIDUAL',
+    "rotationDays" INTEGER,
+    "lastRotatedAt" TIMESTAMP(3),
+    "expiresAt" TIMESTAMP(3),
+    "createdById" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "secret_vault_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "secret_access_logs" (
+    "id" TEXT NOT NULL,
+    "secretId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "action" TEXT NOT NULL,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "secret_access_logs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -410,9 +477,38 @@ CREATE TABLE "webhook_deliveries" (
     "status" INTEGER NOT NULL,
     "response" TEXT,
     "attempts" INTEGER NOT NULL DEFAULT 1,
+    "nextRetryAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "webhook_deliveries_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "mcp_server_definitions" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "displayName" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
+    "author" TEXT NOT NULL,
+    "sourceType" TEXT NOT NULL,
+    "sourcePackage" TEXT,
+    "sourceUri" TEXT,
+    "latestVersion" TEXT,
+    "transport" TEXT NOT NULL DEFAULT 'stdio',
+    "command" TEXT,
+    "args" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "url" TEXT,
+    "credentialSchema" JSONB,
+    "toolManifest" JSONB,
+    "compatibility" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "categories" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "installCount" INTEGER NOT NULL DEFAULT 0,
+    "starCount" INTEGER NOT NULL DEFAULT 0,
+    "verified" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "mcp_server_definitions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -426,8 +522,67 @@ CREATE TABLE "skill_maintainers" (
     CONSTRAINT "skill_maintainers_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE UNIQUE INDEX "users_clerkId_key" ON "users"("clerkId");
+-- CreateTable
+CREATE TABLE "sessions" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "token" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "userId" TEXT NOT NULL,
+
+    CONSTRAINT "sessions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "accounts" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+    "accountId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "accessToken" TEXT,
+    "refreshToken" TEXT,
+    "idToken" TEXT,
+    "accessTokenExpiresAt" TIMESTAMP(3),
+    "refreshTokenExpiresAt" TIMESTAMP(3),
+    "scope" TEXT,
+    "password" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "accounts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "verifications" (
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
+    "identifier" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3),
+
+    CONSTRAINT "verifications_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "subscriptions" (
+    "id" TEXT NOT NULL,
+    "organisationId" TEXT NOT NULL,
+    "stripeCustomerId" TEXT NOT NULL,
+    "stripeSubscriptionId" TEXT,
+    "stripePriceId" TEXT,
+    "status" "SubscriptionStatus" NOT NULL DEFAULT 'TRIALING',
+    "currentPeriodStart" TIMESTAMP(3),
+    "currentPeriodEnd" TIMESTAMP(3),
+    "cancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "subscriptions_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
@@ -445,6 +600,15 @@ CREATE INDEX "organisation_members_organisationId_idx" ON "organisation_members"
 CREATE UNIQUE INDEX "organisation_members_userId_organisationId_key" ON "organisation_members"("userId", "organisationId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "organisation_invitations_token_key" ON "organisation_invitations"("token");
+
+-- CreateIndex
+CREATE INDEX "organisation_invitations_email_idx" ON "organisation_invitations"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "organisation_invitations_organisationId_email_key" ON "organisation_invitations"("organisationId", "email");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "teams_organisationId_slug_key" ON "teams"("organisationId", "slug");
 
 -- CreateIndex
@@ -458,6 +622,9 @@ CREATE INDEX "packages_type_idx" ON "packages"("type");
 
 -- CreateIndex
 CREATE INDEX "packages_visibility_idx" ON "packages"("visibility");
+
+-- CreateIndex
+CREATE INDEX "packages_status_idx" ON "packages"("status");
 
 -- CreateIndex
 CREATE INDEX "packages_organisationId_idx" ON "packages"("organisationId");
@@ -494,6 +661,24 @@ CREATE INDEX "api_keys_organisationId_idx" ON "api_keys"("organisationId");
 
 -- CreateIndex
 CREATE INDEX "api_keys_userId_idx" ON "api_keys"("userId");
+
+-- CreateIndex
+CREATE INDEX "secret_vault_organisationId_idx" ON "secret_vault"("organisationId");
+
+-- CreateIndex
+CREATE INDEX "secret_vault_teamId_idx" ON "secret_vault"("teamId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "secret_vault_organisationId_teamId_key_key" ON "secret_vault"("organisationId", "teamId", "key");
+
+-- CreateIndex
+CREATE INDEX "secret_access_logs_secretId_idx" ON "secret_access_logs"("secretId");
+
+-- CreateIndex
+CREATE INDEX "secret_access_logs_userId_idx" ON "secret_access_logs"("userId");
+
+-- CreateIndex
+CREATE INDEX "secret_access_logs_createdAt_idx" ON "secret_access_logs"("createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "cli_auth_codes_code_key" ON "cli_auth_codes"("code");
@@ -592,13 +777,46 @@ CREATE INDEX "webhook_endpoints_organisationId_idx" ON "webhook_endpoints"("orga
 CREATE INDEX "webhook_deliveries_endpointId_createdAt_idx" ON "webhook_deliveries"("endpointId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "webhook_deliveries_nextRetryAt_idx" ON "webhook_deliveries"("nextRetryAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "mcp_server_definitions_name_key" ON "mcp_server_definitions"("name");
+
+-- CreateIndex
+CREATE INDEX "mcp_server_definitions_sourceType_idx" ON "mcp_server_definitions"("sourceType");
+
+-- CreateIndex
+CREATE INDEX "mcp_server_definitions_verified_idx" ON "mcp_server_definitions"("verified");
+
+-- CreateIndex
 CREATE INDEX "skill_maintainers_packageId_idx" ON "skill_maintainers"("packageId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "sessions_token_key" ON "sessions"("token");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "subscriptions_organisationId_key" ON "subscriptions"("organisationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "subscriptions_stripeCustomerId_key" ON "subscriptions"("stripeCustomerId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "subscriptions_stripeSubscriptionId_key" ON "subscriptions"("stripeSubscriptionId");
+
+-- CreateIndex
+CREATE INDEX "subscriptions_organisationId_idx" ON "subscriptions"("organisationId");
 
 -- AddForeignKey
 ALTER TABLE "organisation_members" ADD CONSTRAINT "organisation_members_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "organisation_members" ADD CONSTRAINT "organisation_members_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "organisations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "organisation_invitations" ADD CONSTRAINT "organisation_invitations_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "organisations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "organisation_invitations" ADD CONSTRAINT "organisation_invitations_invitedById_fkey" FOREIGN KEY ("invitedById") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "teams" ADD CONSTRAINT "teams_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "organisations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -647,6 +865,18 @@ ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_userId_fkey" FOREIGN KEY ("userI
 
 -- AddForeignKey
 ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "organisations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "secret_vault" ADD CONSTRAINT "secret_vault_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "organisations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "secret_vault" ADD CONSTRAINT "secret_vault_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "teams"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "secret_vault" ADD CONSTRAINT "secret_vault_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "secret_access_logs" ADD CONSTRAINT "secret_access_logs_secretId_fkey" FOREIGN KEY ("secretId") REFERENCES "secret_vault"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "cli_auth_codes" ADD CONSTRAINT "cli_auth_codes_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -728,3 +958,12 @@ ALTER TABLE "skill_maintainers" ADD CONSTRAINT "skill_maintainers_userId_fkey" F
 
 -- AddForeignKey
 ALTER TABLE "skill_maintainers" ADD CONSTRAINT "skill_maintainers_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "teams"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "sessions" ADD CONSTRAINT "sessions_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "organisations"("id") ON DELETE CASCADE ON UPDATE CASCADE;

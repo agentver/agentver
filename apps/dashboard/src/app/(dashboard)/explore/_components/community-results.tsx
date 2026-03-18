@@ -182,7 +182,7 @@ function ImportDialog({
           {orgs && orgs.length > 0 && importState !== 'success' && (
             <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
               <Label className="font-medium text-sm">Import to organisation</Label>
-              <Select value={selectedOrgId} onValueChange={setSelectedOrgId}>
+              <Select value={selectedOrgId} onValueChange={setSelectedOrgId} modal={false}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select an organisation" />
                 </SelectTrigger>
