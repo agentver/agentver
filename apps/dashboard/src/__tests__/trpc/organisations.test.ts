@@ -768,6 +768,28 @@ describe('organisations router', () => {
         caller.organisations.listInvitations({ organisationId: org.id })
       ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
     })
+
+    it('excludes expired invitations', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'expired@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() - 1000), // Already expired
+        },
+      })
+
+      const caller = createTestCaller(owner.id)
+
+      const result = await caller.organisations.listInvitations({
+        organisationId: org.id,
+      })
+
+      expect(result).toHaveLength(0)
+    })
   })
 
   describe('cancelInvitation', () => {
@@ -843,6 +865,27 @@ describe('organisations router', () => {
         caller.organisations.cancelInvitation({ invitationId: invitation.id })
       ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
     })
+
+    it('throws FORBIDDEN when an OWNER of another org attempts to cancel', async () => {
+      const { user: ownerA } = await createTestOrgWithOwner()
+      const { user: ownerB, org: orgB } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: orgB.id,
+          email: 'someone@example.com',
+          role: 'MEMBER',
+          invitedById: ownerB.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(ownerA.id)
+
+      await expect(
+        caller.organisations.cancelInvitation({ invitationId: invitation.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
+    })
   })
 
   describe('resendInvitation', () => {
@@ -908,6 +951,7 @@ describe('organisations router', () => {
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           acceptedAt: new Date(),
           createdAt: new Date(Date.now() - 15 * 60 * 1000),
+          lastSentAt: new Date(Date.now() - 15 * 60 * 1000),
         },
       })
 
@@ -916,6 +960,54 @@ describe('organisations router', () => {
       await expect(
         caller.organisations.resendInvitation({ invitationId: invitation.id })
       ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
+    })
+
+    it('throws FORBIDDEN when a regular member attempts to resend', async () => {
+      const member = await createTestUser()
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      await prisma.organisationMember.create({
+        data: { organisationId: org.id, userId: member.id, role: 'MEMBER' },
+      })
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'someone@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          lastSentAt: new Date(Date.now() - 15 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(member.id)
+
+      await expect(
+        caller.organisations.resendInvitation({ invitationId: invitation.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
+    })
+
+    it('throws FORBIDDEN when an OWNER of another org attempts to resend', async () => {
+      const { user: ownerA } = await createTestOrgWithOwner()
+      const { user: ownerB, org: orgB } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: orgB.id,
+          email: 'someone@example.com',
+          role: 'MEMBER',
+          invitedById: ownerB.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          lastSentAt: new Date(Date.now() - 15 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(ownerA.id)
+
+      await expect(
+        caller.organisations.resendInvitation({ invitationId: invitation.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
     })
   })
 

@@ -463,6 +463,7 @@ export const organisationsRouter = router({
           role: input.role,
           invitedById: ctx.user.id,
           expiresAt,
+          lastSentAt: new Date(),
         },
         update: {
           role: input.role,
@@ -471,6 +472,7 @@ export const organisationsRouter = router({
           acceptedAt: null,
           declinedAt: null,
           token: randomUUID(),
+          lastSentAt: new Date(),
         },
       })
 
@@ -522,6 +524,7 @@ export const organisationsRouter = router({
           organisationId: input.organisationId,
           acceptedAt: null,
           declinedAt: null,
+          expiresAt: { gt: new Date() },
         },
         include: {
           invitedBy: { select: { name: true, email: true } },
@@ -590,8 +593,9 @@ export const organisationsRouter = router({
       }
 
       // Enforce resend cooldown
-      const timeSinceCreated = Date.now() - invitation.createdAt.getTime()
-      if (timeSinceCreated < RESEND_COOLDOWN_MS) {
+      const lastSent = invitation.lastSentAt ?? invitation.createdAt
+      const timeSinceLastSent = Date.now() - lastSent.getTime()
+      if (timeSinceLastSent < RESEND_COOLDOWN_MS) {
         throw new TRPCError({
           code: 'TOO_MANY_REQUESTS',
           message: 'Please wait before resending this invitation',
@@ -605,7 +609,7 @@ export const organisationsRouter = router({
         data: {
           token: randomUUID(),
           expiresAt,
-          createdAt: new Date(), // Reset createdAt for cooldown tracking
+          lastSentAt: new Date(),
         },
       })
 

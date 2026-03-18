@@ -15,6 +15,8 @@ import { useState } from 'react'
 import { CreateOrganisationDialog } from '@/components/settings/create-organisation-dialog'
 import { useOrgContext } from '@/hooks/use-org-context'
 
+const CREATE_ORG_SENTINEL = '__create__'
+
 export function OrgSwitcher() {
   const { selectedOrg, orgs, setSelectedOrg, isLoading } = useOrgContext()
   const [createOpen, setCreateOpen] = useState(false)
@@ -69,7 +71,7 @@ export function OrgSwitcher() {
       <Select
         value={selectedOrg?.slug ?? ''}
         onValueChange={(value) => {
-          if (value === '__create__') {
+          if (value === CREATE_ORG_SENTINEL) {
             setCreateOpen(true)
             return
           }

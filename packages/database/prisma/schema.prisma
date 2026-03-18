@@ -115,12 +115,12 @@ model OrganisationInvitation {
   declinedAt     DateTime?
   invitedById    String
   createdAt      DateTime         @default(now())
+  lastSentAt     DateTime?
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  invitedBy    User         @relation("invitations_sent", fields: [invitedById], references: [id])
+  invitedBy    User         @relation("invitations_sent", fields: [invitedById], references: [id], onDelete: Cascade)
 
   @@unique([organisationId, email])
-  @@index([token])
   @@index([email])
   @@map("organisation_invitations")
 }
