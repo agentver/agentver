@@ -276,40 +276,47 @@ async function fetchSkillMdFromGitHub(
   path: string | null
 ): Promise<{ content: string; resolvedPath: string; branch: string }> {
   const candidatePaths = path
-    ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, 'SKILL.md']
-    : ['SKILL.md', 'agentver.yaml']
+    ? [`${path}/SKILL.md`, `${path}/agentver.yaml`, `${path}/skill.md`, `${path}/agentver.yml`]
+    : ['SKILL.md', 'agentver.yaml', 'skill.md', 'agentver.yml']
 
+  // Fast path: try raw URLs for common branch names
   for (const candidate of candidatePaths) {
-    const url = `https://raw.githubusercontent.com/${owner}/${repo}/main/${candidate}`
-
-    const response = await fetch(url, {
-      headers: { Accept: 'text/plain' },
-      signal: AbortSignal.timeout(10_000),
-    })
-
-    if (response.ok) {
-      const content = await response.text()
-      return { content, resolvedPath: candidate, branch: 'main' }
-    }
-
-    // Also try HEAD/master for repos that still use master
-    if (response.status === 404) {
-      const masterUrl = `https://raw.githubusercontent.com/${owner}/${repo}/master/${candidate}`
-      const masterResponse = await fetch(masterUrl, {
+    for (const branch of ['main', 'master']) {
+      const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${candidate}`
+      const response = await fetch(url, {
         headers: { Accept: 'text/plain' },
         signal: AbortSignal.timeout(10_000),
       })
+      if (response.ok) {
+        return { content: await response.text(), resolvedPath: candidate, branch }
+      }
+    }
+  }
 
-      if (masterResponse.ok) {
-        const content = await masterResponse.text()
-        return { content, resolvedPath: candidate, branch: 'master' }
+  // Fallback: GitHub Contents API resolves the actual default branch automatically,
+  // which handles repos that use non-standard branch names (trunk, develop, etc.)
+  for (const candidate of candidatePaths) {
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${candidate}`
+    const apiResponse = await fetch(apiUrl, {
+      headers: { Accept: 'application/vnd.github.v3+json' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (apiResponse.ok) {
+      const data = (await apiResponse.json()) as {
+        content?: string
+        encoding?: string
+        download_url?: string | null
+      }
+      if (data.content && data.encoding === 'base64') {
+        const content = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8')
+        return { content, resolvedPath: candidate, branch: 'default' }
       }
     }
   }
 
   throw new TRPCError({
     code: 'NOT_FOUND',
-    message: `Could not find SKILL.md or agentver.yaml in ${owner}/${repo}${path ? `/${path}` : ''}. Ensure the file exists on the main or master branch.`,
+    message: `Could not find SKILL.md or agentver.yaml in ${owner}/${repo}${path ? `/${path}` : ''}. Ensure the file exists on the repository's default branch.`,
   })
 }
 
