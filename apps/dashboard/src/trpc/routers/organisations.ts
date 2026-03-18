@@ -112,6 +112,34 @@ export const organisationsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Rate limit: max 5 orgs where user is OWNER
+      const userOrgCount = await prisma.organisationMember.count({
+        where: { userId: ctx.user.id, role: 'OWNER' },
+      })
+      if (userOrgCount >= 5) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message:
+            'You have reached the maximum of 5 organisations. Please delete an existing organisation before creating a new one.',
+        })
+      }
+
+      // Rate limit: max 3 org creations per hour
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+      const recentOrgCount = await prisma.organisation.count({
+        where: {
+          members: { some: { userId: ctx.user.id, role: 'OWNER' } },
+          createdAt: { gt: oneHourAgo },
+        },
+      })
+      if (recentOrgCount >= 3) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message:
+            'You have created too many organisations recently. Please wait before creating another.',
+        })
+      }
+
       const existing = await prisma.organisation.findUnique({ where: { slug: input.slug } })
       if (existing) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Slug already taken' })
