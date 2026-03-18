@@ -2,10 +2,16 @@ import { prisma } from '@agentver/database/client'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestOrg, createTestOrgWithOwner, createTestUser } from '~/test/factories'
 import { cleanDatabase, disconnectDatabase } from '~/test/helpers/db'
-import { createTestCaller } from '~/test/helpers/trpc'
+import { createTestCaller, createUnauthenticatedCaller } from '~/test/helpers/trpc'
 
 vi.mock('@/lib/github/skills-repo', () => ({
   validateRepoAccess: vi.fn().mockResolvedValue(true),
+}))
+
+vi.mock('@/lib/email', () => ({
+  getEmailProvider: vi.fn().mockReturnValue({
+    send: vi.fn().mockResolvedValue(undefined),
+  }),
 }))
 
 beforeEach(async () => {
@@ -519,28 +525,47 @@ describe('organisations router', () => {
     })
   })
 
-  describe('invite', () => {
-    it('allows an OWNER to invite an existing user', async () => {
+  describe('sendInvitation', () => {
+    it('creates a pending invitation for an existing user', async () => {
       const invitee = await createTestUser()
       const { user: owner, org } = await createTestOrgWithOwner()
       const caller = createTestCaller(owner.id)
 
-      await caller.organisations.invite({
+      const result = await caller.organisations.sendInvitation({
         organisationId: org.id,
         email: invitee.email,
         role: 'MEMBER',
       })
 
+      expect(result.email).toBe(invitee.email)
+      expect(result.role).toBe('MEMBER')
+      expect(result.organisationId).toBe(org.id)
+      expect(result.token).toBeDefined()
+      expect(result.acceptedAt).toBeNull()
+
+      // Should NOT create a membership yet
       const membership = await prisma.organisationMember.findFirst({
         where: { organisationId: org.id, userId: invitee.id },
       })
-      expect(membership).not.toBeNull()
-      expect(membership?.role).toBe('MEMBER')
+      expect(membership).toBeNull()
     })
 
-    it('allows an ADMIN to invite an existing user', async () => {
+    it('creates a pending invitation for a non-existing user', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      const result = await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'newuser@example.com',
+        role: 'ADMIN',
+      })
+
+      expect(result.email).toBe('newuser@example.com')
+      expect(result.role).toBe('ADMIN')
+    })
+
+    it('allows an ADMIN to send an invitation', async () => {
       const admin = await createTestUser()
-      const invitee = await createTestUser()
       const { org } = await createTestOrgWithOwner()
 
       await prisma.organisationMember.create({
@@ -549,21 +574,17 @@ describe('organisations router', () => {
 
       const caller = createTestCaller(admin.id)
 
-      await caller.organisations.invite({
+      const result = await caller.organisations.sendInvitation({
         organisationId: org.id,
-        email: invitee.email,
+        email: 'someone@example.com',
         role: 'MEMBER',
       })
 
-      const membership = await prisma.organisationMember.findFirst({
-        where: { organisationId: org.id, userId: invitee.id },
-      })
-      expect(membership).not.toBeNull()
+      expect(result.email).toBe('someone@example.com')
     })
 
     it('throws FORBIDDEN when a regular member attempts to invite', async () => {
       const member = await createTestUser()
-      const invitee = await createTestUser()
       const { org } = await createTestOrgWithOwner()
 
       await prisma.organisationMember.create({
@@ -573,15 +594,15 @@ describe('organisations router', () => {
       const caller = createTestCaller(member.id)
 
       await expect(
-        caller.organisations.invite({
+        caller.organisations.sendInvitation({
           organisationId: org.id,
-          email: invitee.email,
+          email: 'someone@example.com',
           role: 'MEMBER',
         })
       ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
     })
 
-    it('throws CONFLICT when inviting a user who is already a member', async () => {
+    it('throws CONFLICT when the user is already a member', async () => {
       const existingMember = await createTestUser()
       const { user: owner, org } = await createTestOrgWithOwner()
 
@@ -592,7 +613,7 @@ describe('organisations router', () => {
       const caller = createTestCaller(owner.id)
 
       await expect(
-        caller.organisations.invite({
+        caller.organisations.sendInvitation({
           organisationId: org.id,
           email: existingMember.email,
           role: 'MEMBER',
@@ -600,17 +621,500 @@ describe('organisations router', () => {
       ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }))
     })
 
-    it('throws NOT_FOUND when inviting a user who does not exist', async () => {
+    it('throws CONFLICT when a pending invitation already exists', async () => {
       const { user: owner, org } = await createTestOrgWithOwner()
       const caller = createTestCaller(owner.id)
 
+      await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'duplicate@example.com',
+        role: 'MEMBER',
+      })
+
       await expect(
-        caller.organisations.invite({
+        caller.organisations.sendInvitation({
           organisationId: org.id,
-          email: 'nonexistent@example.com',
-          role: 'MEMBER',
+          email: 'duplicate@example.com',
+          role: 'ADMIN',
         })
+      ).rejects.toThrow(expect.objectContaining({ code: 'CONFLICT' }))
+    })
+
+    it('replaces an expired invitation with a new one', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      // Create an expired invitation directly
+      await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'expired@example.com',
+          role: 'VIEWER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() - 1000), // Already expired
+        },
+      })
+
+      const caller = createTestCaller(owner.id)
+
+      const result = await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'expired@example.com',
+        role: 'ADMIN',
+      })
+
+      expect(result.role).toBe('ADMIN')
+      expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now())
+    })
+
+    it('replaces a declined invitation with a new one', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'declined@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          declinedAt: new Date(),
+        },
+      })
+
+      const caller = createTestCaller(owner.id)
+
+      const result = await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'declined@example.com',
+        role: 'ADMIN',
+      })
+
+      expect(result.role).toBe('ADMIN')
+      expect(result.declinedAt).toBeNull()
+    })
+
+    it('defaults role to MEMBER when not specified', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      const result = await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'default-role@example.com',
+      })
+
+      expect(result.role).toBe('MEMBER')
+    })
+  })
+
+  describe('listInvitations', () => {
+    it('returns pending invitations for the organisation', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'invite1@example.com',
+        role: 'MEMBER',
+      })
+
+      await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'invite2@example.com',
+        role: 'ADMIN',
+      })
+
+      const result = await caller.organisations.listInvitations({
+        organisationId: org.id,
+      })
+
+      expect(result).toHaveLength(2)
+      expect(result[0]!.invitedBy).toHaveProperty('name')
+      expect(result[0]!.invitedBy).toHaveProperty('email')
+    })
+
+    it('excludes accepted invitations', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'accepted@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          acceptedAt: new Date(),
+        },
+      })
+
+      const caller = createTestCaller(owner.id)
+
+      const result = await caller.organisations.listInvitations({
+        organisationId: org.id,
+      })
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('throws FORBIDDEN for regular members', async () => {
+      const member = await createTestUser()
+      const { org } = await createTestOrgWithOwner()
+
+      await prisma.organisationMember.create({
+        data: { organisationId: org.id, userId: member.id, role: 'MEMBER' },
+      })
+
+      const caller = createTestCaller(member.id)
+
+      await expect(
+        caller.organisations.listInvitations({ organisationId: org.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
+    })
+  })
+
+  describe('cancelInvitation', () => {
+    it('deletes a pending invitation', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      const invitation = await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'cancel-me@example.com',
+        role: 'MEMBER',
+      })
+
+      await caller.organisations.cancelInvitation({ invitationId: invitation.id })
+
+      const deleted = await prisma.organisationInvitation.findUnique({
+        where: { id: invitation.id },
+      })
+      expect(deleted).toBeNull()
+    })
+
+    it('throws NOT_FOUND for non-existent invitation', async () => {
+      const { user: owner } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      await expect(
+        caller.organisations.cancelInvitation({ invitationId: 'non-existent-id' })
       ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }))
+    })
+
+    it('throws BAD_REQUEST when cancelling an accepted invitation', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'accepted@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          acceptedAt: new Date(),
+        },
+      })
+
+      const caller = createTestCaller(owner.id)
+
+      await expect(
+        caller.organisations.cancelInvitation({ invitationId: invitation.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
+    })
+
+    it('throws FORBIDDEN when a regular member attempts to cancel', async () => {
+      const member = await createTestUser()
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      await prisma.organisationMember.create({
+        data: { organisationId: org.id, userId: member.id, role: 'MEMBER' },
+      })
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'someone@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(member.id)
+
+      await expect(
+        caller.organisations.cancelInvitation({ invitationId: invitation.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
+    })
+  })
+
+  describe('resendInvitation', () => {
+    it('refreshes token and expiry', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      // Create invitation with old createdAt to bypass cooldown
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'resend@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), // 1 day left
+          createdAt: new Date(Date.now() - 15 * 60 * 1000), // 15 minutes ago
+        },
+      })
+
+      const originalToken = invitation.token
+
+      const caller = createTestCaller(owner.id)
+      const result = await caller.organisations.resendInvitation({
+        invitationId: invitation.id,
+      })
+
+      expect(result.token).not.toBe(originalToken)
+      expect(result.expiresAt.getTime()).toBeGreaterThan(invitation.expiresAt.getTime())
+    })
+
+    it('throws TOO_MANY_REQUESTS when resending too soon', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      const invitation = await caller.organisations.sendInvitation({
+        organisationId: org.id,
+        email: 'cooldown@example.com',
+        role: 'MEMBER',
+      })
+
+      await expect(
+        caller.organisations.resendInvitation({ invitationId: invitation.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'TOO_MANY_REQUESTS' }))
+    })
+
+    it('throws NOT_FOUND for non-existent invitation', async () => {
+      const { user: owner } = await createTestOrgWithOwner()
+      const caller = createTestCaller(owner.id)
+
+      await expect(
+        caller.organisations.resendInvitation({ invitationId: 'non-existent-id' })
+      ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }))
+    })
+
+    it('throws BAD_REQUEST when resending an accepted invitation', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'accepted@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          acceptedAt: new Date(),
+          createdAt: new Date(Date.now() - 15 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(owner.id)
+
+      await expect(
+        caller.organisations.resendInvitation({ invitationId: invitation.id })
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
+    })
+  })
+
+  describe('acceptInvitation', () => {
+    it('creates membership when authenticated user accepts a valid invitation', async () => {
+      const invitee = await createTestUser()
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: invitee.email,
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(invitee.id, { email: invitee.email })
+
+      const result = await caller.organisations.acceptInvitation({
+        token: invitation.token,
+      })
+
+      expect(result.requiresAuth).toBe(false)
+      expect(result.alreadyMember).toBe(false)
+      expect(result.organisation.id).toBe(org.id)
+
+      // Verify membership was created
+      const membership = await prisma.organisationMember.findUnique({
+        where: {
+          userId_organisationId: {
+            userId: invitee.id,
+            organisationId: org.id,
+          },
+        },
+      })
+      expect(membership).not.toBeNull()
+      expect(membership?.role).toBe('MEMBER')
+
+      // Verify invitation was marked as accepted
+      const updated = await prisma.organisationInvitation.findUnique({
+        where: { id: invitation.id },
+      })
+      expect(updated?.acceptedAt).not.toBeNull()
+    })
+
+    it('returns requiresAuth when user is not authenticated', async () => {
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'new@example.com',
+          role: 'ADMIN',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      })
+
+      const caller = createUnauthenticatedCaller()
+
+      const result = await caller.organisations.acceptInvitation({
+        token: invitation.token,
+      })
+
+      expect(result.requiresAuth).toBe(true)
+      expect(result.email).toBe('new@example.com')
+      expect(result.role).toBe('ADMIN')
+    })
+
+    it('throws NOT_FOUND for invalid token', async () => {
+      const invitee = await createTestUser()
+      const caller = createTestCaller(invitee.id, { email: invitee.email })
+
+      await expect(
+        caller.organisations.acceptInvitation({ token: 'invalid-token' })
+      ).rejects.toThrow(expect.objectContaining({ code: 'NOT_FOUND' }))
+    })
+
+    it('throws BAD_REQUEST for expired invitation', async () => {
+      const invitee = await createTestUser()
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: invitee.email,
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() - 1000), // Already expired
+        },
+      })
+
+      const caller = createTestCaller(invitee.id, { email: invitee.email })
+
+      await expect(
+        caller.organisations.acceptInvitation({ token: invitation.token })
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
+    })
+
+    it('throws BAD_REQUEST for already accepted invitation', async () => {
+      const invitee = await createTestUser()
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: invitee.email,
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          acceptedAt: new Date(),
+        },
+      })
+
+      const caller = createTestCaller(invitee.id, { email: invitee.email })
+
+      await expect(
+        caller.organisations.acceptInvitation({ token: invitation.token })
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
+    })
+
+    it('throws BAD_REQUEST for declined invitation', async () => {
+      const invitee = await createTestUser()
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: invitee.email,
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          declinedAt: new Date(),
+        },
+      })
+
+      const caller = createTestCaller(invitee.id, { email: invitee.email })
+
+      await expect(
+        caller.organisations.acceptInvitation({ token: invitation.token })
+      ).rejects.toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
+    })
+
+    it('throws FORBIDDEN when email does not match', async () => {
+      const wrongUser = await createTestUser({ email: 'wrong@example.com' })
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: 'correct@example.com',
+          role: 'MEMBER',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(wrongUser.id, { email: wrongUser.email })
+
+      await expect(
+        caller.organisations.acceptInvitation({ token: invitation.token })
+      ).rejects.toThrow(expect.objectContaining({ code: 'FORBIDDEN' }))
+    })
+
+    it('handles accepting when already a member gracefully', async () => {
+      const invitee = await createTestUser()
+      const { user: owner, org } = await createTestOrgWithOwner()
+
+      // Add as member first
+      await prisma.organisationMember.create({
+        data: { userId: invitee.id, organisationId: org.id, role: 'MEMBER' },
+      })
+
+      const invitation = await prisma.organisationInvitation.create({
+        data: {
+          organisationId: org.id,
+          email: invitee.email,
+          role: 'ADMIN',
+          invitedById: owner.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      })
+
+      const caller = createTestCaller(invitee.id, { email: invitee.email })
+
+      const result = await caller.organisations.acceptInvitation({
+        token: invitation.token,
+      })
+
+      expect(result.requiresAuth).toBe(false)
+      expect(result.alreadyMember).toBe(true)
+
+      // Verify invitation was still marked as accepted
+      const updated = await prisma.organisationInvitation.findUnique({
+        where: { id: invitation.id },
+      })
+      expect(updated?.acceptedAt).not.toBeNull()
     })
   })
 
