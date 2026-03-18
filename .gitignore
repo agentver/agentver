@@ -47,6 +47,10 @@ playwright-report/
 playwright/.auth/
 test-results/
 
+# Agentver CLI install output
+.agents/
+.agentver/
+
 # Local
 .local/
 
