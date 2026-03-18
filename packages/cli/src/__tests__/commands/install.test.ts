@@ -1716,4 +1716,84 @@ describe('commands/install', () => {
       expect(process.exit).toHaveBeenCalledWith(1)
     })
   })
+
+  // -------------------------------------------------------------------------
+  // Global scope support
+  // -------------------------------------------------------------------------
+
+  describe('--global scope', () => {
+    it('passes global scope to readManifest and writeManifest', async () => {
+      setupHappyPathMocks()
+
+      await installPackage(TEST_SOURCE, { global: true, agent: 'claude-code' })
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+        '/project',
+        expect.objectContaining({
+          version: 2,
+          packages: expect.objectContaining({
+            [DERIVED_NAME]: expect.any(Object),
+          }),
+        }),
+        'global'
+      )
+    })
+
+    it('passes global scope to readLockfile and writeLockfile', async () => {
+      setupHappyPathMocks()
+
+      await installPackage(TEST_SOURCE, { global: true, agent: 'claude-code' })
+
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
+        '/project',
+        expect.objectContaining({
+          version: 2,
+          packages: expect.objectContaining({
+            [DERIVED_NAME]: expect.any(Object),
+          }),
+        }),
+        'global'
+      )
+    })
+
+    it('uses project scope by default when --global is not set', async () => {
+      setupHappyPathMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'project')
+      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'project'
+      )
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'project')
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'project'
+      )
+    })
+
+    it('global install only interacts with global scope for manifest/lockfile', async () => {
+      setupHappyPathMocks()
+
+      await installPackage(TEST_SOURCE, { global: true, agent: 'claude-code' })
+
+      for (const call of vi.mocked(manifestModule.readManifest).mock.calls) {
+        expect(call[1]).toBe('global')
+      }
+      for (const call of vi.mocked(manifestModule.writeManifest).mock.calls) {
+        expect(call[2]).toBe('global')
+      }
+      for (const call of vi.mocked(lockfileModule.readLockfile).mock.calls) {
+        expect(call[1]).toBe('global')
+      }
+      for (const call of vi.mocked(lockfileModule.writeLockfile).mock.calls) {
+        expect(call[2]).toBe('global')
+      }
+    })
+  })
 })

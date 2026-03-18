@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('node:fs', () => ({
@@ -161,6 +163,42 @@ describe('storage/lockfile', () => {
       expect(sourcePath).toContain('.tmp')
       expect(targetPath).toContain('lockfile.json')
       expect(targetPath).not.toContain('.tmp')
+    })
+  })
+
+  describe('scope-aware paths', () => {
+    it('writes to project .agentver/ when scope is project', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      lockfileModule.writeLockfile('/my-project', { version: 2, packages: {} }, 'project')
+
+      expect(fs.mkdirSync).toHaveBeenCalledWith(join('/my-project', '.agentver'), {
+        recursive: true,
+      })
+    })
+
+    it('writes to ~/.agentver/ when scope is global', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      lockfileModule.writeLockfile('/my-project', { version: 2, packages: {} }, 'global')
+
+      expect(fs.mkdirSync).toHaveBeenCalledWith(join(homedir(), '.agentver'), { recursive: true })
+    })
+
+    it('reads from ~/.agentver/ when scope is global', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      lockfileModule.readLockfile('/my-project', 'global')
+
+      expect(fs.existsSync).toHaveBeenCalledWith(join(homedir(), '.agentver', 'lockfile.json'))
+    })
+
+    it('defaults to project scope when scope parameter is omitted', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      lockfileModule.readLockfile('/my-project')
+
+      expect(fs.existsSync).toHaveBeenCalledWith(join('/my-project', '.agentver', 'lockfile.json'))
     })
   })
 })

@@ -543,4 +543,154 @@ describe('status command', () => {
       expect(output).toContain('No packages installed')
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // --global flag
+  // ---------------------------------------------------------------------------
+
+  describe('--global flag', () => {
+    it('reads manifest and lockfile with global scope', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'global-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'global-skill': createLockfilePackage({
+              integrity: 'sha256-matching-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)
+
+      await runStatus('--global', '--offline')
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith(expect.any(String), 'global')
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string }>
+      }
+      expect(data.packages).toHaveLength(1)
+      expect(data.packages[0]!.name).toBe('global-skill')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // --all flag
+  // ---------------------------------------------------------------------------
+
+  describe('--all flag', () => {
+    it('checks both project and global packages with section headers', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      const projectManifest = createManifest({
+        packages: {
+          'project-skill': createManifestPackage({
+            source: createSharedGitSource({
+              uri: 'github.com/org/project-repo',
+              ref: 'main',
+              commit: commitSha,
+            }),
+          }),
+        },
+      })
+
+      const globalManifest = createManifest({
+        packages: {
+          'shared-skill': createManifestPackage({
+            source: createSharedGitSource({
+              uri: 'github.com/org/shared-repo',
+              ref: 'main',
+              commit: commitSha,
+            }),
+          }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(projectManifest)
+        .mockReturnValueOnce(globalManifest)
+
+      vi.mocked(lockfileModule.readLockfile)
+        .mockReturnValueOnce(createLockfile())
+        .mockReturnValueOnce(createLockfile())
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)
+
+      await runStatus('--all', '--offline')
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'project')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('Project skills')
+      expect(output).toContain('User skills')
+      expect(output).toContain('project-skill')
+      expect(output).toContain('shared-skill')
+    })
+
+    it('combines all packages in JSON mode', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(
+          createManifest({
+            packages: {
+              'project-skill': createManifestPackage({
+                source: createSharedGitSource({ commit: commitSha }),
+              }),
+            },
+          })
+        )
+        .mockReturnValueOnce(
+          createManifest({
+            packages: {
+              'global-skill': createManifestPackage({
+                source: createSharedGitSource({ commit: commitSha }),
+              }),
+            },
+          })
+        )
+
+      vi.mocked(lockfileModule.readLockfile)
+        .mockReturnValueOnce(createLockfile())
+        .mockReturnValueOnce(createLockfile())
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)
+
+      await runStatus('--all', '--offline')
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string }>
+        summary: { total: number }
+      }
+
+      expect(data.packages).toHaveLength(2)
+      expect(data.summary.total).toBe(2)
+    })
+  })
 })

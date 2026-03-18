@@ -10,6 +10,8 @@ import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
 
+type Scope = 'project' | 'global'
+
 type StatusCategory = 'up-to-date' | 'modified' | 'upstream' | 'both' | 'unknown'
 
 type PackageStatus = {
@@ -41,6 +43,17 @@ const STATUS_SYMBOLS: Record<StatusCategory, string> = {
   unknown: chalk.dim('?'),
 }
 
+const SCOPE_LABELS: Record<Scope, string> = {
+  project: 'Project skills',
+  global: 'User skills',
+}
+
+function resolveScopes(options: { global?: boolean; all?: boolean }): Scope[] {
+  if (options.all) return ['project', 'global']
+  if (options.global) return ['global']
+  return ['project']
+}
+
 function parseManifestUri(uri: string): CliGitSource | null {
   const parts = uri.split('/')
   if (parts.length < 3) return null
@@ -57,10 +70,10 @@ function parseManifestUri(uri: string): CliGitSource | null {
 async function readLocalFiles(
   projectRoot: string,
   packageName: string,
-  agents: string[]
+  agents: string[],
+  scope: Scope = 'project'
 ): Promise<Array<{ path: string; content: string }>> {
-  // Try canonical path first, fall back to agent-specific paths
-  const readPath = resolveReadPath(projectRoot, packageName, agents)
+  const readPath = resolveReadPath(projectRoot, packageName, agents, scope)
   if (readPath) {
     const files = await readFilesFromDirectory(readPath)
     return files.map((f) => ({ path: f.path, content: f.content }))
@@ -74,7 +87,8 @@ async function checkPackageStatus(
   name: string,
   manifestEntry: ManifestV2Package,
   lockfileIntegrity: string | undefined,
-  offline: boolean
+  offline: boolean,
+  scope: Scope = 'project'
 ): Promise<PackageStatus> {
   const { source, agents, pinned } = manifestEntry
 
@@ -83,7 +97,7 @@ async function checkPackageStatus(
     let locallyModified = false
 
     try {
-      const localFiles = await readLocalFiles(projectRoot, name, agents)
+      const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
       if (lockfileIntegrity && localFiles.length > 0) {
         const localIntegrity = computeSha256FromFiles(localFiles)
         locallyModified = localIntegrity !== lockfileIntegrity
@@ -120,7 +134,7 @@ async function checkPackageStatus(
   let upstreamCommit: string | undefined
 
   try {
-    const localFiles = await readLocalFiles(projectRoot, name, agents)
+    const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
 
     if (lockfileIntegrity && localFiles.length > 0) {
       const localIntegrity = computeSha256FromFiles(localFiles)
@@ -220,55 +234,88 @@ export function registerStatusCommand(program: Command): void {
   program
     .command('status')
     .description('Show status of installed skills (upstream changes, local modifications)')
+    .option('--global', 'Check globally installed packages')
+    .option('--all', 'Check both project and global packages')
     .option('--offline', 'Skip upstream checks')
     .option('--json', 'Output as JSON')
-    .action(async (options: { offline?: boolean; json?: boolean }) => {
-      const jsonMode = isJSONMode() || options.json === true
-      const projectRoot = process.cwd()
-      const manifest = readManifest(projectRoot)
-      const lockfile = readLockfile(projectRoot)
-      const entries = Object.entries(manifest.packages)
+    .action(
+      async (options: { global?: boolean; all?: boolean; offline?: boolean; json?: boolean }) => {
+        const jsonMode = isJSONMode() || options.json === true
+        const projectRoot = process.cwd()
+        const scopes = resolveScopes(options)
+        const multiScope = scopes.length > 1
 
-      if (entries.length === 0) {
-        if (jsonMode) {
-          outputSuccess(toStatusResult(buildStatusOutput([])))
-        } else {
-          console.log(chalk.dim('No packages installed.'))
+        const allStatuses: PackageStatus[] = []
+        const statusesByScope: Map<Scope, PackageStatus[]> = new Map()
+
+        let hasPackages = false
+
+        for (const scope of scopes) {
+          const manifest = readManifest(projectRoot, scope)
+          const lockfile = readLockfile(projectRoot, scope)
+          const entries = Object.entries(manifest.packages)
+
+          if (entries.length > 0) {
+            hasPackages = true
+          }
+
+          const scopeStatuses: PackageStatus[] = []
+
+          const spinner =
+            !jsonMode && entries.length > 0
+              ? createSpinner('Checking package status...').start()
+              : null
+
+          for (const [name, pkg] of entries) {
+            if (spinner) spinner.text = `Checking ${name}...`
+
+            const lockfileEntry = lockfile.packages[name]
+            const status = await checkPackageStatus(
+              projectRoot,
+              name,
+              pkg,
+              lockfileEntry?.integrity,
+              options.offline ?? false,
+              scope
+            )
+            scopeStatuses.push(status)
+            allStatuses.push(status)
+          }
+
+          if (spinner) spinner.stop()
+
+          statusesByScope.set(scope, scopeStatuses)
         }
-        return
+
+        if (!hasPackages) {
+          if (jsonMode) {
+            outputSuccess(toStatusResult(buildStatusOutput([])))
+          } else {
+            console.log(chalk.dim('No packages installed.'))
+          }
+          return
+        }
+
+        if (jsonMode) {
+          outputSuccess(toStatusResult(buildStatusOutput(allStatuses)))
+          return
+        }
+
+        for (const scope of scopes) {
+          const scopeStatuses = statusesByScope.get(scope) ?? []
+
+          if (multiScope) {
+            console.log(chalk.bold(`\n${SCOPE_LABELS[scope]} (${scopeStatuses.length}):\n`))
+          } else {
+            console.log(chalk.bold(`\nInstalled skills (${scopeStatuses.length}):\n`))
+          }
+
+          for (const status of scopeStatuses) {
+            console.log(formatStatusLine(status))
+          }
+        }
+
+        console.log()
       }
-
-      const spinner = createSpinner('Checking package status...').start()
-
-      const statuses: PackageStatus[] = []
-
-      for (const [name, pkg] of entries) {
-        spinner.text = `Checking ${name}...`
-
-        const lockfileEntry = lockfile.packages[name]
-        const status = await checkPackageStatus(
-          projectRoot,
-          name,
-          pkg,
-          lockfileEntry?.integrity,
-          options.offline ?? false
-        )
-        statuses.push(status)
-      }
-
-      spinner.stop()
-
-      if (jsonMode) {
-        outputSuccess(toStatusResult(buildStatusOutput(statuses)))
-        return
-      }
-
-      console.log(chalk.bold(`\nInstalled skills (${statuses.length}):\n`))
-
-      for (const status of statuses) {
-        console.log(formatStatusLine(status))
-      }
-
-      console.log()
-    })
+    )
 }

@@ -249,4 +249,111 @@ describe('list command', () => {
       expect(output).toContain('well-known')
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // --global flag
+  // ---------------------------------------------------------------------------
+
+  describe('--global flag', () => {
+    it('reads manifest with global scope', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'global-skill': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/global-repo',
+                ref: 'main',
+                commit: 'aaa1234567890',
+              }),
+              agents: ['claude-code'],
+            }),
+          },
+        })
+      )
+
+      await runList('--global')
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('global-skill')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // --all flag
+  // ---------------------------------------------------------------------------
+
+  describe('--all flag', () => {
+    it('shows both project and global packages with section headers', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      const projectManifest = createManifest({
+        packages: {
+          'project-skill': createManifestPackage({
+            source: createSharedGitSource({
+              uri: 'github.com/org/project-repo',
+              ref: 'main',
+              commit: 'aaa1234567890',
+            }),
+          }),
+        },
+      })
+
+      const globalManifest = createManifest({
+        packages: {
+          'shared-skill': createManifestPackage({
+            source: createSharedGitSource({
+              uri: 'github.com/org/shared-repo',
+              ref: 'main',
+              commit: 'bbb1234567890',
+            }),
+          }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(projectManifest)
+        .mockReturnValueOnce(globalManifest)
+
+      await runList('--all')
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'project')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('Project packages')
+      expect(output).toContain('User packages')
+      expect(output).toContain('project-skill')
+      expect(output).toContain('shared-skill')
+    })
+
+    it('shows section headers even when one scope is empty', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: {
+              'global-skill': createManifestPackage({
+                source: createSharedGitSource({
+                  uri: 'github.com/org/repo',
+                  ref: 'main',
+                  commit: 'ccc1234567890',
+                }),
+              }),
+            },
+          })
+        )
+
+      await runList('--all')
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('Project packages (0)')
+      expect(output).toContain('User packages (1)')
+      expect(output).toContain('global-skill')
+    })
+  })
 })
