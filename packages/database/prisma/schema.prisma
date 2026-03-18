@@ -45,6 +45,7 @@ model User {
   drafts              Draft[]
   skillMaintainers    SkillMaintainer[]
   secretVaultEntries  SecretVault[]
+  invitationsSent     OrganisationInvitation[] @relation("invitations_sent")
   authSessions        Session[]  @relation("auth_sessions")
   authAccounts        Account[]  @relation("auth_accounts")
 
@@ -68,6 +69,7 @@ model Organisation {
   branchProtectionRules Json? // BranchProtectionRule[] — see branch-protection.ts
 
   members          OrganisationMember[]
+  invitations      OrganisationInvitation[]
   teams            Team[]
   packages         Package[]
   apiKeys          ApiKey[]
@@ -100,6 +102,27 @@ model OrganisationMember {
   @@unique([userId, organisationId])
   @@index([organisationId])
   @@map("organisation_members")
+}
+
+model OrganisationInvitation {
+  id             String           @id @default(uuid(7))
+  organisationId String
+  email          String
+  role           OrganisationRole @default(MEMBER)
+  token          String           @unique @default(uuid())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  declinedAt     DateTime?
+  invitedById    String
+  createdAt      DateTime         @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("invitations_sent", fields: [invitedById], references: [id])
+
+  @@unique([organisationId, email])
+  @@index([token])
+  @@index([email])
+  @@map("organisation_invitations")
 }
 
 model Team {
