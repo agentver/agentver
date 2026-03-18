@@ -28,8 +28,11 @@ export function registerRemoveCommand(program: Command): void {
       const projectRoot = process.cwd()
       const manifest = readManifest(projectRoot, scope)
 
-      const pkg = manifest.packages[name]
-      if (!pkg) {
+      const shortName = name.split('/').pop()!
+      const manifestKey =
+        name in manifest.packages ? name : shortName in manifest.packages ? shortName : null
+
+      if (!manifestKey) {
         if (jsonMode) {
           outputError('NOT_FOUND', `Package "${name}" is not installed.`)
           process.exit(1)
@@ -38,7 +41,7 @@ export function registerRemoveCommand(program: Command): void {
         process.exit(1)
       }
 
-      const shortName = name.split('/').pop()!
+      const pkg = manifest.packages[manifestKey]!
       const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
 
       const removedPaths: string[] = []
@@ -117,11 +120,11 @@ export function registerRemoveCommand(program: Command): void {
         }
       }
 
-      delete manifest.packages[name]
+      delete manifest.packages[manifestKey]
       writeManifest(projectRoot, manifest, scope)
 
       const lockfile = readLockfile(projectRoot, scope)
-      delete lockfile.packages[name]
+      delete lockfile.packages[manifestKey]
       writeLockfile(projectRoot, lockfile, scope)
 
       reportRemoval(name)

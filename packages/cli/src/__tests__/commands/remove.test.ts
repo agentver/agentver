@@ -414,7 +414,33 @@ describe('commands/remove', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 8. Case sensitivity
+  // 8. Scoped name fallback (org/skill → skill in manifest)
+  // -------------------------------------------------------------------------
+
+  describe('scoped name fallback', () => {
+    it('finds package stored as short name when removing with org/name', async () => {
+      // Install stores as short name 'my-skill'; remove is called with 'org/my-skill'
+      setupInstalledPackage('my-skill')
+
+      await removeAction('org/my-skill', {})
+
+      expect(process.exit).not.toHaveBeenCalled()
+      expect(manifestModule.writeManifest).toHaveBeenCalled()
+      const [, updatedManifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(updatedManifest.packages).not.toHaveProperty('my-skill')
+    })
+
+    it('reports removal with the original user-supplied name', async () => {
+      setupInstalledPackage('my-skill')
+
+      await removeAction('org/my-skill', {})
+
+      expect(reporterModule.reportRemoval).toHaveBeenCalledWith('org/my-skill')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 9. Case sensitivity
   // -------------------------------------------------------------------------
 
   describe('case sensitivity', () => {
