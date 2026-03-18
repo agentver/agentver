@@ -81,6 +81,23 @@ function getInstallArgs(pm: PackageManager): string[] {
   }
 }
 
+function getManualInstallHint(pm: PackageManager): string {
+  const args = getInstallArgs(pm)
+  return `${pm} ${args.join(' ')}`
+}
+
+async function verifyInstalledVersion(pm: PackageManager, expectedVersion: string): Promise<void> {
+  const args = getListArgs(pm)
+  const { stdout } = await execFileAsync(pm, args, { timeout: 10000 })
+
+  if (!stdout.includes(expectedVersion)) {
+    throw new Error(
+      `Upgrade appeared to succeed but the installed version does not match v${expectedVersion}.\n` +
+        `Try installing directly: ${getManualInstallHint(pm)}`
+    )
+  }
+}
+
 export function registerUpgradeCommand(program: Command): void {
   program
     .command('upgrade')
@@ -110,6 +127,7 @@ export function registerUpgradeCommand(program: Command): void {
         const args = getInstallArgs(pm)
 
         await execFileAsync(pm, args, { timeout: 60000 })
+        await verifyInstalledVersion(pm, latestVersion)
 
         if (json) {
           const result: UpgradeResult = {

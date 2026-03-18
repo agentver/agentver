@@ -116,6 +116,7 @@ describe('commands/upgrade', () => {
         .mockResolvedValueOnce({ stdout: '1.0.0' }) // bun --version
         .mockResolvedValueOnce({ stdout: 'agentver' }) // bun pm ls -g
         .mockResolvedValueOnce({ stdout: '' }) // bun install -g
+        .mockResolvedValueOnce({ stdout: '@agentver/cli@2.0.0' }) // verification
 
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'upgrade', '--json']
@@ -150,6 +151,7 @@ describe('commands/upgrade', () => {
         .mockResolvedValueOnce({ stdout: '10.0.0' }) // npm --version
         .mockResolvedValueOnce({ stdout: 'agentver' }) // npm list -g
         .mockResolvedValueOnce({ stdout: '' }) // npm install -g
+        .mockResolvedValueOnce({ stdout: '@agentver/cli@2.0.0' }) // verification
 
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'upgrade', '--json']
@@ -208,6 +210,7 @@ describe('commands/upgrade', () => {
         .mockRejectedValueOnce(new Error('not found')) // yarn
         .mockRejectedValueOnce(new Error('not found')) // npm --version fails
         .mockResolvedValueOnce({ stdout: '' }) // npm install -g (default)
+        .mockResolvedValueOnce({ stdout: '@agentver/cli@3.0.0' }) // verification
 
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'upgrade', '--json']
@@ -266,6 +269,7 @@ describe('commands/upgrade', () => {
         .mockResolvedValueOnce({ stdout: '10.0.0' }) // npm --version
         .mockResolvedValueOnce({ stdout: 'agentver' }) // npm list -g
         .mockResolvedValueOnce({ stdout: '' }) // npm install -g
+        .mockResolvedValueOnce({ stdout: '@agentver/cli@2.5.0' }) // verification
 
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'upgrade', '--json']
@@ -278,6 +282,92 @@ describe('commands/upgrade', () => {
       expect(typed).toHaveProperty('previous')
       expect(typed).toHaveProperty('latest')
       expect(typed).toHaveProperty('packageManager')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 7. Version verification failure
+  // -------------------------------------------------------------------------
+
+  describe('version verification failure', () => {
+    it('reports UPGRADE_FAILED when installed version does not match expected', async () => {
+      platformMock.addRoute({
+        method: 'GET',
+        path: /registry\.npmjs\.org/,
+        handler: () => mockFetchResponse(200, { version: '2.0.0' }),
+      })
+
+      execFileAsyncMock
+        .mockRejectedValueOnce(new Error('not found')) // bun
+        .mockRejectedValueOnce(new Error('not found')) // pnpm
+        .mockRejectedValueOnce(new Error('not found')) // yarn
+        .mockResolvedValueOnce({ stdout: '10.0.0' }) // npm --version
+        .mockResolvedValueOnce({ stdout: 'agentver' }) // npm list -g
+        .mockResolvedValueOnce({ stdout: '' }) // npm install -g
+        .mockResolvedValueOnce({ stdout: '@agentver/cli@1.0.0' }) // verification — still old version
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'upgrade', '--json']
+
+      await runUpgrade(['upgrade'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'UPGRADE_FAILED',
+        expect.stringContaining('does not match v2.0.0')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('includes manual install hint in the error message', async () => {
+      platformMock.addRoute({
+        method: 'GET',
+        path: /registry\.npmjs\.org/,
+        handler: () => mockFetchResponse(200, { version: '2.0.0' }),
+      })
+
+      execFileAsyncMock
+        .mockResolvedValueOnce({ stdout: '1.0.0' }) // bun --version
+        .mockResolvedValueOnce({ stdout: 'agentver' }) // bun pm ls -g
+        .mockResolvedValueOnce({ stdout: '' }) // bun install -g
+        .mockResolvedValueOnce({ stdout: '@agentver/cli@1.0.0' }) // verification — still old version
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'upgrade', '--json']
+
+      await runUpgrade(['upgrade'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'UPGRADE_FAILED',
+        expect.stringContaining('bun install -g @agentver/cli@latest')
+      )
+    })
+
+    it('handles verification command failure gracefully', async () => {
+      platformMock.addRoute({
+        method: 'GET',
+        path: /registry\.npmjs\.org/,
+        handler: () => mockFetchResponse(200, { version: '2.0.0' }),
+      })
+
+      execFileAsyncMock
+        .mockRejectedValueOnce(new Error('not found')) // bun
+        .mockRejectedValueOnce(new Error('not found')) // pnpm
+        .mockRejectedValueOnce(new Error('not found')) // yarn
+        .mockResolvedValueOnce({ stdout: '10.0.0' }) // npm --version
+        .mockResolvedValueOnce({ stdout: 'agentver' }) // npm list -g
+        .mockResolvedValueOnce({ stdout: '' }) // npm install -g
+        .mockRejectedValueOnce(new Error('command timed out')) // verification fails
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'upgrade', '--json']
+
+      await runUpgrade(['upgrade'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'UPGRADE_FAILED',
+        expect.stringContaining('command timed out')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
     })
   })
 })
