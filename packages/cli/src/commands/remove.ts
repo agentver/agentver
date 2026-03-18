@@ -21,12 +21,12 @@ export function registerRemoveCommand(program: Command): void {
     .alias('uninstall')
     .description('Remove an installed package')
     .option('--dry-run', 'Show what would be removed without making changes')
-    .option('--global', 'Remove from global scope')
+    .option('--global', 'Remove from user level (~/.agents/skills/) instead of project level')
     .action(async (name: string, options: { dryRun?: boolean; global?: boolean }) => {
       const jsonMode = isJSONMode()
       const scope = options.global ? 'global' : 'project'
       const projectRoot = process.cwd()
-      const manifest = readManifest(projectRoot)
+      const manifest = readManifest(projectRoot, scope)
 
       const pkg = manifest.packages[name]
       if (!pkg) {
@@ -118,11 +118,11 @@ export function registerRemoveCommand(program: Command): void {
       }
 
       delete manifest.packages[name]
-      writeManifest(projectRoot, manifest)
+      writeManifest(projectRoot, manifest, scope)
 
-      const lockfile = readLockfile(projectRoot)
+      const lockfile = readLockfile(projectRoot, scope)
       delete lockfile.packages[name]
-      writeLockfile(projectRoot, lockfile)
+      writeLockfile(projectRoot, lockfile, scope)
 
       reportRemoval(name)
 
@@ -133,7 +133,8 @@ export function registerRemoveCommand(program: Command): void {
           paths: removedPaths,
         })
       } else {
-        spinner.succeed(`Removed ${chalk.green(name)}`)
+        const scopeLabel = scope === 'global' ? 'user' : 'project'
+        spinner.succeed(`Removed ${chalk.green(name)} ${chalk.dim(`(${scopeLabel})`)}`)
       }
     })
 }

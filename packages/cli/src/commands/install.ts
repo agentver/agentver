@@ -310,24 +310,25 @@ async function installFromWellKnown(
       skillName: selectedEntry.name,
     }
 
-    const manifest = readManifest(projectRoot)
+    const manifest = readManifest(projectRoot, scope)
     manifest.packages[selectedEntry.name] = {
       source: wellKnownSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
     }
-    writeManifest(projectRoot, manifest)
+    writeManifest(projectRoot, manifest, scope)
 
-    const lockfile = readLockfile(projectRoot)
+    const lockfile = readLockfile(projectRoot, scope)
     lockfile.packages[selectedEntry.name] = {
       source: wellKnownSourceRecord,
       integrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile)
+    writeLockfile(projectRoot, lockfile, scope)
 
     const target = options.path ?? agents.join(', ')
+    const scopeLabel = scope === 'global' ? 'user' : 'project'
 
     if (jsonMode) {
       const installPath = options.path
@@ -343,7 +344,7 @@ async function installFromWellKnown(
       })
     } else {
       spinner.succeed(
-        `Installed ${chalk.green(selectedEntry.name)} from ${chalk.dim(hostname)} ${chalk.dim('(well-known)')} to ${target}`
+        `Installed ${chalk.green(selectedEntry.name)} ${chalk.dim(`(${scopeLabel})`)} from ${chalk.dim(hostname)} ${chalk.dim('(well-known)')} to ${target}`
       )
     }
 
@@ -562,24 +563,25 @@ async function installFromPlatform(
       commit: '',
     }
 
-    const manifest = readManifest(projectRoot)
+    const manifest = readManifest(projectRoot, scope)
     manifest.packages[shortName] = {
       source: gitSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
     }
-    writeManifest(projectRoot, manifest)
+    writeManifest(projectRoot, manifest, scope)
 
-    const lockfile = readLockfile(projectRoot)
+    const lockfile = readLockfile(projectRoot, scope)
     lockfile.packages[shortName] = {
       source: gitSourceRecord,
       integrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile)
+    writeLockfile(projectRoot, lockfile, scope)
 
     const target = options.path ?? agents.join(', ')
+    const scopeLabel = scope === 'global' ? 'user' : 'project'
 
     const warnings: string[] = []
     if (securityScanResult?.verdict === 'WARN') {
@@ -603,7 +605,7 @@ async function installFromPlatform(
       )
     } else {
       spinner.succeed(
-        `Installed ${chalk.green(shortName)} from ${chalk.dim(sourceUri)} ${chalk.cyan(`@${ref}`)} to ${target}`
+        `Installed ${chalk.green(shortName)} ${chalk.dim(`(${scopeLabel})`)} from ${chalk.dim(sourceUri)} ${chalk.cyan(`@${ref}`)} to ${target}`
       )
     }
 
@@ -820,26 +822,27 @@ export async function installPackage(
       commit: resolved.commitSha,
     }
 
-    const manifest = readManifest(projectRoot)
+    const manifest = readManifest(projectRoot, scope)
     manifest.packages[shortName] = {
       source: gitSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
     }
-    writeManifest(projectRoot, manifest)
+    writeManifest(projectRoot, manifest, scope)
 
-    const lockfile = readLockfile(projectRoot)
+    const lockfile = readLockfile(projectRoot, scope)
     lockfile.packages[shortName] = {
       source: gitSourceRecord,
       integrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile)
+    writeLockfile(projectRoot, lockfile, scope)
 
     reportInstallation(shortName, gitSourceRecord, agents, resolved.commitSha)
 
     const target = options.path ?? agents.join(', ')
+    const scopeLabel = scope === 'global' ? 'user' : 'project'
     const installPath = options.path
       ? resolve(projectRoot, options.path)
       : getCanonicalSkillPath(projectRoot, shortName, scope)
@@ -863,7 +866,7 @@ export async function installPackage(
       )
     } else {
       spinner.succeed(
-        `Installed ${chalk.green(shortName)} from ${chalk.dim(formatSource(gitSource))} ${chalk.cyan(`@${gitSource.ref}`)} ${chalk.dim(`(${resolved.commitSha.slice(0, 7)})`)} to ${target}`
+        `Installed ${chalk.green(shortName)} ${chalk.dim(`(${scopeLabel})`)} from ${chalk.dim(formatSource(gitSource))} ${chalk.cyan(`@${gitSource.ref}`)} ${chalk.dim(`(${resolved.commitSha.slice(0, 7)})`)} to ${target}`
       )
     }
 
@@ -1081,7 +1084,7 @@ export function registerInstallCommand(program: Command): void {
     .command('install <source>')
     .description('Install a skill from a Git repository or well-known domain')
     .option('--agent <agent>', 'Target specific agent')
-    .option('--global', 'Install globally')
+    .option('--global', 'Install at user level (~/.agents/skills/) — available across all projects')
     .option('--dry-run', 'Show what would be installed without making changes')
     .option('--path <path>', 'Override placement path (relative to cwd or absolute)')
     .option('--no-detect', 'Skip agent auto-detection (requires --agent)')

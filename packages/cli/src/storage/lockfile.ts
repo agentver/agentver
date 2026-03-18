@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
 import { lockfileAnySchema } from '@agentver/shared'
@@ -9,8 +10,15 @@ const LOCKFILE_FILE = 'lockfile.json'
 
 const EMPTY_LOCKFILE: LockfileV2 = { version: 2, packages: {} }
 
-function getLockfilePath(projectRoot: string): string {
-  return join(projectRoot, LOCKFILE_DIR, LOCKFILE_FILE)
+function getLockfileRoot(projectRoot: string, scope: 'project' | 'global'): string {
+  if (scope === 'global') {
+    return join(homedir(), LOCKFILE_DIR)
+  }
+  return join(projectRoot, LOCKFILE_DIR)
+}
+
+function getLockfilePath(projectRoot: string, scope: 'project' | 'global' = 'project'): string {
+  return join(getLockfileRoot(projectRoot, scope), LOCKFILE_FILE)
 }
 
 function migrateV1ToV2(v1: {
@@ -39,8 +47,11 @@ function migrateV1ToV2(v1: {
   return { version: 2, packages }
 }
 
-export function readLockfile(projectRoot: string): LockfileV2 {
-  const lockfilePath = getLockfilePath(projectRoot)
+export function readLockfile(
+  projectRoot: string,
+  scope: 'project' | 'global' = 'project'
+): LockfileV2 {
+  const lockfilePath = getLockfilePath(projectRoot, scope)
 
   if (!existsSync(lockfilePath)) {
     return EMPTY_LOCKFILE
@@ -62,21 +73,25 @@ export function readLockfile(projectRoot: string): LockfileV2 {
 
   if (result.data.version === 1) {
     const migrated = migrateV1ToV2(result.data)
-    writeLockfile(projectRoot, migrated)
+    writeLockfile(projectRoot, migrated, scope)
     return migrated
   }
 
   return result.data
 }
 
-export function writeLockfile(projectRoot: string, lockfile: LockfileV2): void {
-  const dir = join(projectRoot, LOCKFILE_DIR)
+export function writeLockfile(
+  projectRoot: string,
+  lockfile: LockfileV2,
+  scope: 'project' | 'global' = 'project'
+): void {
+  const dir = getLockfileRoot(projectRoot, scope)
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
 
-  const filePath = getLockfilePath(projectRoot)
+  const filePath = getLockfilePath(projectRoot, scope)
   const tmpPath = `${filePath}.tmp`
   writeFileSync(tmpPath, serialiseDeterministic(lockfile))
   renameSync(tmpPath, filePath)
