@@ -866,7 +866,7 @@ export const skillsRouter = router({
       }
 
       const slug = `${org.slug}/${normalisedName}`
-      const gitPath = `skills/${normalisedName}/SKILL.md`
+      const gitPath = `skills/${normalisedName}`
       const sourceLabel = `${domain}/${owner}/${repo}`
       const commitMessage = `Import ${normalisedName} from ${sourceLabel}`
       let commitSha: string | undefined
@@ -886,12 +886,13 @@ export const skillsRouter = router({
           )
           commitSha = result.commitSha
         } catch (error) {
-          if (error instanceof GitProviderConfigError) {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: error.message })
-          }
-          logger.warn('Failed to commit imported files to Agentver storage', {
+          logger.error('Failed to commit imported files to Agentver storage', {
             name: normalisedName,
             error: error instanceof Error ? error.message : String(error),
+          })
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to store skill files: ${error instanceof Error ? error.message : String(error)}`,
           })
         }
       } else if (hasExternalRepo) {
@@ -917,9 +918,13 @@ export const skillsRouter = router({
           commitSha = commitResult.sha
           commitUrl = `https://github.com/${org.skillsRepoOwner}/${org.skillsRepoName}/commit/${commitSha}`
         } catch (error) {
-          logger.warn('Failed to commit imported files to GitHub skills repo', {
+          logger.error('Failed to commit imported files to GitHub skills repo', {
             name: normalisedName,
             error: error instanceof Error ? error.message : String(error),
+          })
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Failed to store skill files in GitHub: ${error instanceof Error ? error.message : String(error)}`,
           })
         }
       }
