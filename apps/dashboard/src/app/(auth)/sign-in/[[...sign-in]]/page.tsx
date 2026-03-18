@@ -5,12 +5,14 @@ import { Input } from '@agentver/ui/components/input'
 import { Label } from '@agentver/ui/components/label'
 import { LogoIcon } from '@agentver/ui/components/logo'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { signIn } from '@/lib/auth/client'
 
 export default function SignInPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const passwordReset = searchParams.get('reset') === 'success'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +52,12 @@ export default function SignInPage() {
           <h1 className="font-semibold text-foreground text-lg">Sign in to Agentver</h1>
         </div>
 
+        {passwordReset && (
+          <p className="rounded-md bg-emerald-500/10 p-3 text-center text-emerald-600 text-sm dark:text-emerald-400">
+            Your password has been reset. Please sign in with your new password.
+          </p>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -63,7 +71,15 @@ export default function SignInPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link
+                href="/forgot-password"
+                className="text-muted-foreground text-sm underline underline-offset-4 hover:text-foreground"
+              >
+                Forgot your password?
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"
