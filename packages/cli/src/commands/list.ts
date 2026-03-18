@@ -27,13 +27,18 @@ export function registerListCommand(program: Command): void {
     .action((options: { global?: boolean; all?: boolean }) => {
       const jsonMode = isJSONMode()
       const scopes = resolveScopes(options)
+      const projectRoot = process.cwd()
       const multiScope = scopes.length > 1
 
       if (jsonMode) {
         const allPackages: ListResult['packages'] = {}
         for (const scope of scopes) {
-          const manifest = readManifest(scope)
-          Object.assign(allPackages, manifest.packages)
+          const manifest = readManifest(projectRoot, scope)
+          for (const [name, pkg] of Object.entries(manifest.packages)) {
+            if (!(name in allPackages)) {
+              allPackages[name] = pkg
+            }
+          }
         }
         outputSuccess<ListResult>({ packages: allPackages })
         return
@@ -42,7 +47,7 @@ export function registerListCommand(program: Command): void {
       let totalEntries = 0
 
       for (const scope of scopes) {
-        const manifest = readManifest(scope)
+        const manifest = readManifest(projectRoot, scope)
         const entries = Object.entries(manifest.packages)
         totalEntries += entries.length
 
@@ -59,8 +64,9 @@ export function registerListCommand(program: Command): void {
           if (pkg.source.type === 'git') {
             const ref = pkg.source.ref
             const commit = pkg.source.commit.slice(0, 7)
+            const commitDisplay = commit ? ` ${chalk.dim(`(${commit})`)}` : ''
             console.log(
-              `  ${chalk.green(name)}@${chalk.cyan(ref)} ${chalk.dim(`(${commit})`)}${pinned}${agents}`
+              `  ${chalk.green(name)}@${chalk.cyan(ref)}${commitDisplay}${pinned}${agents}`
             )
           } else {
             const hostname = pkg.source.hostname

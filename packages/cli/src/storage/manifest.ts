@@ -8,8 +8,6 @@ import { serialiseDeterministic } from './serialise'
 const MANIFEST_DIR = '.agentver'
 const MANIFEST_FILE = 'manifest.json'
 
-const EMPTY_MANIFEST: ManifestV2 = { version: 2, packages: {} }
-
 function getManifestRoot(projectRoot: string, scope: 'project' | 'global'): string {
   if (scope === 'global') {
     return join(homedir(), MANIFEST_DIR)
@@ -52,7 +50,7 @@ export function readManifest(
   const manifestPath = getManifestPath(projectRoot, scope)
 
   if (!existsSync(manifestPath)) {
-    return EMPTY_MANIFEST
+    return { version: 2, packages: {} }
   }
 
   const raw = readFileSync(manifestPath, 'utf-8')
@@ -61,12 +59,12 @@ export function readManifest(
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return EMPTY_MANIFEST
+    return { version: 2, packages: {} }
   }
 
   const result = manifestAnySchema.safeParse(parsed)
   if (!result.success) {
-    return EMPTY_MANIFEST
+    return { version: 2, packages: {} }
   }
 
   if (result.data.version === 1) {

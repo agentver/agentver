@@ -8,8 +8,6 @@ import { serialiseDeterministic } from './serialise'
 const LOCKFILE_DIR = '.agentver'
 const LOCKFILE_FILE = 'lockfile.json'
 
-const EMPTY_LOCKFILE: LockfileV2 = { version: 2, packages: {} }
-
 function getLockfileRoot(projectRoot: string, scope: 'project' | 'global'): string {
   if (scope === 'global') {
     return join(homedir(), LOCKFILE_DIR)
@@ -54,7 +52,7 @@ export function readLockfile(
   const lockfilePath = getLockfilePath(projectRoot, scope)
 
   if (!existsSync(lockfilePath)) {
-    return EMPTY_LOCKFILE
+    return { version: 2, packages: {} }
   }
 
   const raw = readFileSync(lockfilePath, 'utf-8')
@@ -63,12 +61,12 @@ export function readLockfile(
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return EMPTY_LOCKFILE
+    return { version: 2, packages: {} }
   }
 
   const result = lockfileAnySchema.safeParse(parsed)
   if (!result.success) {
-    return EMPTY_LOCKFILE
+    return { version: 2, packages: {} }
   }
 
   if (result.data.version === 1) {

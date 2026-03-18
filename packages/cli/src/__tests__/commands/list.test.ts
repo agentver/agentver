@@ -275,7 +275,7 @@ describe('list command', () => {
 
       await runList('--global')
 
-      expect(manifestModule.readManifest).toHaveBeenCalledWith('global')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
       const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('global-skill')
     })
@@ -319,8 +319,8 @@ describe('list command', () => {
 
       await runList('--all')
 
-      expect(manifestModule.readManifest).toHaveBeenCalledWith('project')
-      expect(manifestModule.readManifest).toHaveBeenCalledWith('global')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'project')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
 
       const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('Project packages')

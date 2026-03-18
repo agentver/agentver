@@ -81,7 +81,7 @@ export function registerRemoveCommand(program: Command): void {
           console.log(chalk.dim(`    ${canonicalPath}`))
           console.log(chalk.dim('  Agent symlinks to remove:'))
           for (const agentId of pkg.agents) {
-            const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, 'project')
+            const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
             if (placementPath) {
               console.log(chalk.dim(`    ${join(projectRoot, placementPath)}`))
             }

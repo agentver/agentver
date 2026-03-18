@@ -582,8 +582,8 @@ describe('status command', () => {
 
       await runStatus('--global', '--offline')
 
-      expect(manifestModule.readManifest).toHaveBeenCalledWith('global')
-      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('global')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith(expect.any(String), 'global')
 
       expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
       const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
@@ -640,8 +640,8 @@ describe('status command', () => {
 
       await runStatus('--all', '--offline')
 
-      expect(manifestModule.readManifest).toHaveBeenCalledWith('project')
-      expect(manifestModule.readManifest).toHaveBeenCalledWith('global')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'project')
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
 
       const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
       expect(output).toContain('Project skills')

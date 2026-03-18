@@ -251,8 +251,8 @@ export function registerStatusCommand(program: Command): void {
         let hasPackages = false
 
         for (const scope of scopes) {
-          const manifest = readManifest(scope)
-          const lockfile = readLockfile(scope)
+          const manifest = readManifest(projectRoot, scope)
+          const lockfile = readLockfile(projectRoot, scope)
           const entries = Object.entries(manifest.packages)
 
           if (entries.length > 0) {
