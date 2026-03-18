@@ -1,6 +1,6 @@
 {
   "name": "@agentver/cli",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "description": "Agent skill registry — store, version, and distribute AI agent skills",
   "bin": {

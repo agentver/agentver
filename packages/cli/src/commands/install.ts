@@ -157,36 +157,6 @@ async function fetchFromPlatform<T>(platformUrl: string, path: string): Promise<
   }
 }
 
-async function resolveSource(source: string): Promise<string> {
-  if (looksLikeGitUrl(source)) {
-    return source
-  }
-
-  const [namePart, ref] = source.split('@')
-
-  const config = readConfig()
-  if (!config.platformUrl) {
-    throw new AgentverError(
-      'VALIDATION_ERROR',
-      `"${source}" doesn't look like a Git URL. Connect to a platform to resolve short names:\n  agentver login`
-    )
-  }
-
-  const resolved = await fetchFromPlatform<ResolveResponse>(
-    config.platformUrl,
-    `/resolve?name=${encodeURIComponent(namePart!)}`
-  )
-
-  let fullSource = `${resolved.gitUri}/${resolved.gitPath}`
-  if (ref) {
-    fullSource += `@${ref}`
-  } else if (resolved.gitRef) {
-    fullSource += `@${resolved.gitRef}`
-  }
-
-  return fullSource
-}
-
 async function installFromWellKnown(
   source: string,
   options: InstallOptions
@@ -653,12 +623,48 @@ export async function installPackage(
     return installFromPlatform(agentverUri, options)
   }
 
+  // Short names (org/package) need platform resolution — route through
+  // installFromPlatform which handles both platform-hosted and git-backed packages
+  if (!looksLikeGitUrl(source)) {
+    const jsonMode = isJSONMode()
+    const config = readConfig()
+
+    if (!config.platformUrl) {
+      const message = `"${source}" doesn't look like a Git URL. Connect to a platform to resolve short names:\n  agentver login`
+      if (jsonMode) {
+        outputError('VALIDATION_ERROR', message)
+      } else {
+        const spinner = createSpinner('Resolving').start()
+        spinner.fail(message)
+      }
+      process.exit(1)
+    }
+
+    const [namePart, ref] = source.split('@')
+    const segments = namePart!.split('/').filter(Boolean)
+
+    if (segments.length < 2) {
+      const message = `Invalid package name "${source}" — expected format: org/package-name`
+      if (jsonMode) {
+        outputError('VALIDATION_ERROR', message)
+      } else {
+        const spinner = createSpinner('Resolving').start()
+        spinner.fail(message)
+      }
+      process.exit(1)
+    }
+
+    return installFromPlatform(
+      { org: segments[0]!, path: segments.slice(1).join('/'), ref: ref ?? '' },
+      options
+    )
+  }
+
   const jsonMode = isJSONMode()
   const spinner = createSpinner(`Parsing source: ${source}`).start()
 
   try {
-    const resolvedSource = await resolveSource(source)
-    const gitSource = parseGitSource(resolvedSource)
+    const gitSource = parseGitSource(source)
     const shortName = deriveSkillName(gitSource)
 
     spinner.text = `Resolving ${gitSource.owner}/${gitSource.repo}@${gitSource.ref}`
