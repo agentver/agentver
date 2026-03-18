@@ -466,6 +466,91 @@ export const SCAN_RULES: ScanRule[] = [
     pattern: /\bforget\s+your\s+instructions\b/i,
     message: 'Prompt injection pattern detected (forget your instructions)',
   },
+  {
+    id: 'PI005',
+    category: 'PROMPT_INJECTION',
+    severity: 'MEDIUM',
+    pattern: /\bact\s+as\s+(if\s+you\s+are|a\s+|an\s+)/i,
+    message: 'Prompt injection pattern detected (act as)',
+  },
+  {
+    id: 'PI006',
+    category: 'PROMPT_INJECTION',
+    severity: 'MEDIUM',
+    pattern: /\bnew\s+persona\b/i,
+    message: 'Prompt injection pattern detected (new persona)',
+  },
+  {
+    id: 'PI007',
+    category: 'PROMPT_INJECTION',
+    severity: 'HIGH',
+    pattern: /\bjailbreak\b/i,
+    message: 'Prompt injection pattern detected (jailbreak)',
+  },
+  {
+    id: 'PI008',
+    category: 'PROMPT_INJECTION',
+    severity: 'MEDIUM',
+    pattern: /\boverride\s+(your\s+)?(previous\s+|prior\s+|all\s+)?instructions\b/i,
+    message: 'Prompt injection pattern detected (override instructions)',
+  },
+
+  // --- UNICODE_OBFUSCATION (HIGH/MEDIUM) ---
+  // Non-printing and invisible Unicode codepoints that render as blank in editors
+  // and never enter standard scanner token streams — classic evasion technique.
+  {
+    id: 'UO001',
+    category: 'UNICODE_OBFUSCATION',
+    severity: 'HIGH',
+    // Zero-width space, non-joiner, joiner, no-break space (BOM)
+    // Alternation required — \u200D (ZWJ) in a character class misleads some regex engines
+    pattern: /\u200B|\u200C|\u200D|\uFEFF/,
+    message: 'Zero-width Unicode character detected — invisible content that may hide instructions',
+  },
+  {
+    id: 'UO002',
+    category: 'UNICODE_OBFUSCATION',
+    severity: 'HIGH',
+    // Right-to-left override/embedding — reverses rendered text to disguise payloads
+    pattern: /[\u202E\u202B\u202D]/,
+    message:
+      'Right-to-left override character detected — may disguise text direction to hide payloads',
+  },
+  {
+    id: 'UO003',
+    category: 'UNICODE_OBFUSCATION',
+    severity: 'MEDIUM',
+    // Soft hyphen, word joiner, function application — render as nothing in most editors
+    pattern: /[\u00AD\u2060\u2061\u2062\u2063\u2064]/,
+    message: 'Invisible formatting character detected — may be used to evade pattern matching',
+  },
+  {
+    id: 'UO004',
+    category: 'UNICODE_OBFUSCATION',
+    severity: 'HIGH',
+    // Unicode tag block (U+E0000–U+E007F) — designed for invisible tagging, widely used in prompt injection
+    // Must use \u{} notation with the u flag for code points above U+FFFF
+    pattern: /[\u{E0000}-\u{E007F}]/u,
+    message:
+      'Unicode tag character detected (U+E0000 block) — known vector for invisible prompt injection',
+  },
+  {
+    id: 'UO005',
+    category: 'UNICODE_OBFUSCATION',
+    severity: 'MEDIUM',
+    // BMP variation selectors (U+FE00–U+FE0F) — alter glyph appearance invisibly, used in homoglyph attacks
+    pattern: /[\uFE00-\uFE0F]/u,
+    message:
+      'Unicode variation selector detected — may alter character appearance to evade detection',
+  },
+  {
+    id: 'UO006',
+    category: 'UNICODE_OBFUSCATION',
+    severity: 'MEDIUM',
+    // Interlinear annotation characters and other invisible separators
+    pattern: /[\u2028\u2029\u180E\uFFA0]/,
+    message: 'Invisible Unicode separator detected — may be used to bypass line-based scanning',
+  },
 
   // --- REMOTE_CODE_EXECUTION (CRITICAL) ---
   {
