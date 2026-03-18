@@ -7,6 +7,7 @@ import { CategorySidebar } from './_components/category-sidebar'
 import { CommunityResults } from './_components/community-results'
 import { ExploreResults } from './_components/explore-results'
 import { McpCategorySidebar } from './_components/mcp-category-sidebar'
+import { McpPreviewSection } from './_components/mcp-preview'
 import { McpResults } from './_components/mcp-results'
 import { SearchBar } from './_components/search-bar'
 import { type SortOption, SortSelect } from './_components/sort-select'
@@ -143,9 +144,14 @@ function ExplorePageContent() {
 
             {/* Trending section (Agentver only) */}
             {showTrending && (
-              <FadeIn>
-                <TrendingSection />
-              </FadeIn>
+              <>
+                <FadeIn>
+                  <TrendingSection />
+                </FadeIn>
+                <FadeIn delay={50}>
+                  <McpPreviewSection onViewAll={() => handleSourceChange('mcp')} />
+                </FadeIn>
+              </>
             )}
 
             {/* Results grid */}
