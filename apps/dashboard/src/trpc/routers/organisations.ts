@@ -435,6 +435,68 @@ export const organisationsRouter = router({
       return member
     }),
 
+  leave: protectedProcedure
+    .input(z.object({ organisationId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await prisma.organisationMember.findUnique({
+        where: {
+          userId_organisationId: {
+            userId: ctx.user.id,
+            organisationId: input.organisationId,
+          },
+        },
+      })
+
+      if (!membership) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'You are not a member of this organisation',
+        })
+      }
+
+      if (membership.role === 'OWNER') {
+        const ownerCount = await prisma.organisationMember.count({
+          where: { organisationId: input.organisationId, role: 'OWNER' },
+        })
+        if (ownerCount <= 1) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'You are the only owner of this organisation. Transfer ownership to another member before leaving.',
+          })
+        }
+      }
+
+      await prisma.organisationMember.delete({
+        where: {
+          userId_organisationId: {
+            userId: ctx.user.id,
+            organisationId: input.organisationId,
+          },
+        },
+      })
+
+      logAudit({
+        userId: ctx.user.id,
+        action: 'MEMBER_LEFT',
+        resource: 'OrganisationMember',
+        resourceId: membership.id,
+        metadata: {
+          role: membership.role,
+          organisationId: input.organisationId,
+        },
+      })
+
+      void deliverEvent(
+        input.organisationId,
+        'member.removed',
+        { id: ctx.user.id, username: ctx.user.name ?? ctx.user.email },
+        { member: { userId: ctx.user.id, role: membership.role, selfRemoved: true } }
+      )
+
+      return { success: true }
+    }),
+
   connectSkillsRepo: protectedProcedure
     .input(
       z.object({
