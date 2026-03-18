@@ -114,7 +114,7 @@ function useWordCycle(words: string[], intervalMs: number) {
     return () => clearInterval(interval)
   }, [words.length, intervalMs])
 
-  return words[index]
+  return words[index]!
 }
 
 function useFadeWord(words: string[], intervalMs: number) {
@@ -132,7 +132,7 @@ function useFadeWord(words: string[], intervalMs: number) {
     return () => clearInterval(interval)
   }, [words.length, intervalMs])
 
-  return { word: words[index], visible }
+  return { word: words[index]!, visible }
 }
 
 export function HeroHeadline() {
