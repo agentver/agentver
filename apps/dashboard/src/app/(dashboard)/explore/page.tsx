@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from 'react'
 import { FadeIn } from '@/components/fade-in'
+import { trpc } from '@/trpc/client'
 import { CategorySidebar } from './_components/category-sidebar'
 import { CommunityResults } from './_components/community-results'
 import { ExploreResults } from './_components/explore-results'
@@ -37,6 +38,19 @@ export default function ExplorePage() {
   )
 }
 
+function StatsBar() {
+  const { data } = trpc.mcpCatalogue.list.useQuery({ limit: 100 })
+  const mcpCount = data?.items.length ?? 0
+
+  if (!mcpCount) return null
+
+  return (
+    <p className="text-muted-foreground text-sm">
+      {mcpCount} MCP servers &middot; 500+ community skills via skills.sh
+    </p>
+  )
+}
+
 function ExplorePageContent() {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
@@ -62,6 +76,9 @@ function ExplorePageContent() {
           <p className="text-muted-foreground">
             Discover packages, community skills, and MCP servers from the registry.
           </p>
+          <div className="mt-2">
+            <StatsBar />
+          </div>
         </div>
       </FadeIn>
 
