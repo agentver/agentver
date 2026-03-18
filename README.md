@@ -5,8 +5,8 @@
 <h1 align="center">agentver</h1>
 
 <p align="center">
-  <strong>The skill registry for AI coding assistants.</strong><br />
-  Version, secure, and distribute agent skills across your team — works with 43+ assistants out of the box.
+  <strong>Team-grade skill management for AI coding assistants.</strong><br />
+  Version, audit, and deploy skills to 43+ assistants — with access control, security scanning, and a review workflow built in.
 </p>
 
 <p align="center">
