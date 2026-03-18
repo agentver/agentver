@@ -34,6 +34,19 @@ async function getLatestVersion(): Promise<string> {
   return data.version
 }
 
+function getListArgs(pm: PackageManager): string[] {
+  switch (pm) {
+    case 'bun':
+      return ['pm', 'ls', '-g']
+    case 'pnpm':
+      return ['list', '-g', PACKAGE_NAME, '--depth=0']
+    case 'yarn':
+      return ['global', 'list', '--depth=0']
+    case 'npm':
+      return ['list', '-g', PACKAGE_NAME, '--depth=0']
+  }
+}
+
 async function detectPackageManager(): Promise<PackageManager> {
   const managers: PackageManager[] = ['bun', 'pnpm', 'yarn', 'npm']
 
@@ -41,11 +54,9 @@ async function detectPackageManager(): Promise<PackageManager> {
     try {
       const { stdout } = await execFileAsync(pm, ['--version'], { timeout: 5000 })
       if (stdout.trim()) {
-        const { stdout: listOut } = await execFileAsync(
-          pm,
-          pm === 'npm' ? ['list', '-g', PACKAGE_NAME, '--depth=0'] : ['pm', 'ls', '-g'],
-          { timeout: 10000 }
-        ).catch(() => ({ stdout: '' }))
+        const { stdout: listOut } = await execFileAsync(pm, getListArgs(pm), {
+          timeout: 10000,
+        }).catch(() => ({ stdout: '' }))
 
         if (listOut.includes('agentver')) {
           return pm

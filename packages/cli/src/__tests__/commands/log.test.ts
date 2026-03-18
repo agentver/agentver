@@ -34,7 +34,6 @@ describe('log command', () => {
   let existsSync: ReturnType<typeof vi.fn>
   let stdoutWriteSpy: ReturnType<typeof vi.spyOn>
   let stderrWriteSpy: ReturnType<typeof vi.spyOn>
-  let consoleSpy: ReturnType<typeof vi.spyOn>
   let exitSpy: ReturnType<typeof vi.spyOn>
   let registerLogCommand: typeof import('../../commands/log').registerLogCommand
   let Command: typeof import('commander').Command
@@ -44,7 +43,7 @@ describe('log command', () => {
 
     stdoutWriteSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     stderrWriteSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called')
     })
@@ -262,14 +261,16 @@ describe('log command', () => {
 
       await runLog('test-skill', '--json')
 
-      expect(consoleSpy).toHaveBeenCalledOnce()
-      const output = JSON.parse(consoleSpy.mock.calls[0]![0] as string) as {
-        commits: Array<{ sha: string; message: string }>
+      const written = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
+      const output = JSON.parse(written) as {
+        success: boolean
+        data: { commits: Array<{ sha: string; message: string }> }
       }
 
-      expect(output.commits).toHaveLength(1)
-      expect(output.commits[0]!.sha).toBe('abc1234567890abcdef1234567890abcdef1234567')
-      expect(output.commits[0]!.message).toBe('First commit')
+      expect(output.success).toBe(true)
+      expect(output.data.commits).toHaveLength(1)
+      expect(output.data.commits[0]!.sha).toBe('abc1234567890abcdef1234567890abcdef1234567')
+      expect(output.data.commits[0]!.message).toBe('First commit')
     })
   })
 

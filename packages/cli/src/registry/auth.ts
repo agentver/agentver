@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -40,8 +40,12 @@ export function saveCredentials(credentials: Credentials): void {
 
 export function clearCredentials(): void {
   const credPath = getCredentialsPath()
-  if (existsSync(credPath)) {
-    writeFileSync(credPath, '{}', { mode: 0o600 })
+  try {
+    unlinkSync(credPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
   }
 }
 

@@ -8,7 +8,7 @@ import {
   symlinkSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import { createLogger } from '@agentver/shared'
 import chalk from 'chalk'
@@ -27,6 +27,10 @@ export function getCanonicalSkillPath(
   name: string,
   scope: 'project' | 'global'
 ): string {
+  if (name.includes('..') || name.startsWith('/')) {
+    throw new Error(`Invalid skill name: path traversal detected in "${name}"`)
+  }
+
   if (scope === 'global') {
     const home = homedir()
     return join(home, CANONICAL_DIR, name)
@@ -152,6 +156,16 @@ export function resolveReadPath(
   agents: string[],
   scope: 'project' | 'global' = 'project'
 ): string | null {
+  if (packageName.includes('..') || packageName.startsWith('/')) {
+    throw new Error(`Invalid package name: path traversal detected in "${packageName}"`)
+  }
+
+  const root = scope === 'global' ? homedir() : projectRoot
+  const resolvedPath = resolve(root, CANONICAL_DIR, packageName)
+  if (!resolvedPath.startsWith(resolve(root))) {
+    throw new Error(`Invalid package name: resolved path escapes project root`)
+  }
+
   // Try canonical path first
   const canonicalPath = getCanonicalSkillPath(projectRoot, packageName, scope)
   if (existsSync(canonicalPath) && lstatSync(canonicalPath).isDirectory()) {

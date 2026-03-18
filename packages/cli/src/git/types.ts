@@ -1,4 +1,4 @@
-export type GitHost = 'github.com' | 'gitlab.com' | 'bitbucket.org' | 'generic'
+export type GitHost = 'github.com' | 'gitlab.com' | 'bitbucket.org' | (string & {})
 
 export type GitSource = {
   host: GitHost

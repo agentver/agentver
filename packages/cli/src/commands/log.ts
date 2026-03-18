@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import ora from 'ora'
+import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readManifest } from '../storage/manifest.js'
 
@@ -93,23 +93,30 @@ export function registerLogCommand(program: Command): void {
     .action(async (nameArg: string | undefined, options: LogOptions) => {
       const identity = resolveSkillIdentity(nameArg)
 
+      const json = isJSONMode() || options.json
+
       if (!identity) {
         const target = nameArg ?? 'current directory'
-        process.stderr.write(
-          chalk.red(
-            `Could not determine skill identity for "${target}". Provide a skill name or run from a skill directory.\n`
-          )
-        )
+        const message = `Could not determine skill identity for "${target}". Provide a skill name or run from a skill directory.`
+        if (json) {
+          outputError('IDENTITY_NOT_FOUND', message)
+        } else {
+          process.stderr.write(chalk.red(`${message}\n`))
+        }
         process.exit(1)
       }
 
       const limit = Number.parseInt(options.limit ?? '20', 10)
       if (Number.isNaN(limit) || limit < 1) {
-        process.stderr.write(chalk.red('Limit must be a positive number.\n'))
+        if (json) {
+          outputError('VALIDATION_ERROR', 'Limit must be a positive number.')
+        } else {
+          process.stderr.write(chalk.red('Limit must be a positive number.\n'))
+        }
         process.exit(1)
       }
 
-      const spinner = ora('Fetching history...').start()
+      const spinner = createSpinner('Fetching history...').start()
 
       try {
         const params = new URLSearchParams({ limit: String(limit) })
@@ -119,8 +126,8 @@ export function registerLogCommand(program: Command): void {
 
         spinner.stop()
 
-        if (options.json) {
-          console.log(JSON.stringify({ commits }, null, 2))
+        if (json) {
+          outputSuccess({ commits })
           return
         }
 
@@ -143,9 +150,13 @@ export function registerLogCommand(program: Command): void {
 
         process.stdout.write('\n')
       } catch (error) {
-        spinner.fail(
-          `Failed to fetch history: ${error instanceof Error ? error.message : String(error)}`
-        )
+        const message = error instanceof Error ? error.message : String(error)
+        if (json) {
+          spinner.stop()
+          outputError('FETCH_FAILED', message)
+        } else {
+          spinner.fail(`Failed to fetch history: ${message}`)
+        }
         process.exit(1)
       }
     })

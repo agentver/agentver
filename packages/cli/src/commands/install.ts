@@ -432,7 +432,7 @@ async function installFromPlatform(
     if (!options.skipAudit) {
       spinner.text = 'Running security scan...'
       const scanSource = {
-        host: 'generic' as const,
+        host: 'local',
         owner: parsed.org,
         repo: shortName,
         path: resolved.gitPath ?? '',

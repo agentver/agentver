@@ -21,8 +21,10 @@ export function registerRemoveCommand(program: Command): void {
     .alias('uninstall')
     .description('Remove an installed package')
     .option('--dry-run', 'Show what would be removed without making changes')
-    .action(async (name: string, options: { dryRun?: boolean }) => {
+    .option('--global', 'Remove from global scope')
+    .action(async (name: string, options: { dryRun?: boolean; global?: boolean }) => {
       const jsonMode = isJSONMode()
+      const scope = options.global ? 'global' : 'project'
       const projectRoot = process.cwd()
       const manifest = readManifest(projectRoot)
 
@@ -37,22 +39,22 @@ export function registerRemoveCommand(program: Command): void {
       }
 
       const shortName = name.split('/').pop()!
-      const hasCanonical = isSymlinkedInstall(projectRoot, shortName)
+      const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
 
       const removedPaths: string[] = []
 
       if (hasCanonical) {
-        const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, 'project')
+        const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
         removedPaths.push(canonicalPath)
         for (const agentId of pkg.agents) {
-          const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, 'project')
+          const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (placementPath) {
             removedPaths.push(join(projectRoot, placementPath))
           }
         }
       } else {
         for (const agentId of pkg.agents) {
-          const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, 'project')
+          const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
           const fullPath = join(projectRoot, placementPath)
           if (existsSync(fullPath)) {
@@ -74,7 +76,7 @@ export function registerRemoveCommand(program: Command): void {
         console.log(`${chalk.yellow('[dry-run]')} Would remove ${chalk.green(name)}`)
 
         if (hasCanonical) {
-          const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, 'project')
+          const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
           console.log(chalk.dim('  Canonical path to remove:'))
           console.log(chalk.dim(`    ${canonicalPath}`))
           console.log(chalk.dim('  Agent symlinks to remove:'))
@@ -101,11 +103,11 @@ export function registerRemoveCommand(program: Command): void {
       const spinner = createSpinner(`Removing ${name}...`).start()
 
       if (hasCanonical) {
-        removeAgentSymlinks(projectRoot, shortName, pkg.agents, 'project')
-        removeCanonicalDirectory(projectRoot, shortName, 'project')
+        removeAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
+        removeCanonicalDirectory(projectRoot, shortName, scope)
       } else {
         for (const agentId of pkg.agents) {
-          const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, 'project')
+          const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
 
           const fullPath = join(projectRoot, placementPath)

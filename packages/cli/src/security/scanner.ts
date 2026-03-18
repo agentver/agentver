@@ -49,8 +49,7 @@ function scanPatterns(files: FetchedFile[]): ScanFinding[] {
 
       for (const rule of SCAN_RULES) {
         if (rule.pattern.test(line)) {
-          // Trim evidence to a reasonable length
-          const evidence = line.trim().slice(0, 200)
+          const evidence = `[${rule.category}] line ${lineIdx + 1}`
 
           findings.push({
             severity: rule.severity,
@@ -58,7 +57,7 @@ function scanPatterns(files: FetchedFile[]): ScanFinding[] {
             file: file.path,
             line: lineIdx + 1,
             message: rule.message,
-            evidence: evidence.length > 0 ? evidence : undefined,
+            evidence,
           })
         }
       }

@@ -164,8 +164,7 @@ async function handlePatchUpdate(
     ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
     : `${update.sourceUri}@${update.ref}`
 
-  const agentId = agents[0]
-  const result = await installPackage(sourceUrl, { agent: agentId })
+  const result = await installPackage(sourceUrl, agents[0] ? { agent: agents[0] } : {})
 
   spinner.text = `Reapplying local patch for ${update.name}...`
 
@@ -349,7 +348,6 @@ export function registerUpdateCommand(program: Command): void {
         for (const update of updates) {
           const installedPkg = manifest.packages[update.name]
           const agents = installedPkg?.agents ?? []
-          const agentId = agents[0]
 
           if (update.locallyModified) {
             let action: UpdateAction
@@ -412,10 +410,10 @@ export function registerUpdateCommand(program: Command): void {
           const shortName = update.name.split('/').pop()!
           const skillDir =
             resolveReadPath(projectRoot, shortName, agents) ??
-            (agentId
+            (agents[0]
               ? join(
                   projectRoot,
-                  getSkillPlacementPath(agentId as AgentId, shortName, 'project') ?? ''
+                  getSkillPlacementPath(agents[0] as AgentId, shortName, 'project') ?? ''
                 )
               : null)
 
@@ -428,7 +426,7 @@ export function registerUpdateCommand(program: Command): void {
               ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
               : `${update.sourceUri}@${update.ref}`
 
-            const result = await installPackage(sourceUrl, { agent: agentId })
+            const result = await installPackage(sourceUrl, agents[0] ? { agent: agents[0] } : {})
 
             cleanupBackup(backup)
 

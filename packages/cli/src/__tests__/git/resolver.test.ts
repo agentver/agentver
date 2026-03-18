@@ -103,9 +103,9 @@ describe('parseGitSource', () => {
     expect(result.host).toBe('bitbucket.org')
   })
 
-  it('uses generic for unknown hosts', () => {
+  it('preserves unknown hostnames as-is', () => {
     const result = parseGitSource('my-gitlab.example.com/owner/repo')
-    expect(result.host).toBe('generic')
+    expect(result.host).toBe('my-gitlab.example.com')
   })
 
   it('throws for empty ref after @', () => {
@@ -298,9 +298,9 @@ describe('resolveRef', () => {
     expect(callHeaders.Authorization).toBe('Bearer ghp_test_token_value')
   })
 
-  it('falls back to git ls-remote for generic hosts', async () => {
+  it('falls back to git ls-remote for unknown hosts', async () => {
     const source: GitSource = {
-      host: 'generic',
+      host: 'gitea.example.com',
       owner: 'owner',
       repo: 'repo',
       path: '',

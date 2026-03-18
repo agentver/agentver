@@ -39,6 +39,8 @@ export function cacheFiles(source: GitSource, commitSha: string, files: FetchedF
 
   try {
     for (const file of files) {
+      if (file.path.includes('..')) continue
+
       const filePath =
         basePath === '.' ? join(commitDir, file.path) : join(commitDir, basePath, file.path)
       const dir = dirname(filePath)

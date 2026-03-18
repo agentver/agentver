@@ -21,11 +21,13 @@ function estimateTokens(content: string): number {
 function warnIfOverBudget(filePath: string, content: string): void {
   const tokens = estimateTokens(content)
   if (tokens > TOKEN_BUDGET) {
-    console.log(
-      chalk.yellow(`\n  Warning: ${filePath} is ~${tokens} tokens (recommended < ${TOKEN_BUDGET}).`)
+    process.stderr.write(
+      chalk.yellow(
+        `\n  Warning: ${filePath} is ~${tokens} tokens (recommended < ${TOKEN_BUDGET}).\n`
+      )
     )
-    console.log(
-      chalk.yellow('  Move detailed content to docs/ or examples/ for progressive disclosure.')
+    process.stderr.write(
+      chalk.yellow('  Move detailed content to docs/ or examples/ for progressive disclosure.\n')
     )
   }
 }

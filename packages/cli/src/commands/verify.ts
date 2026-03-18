@@ -322,6 +322,9 @@ export function registerVerifyCommand(program: Command): void {
 
       if (jsonMode) {
         outputSuccess(result)
+        if (!overallPassed) {
+          process.exitCode = 1
+        }
         return
       }
 

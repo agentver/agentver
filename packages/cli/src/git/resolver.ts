@@ -1,10 +1,9 @@
 import { AgentverError, createLogger } from '@agentver/shared'
 import { buildRepoUrl, execGit } from './fetcher.js'
-import type { GitHost, GitSource, ResolvedRef } from './types.js'
+import type { GitSource, ResolvedRef } from './types.js'
 
 const logger = createLogger('git:resolver')
 
-const KNOWN_HOSTS: GitHost[] = ['github.com', 'gitlab.com', 'bitbucket.org']
 const RESOLVE_TIMEOUT_MS = 15_000
 
 export function parseGitSource(source: string): GitSource {
@@ -61,10 +60,8 @@ export function parseGitSource(source: string): GitSource {
   const owner = segments[1]!
   const repo = segments[2]!
   const pathParts = segments.slice(3)
-  const host: GitHost = KNOWN_HOSTS.includes(hostRaw as GitHost) ? (hostRaw as GitHost) : 'generic'
-
   return {
-    host,
+    host: hostRaw,
     owner,
     repo,
     path: pathParts.join('/'),
