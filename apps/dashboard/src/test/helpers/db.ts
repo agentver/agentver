@@ -25,6 +25,7 @@ export async function cleanDatabase() {
     'ConnectedAccount',
     'TeamMember',
     'Team',
+    'OrganisationInvitation',
     'OrganisationMember',
     'Organisation',
     'User',

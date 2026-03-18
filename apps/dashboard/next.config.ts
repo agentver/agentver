@@ -2,7 +2,7 @@ import type { NextConfig } from 'next'
 
 const config: NextConfig = {
   output: 'standalone',
-  serverExternalPackages: ['@prisma/client', 'pg', '@agentver/database', 'ioredis'],
+  serverExternalPackages: ['@prisma/client', 'pg', '@agentver/database', 'ioredis', 'postmark'],
   env: {
     NEXT_PUBLIC_AGENTVER_CLOUD: process.env.AGENTVER_CLOUD ?? '',
     NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS: process.env.PLATFORM_ADMIN_EMAILS ?? '',

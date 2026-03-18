@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
 // Use a separate test database
@@ -28,8 +28,8 @@ process.env.MICROSOFT_CLIENT_SECRET =
 // Use the prisma binary directly — bunx may not be on PATH in child processes
 const rootDir = new URL('../../../../', import.meta.url).pathname
 const prismaBin = resolve(rootDir, 'node_modules/.bin/prisma')
-execSync(`${prismaBin} db push --skip-generate`, {
+execFileSync(prismaBin, ['db', 'push'], {
   stdio: 'inherit',
-  cwd: `${rootDir}packages/database`,
+  cwd: resolve(rootDir, 'packages/database'),
   env: { ...process.env },
 })

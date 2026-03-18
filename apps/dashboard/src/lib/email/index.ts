@@ -2,6 +2,8 @@ import type { EmailProvider } from './types'
 
 export type { EmailMessage, EmailProvider } from './types'
 
+type ProviderModule = { new (): EmailProvider }
+
 let cachedProvider: EmailProvider | null = null
 
 export function getEmailProvider(): EmailProvider {
@@ -10,14 +12,17 @@ export function getEmailProvider(): EmailProvider {
   const provider = process.env.EMAIL_PROVIDER ?? 'console'
 
   switch (provider) {
-    case 'smtp': {
-      const { SmtpEmailProvider } = require('./providers/smtp') as typeof import('./providers/smtp')
-      cachedProvider = new SmtpEmailProvider()
+    case 'postmark': {
+      const { PostmarkEmailProvider } = require('./providers/postmark') as {
+        PostmarkEmailProvider: ProviderModule
+      }
+      cachedProvider = new PostmarkEmailProvider()
       break
     }
     default: {
-      const { ConsoleEmailProvider } =
-        require('./providers/console') as typeof import('./providers/console')
+      const { ConsoleEmailProvider } = require('./providers/console') as {
+        ConsoleEmailProvider: ProviderModule
+      }
       cachedProvider = new ConsoleEmailProvider()
     }
   }

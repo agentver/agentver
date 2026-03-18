@@ -33,7 +33,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@agentver/ui/components/select'
-import { ChevronDown, Crown, Shield, UserMinus, UserPlus, Users } from 'lucide-react'
+import { Separator } from '@agentver/ui/components/separator'
+import {
+  ChevronDown,
+  Crown,
+  Loader2,
+  Mail,
+  RefreshCw,
+  Shield,
+  UserMinus,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { trpc } from '@/trpc/client'
@@ -71,6 +83,17 @@ const ROLE_ICON: Record<string, typeof Crown | typeof Shield | typeof Users> = {
 
 const ASSIGNABLE_ROLES = ['OWNER', 'ADMIN', 'MEMBER', 'VIEWER'] as const
 
+function formatExpiryDate(date: Date): string {
+  const now = new Date()
+  const diffMs = date.getTime() - now.getTime()
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffMs < 0) return 'Expired'
+  if (diffDays === 0) return 'Expires today'
+  if (diffDays === 1) return 'Expires tomorrow'
+  return `Expires in ${diffDays} days`
+}
+
 export function OrgMembersCard({
   organisationId,
   members,
@@ -84,13 +107,35 @@ export function OrgMembersCard({
 
   const canManageMembers = currentUserRole === 'OWNER' || currentUserRole === 'ADMIN'
 
-  const invite = trpc.organisations.invite.useMutation({
+  const invitations = trpc.organisations.listInvitations.useQuery(
+    { organisationId },
+    { enabled: canManageMembers }
+  )
+
+  const sendInvitation = trpc.organisations.sendInvitation.useMutation({
     onSuccess: () => {
-      toast.success('Member invited')
+      toast.success('Invitation sent')
       setInviteEmail('')
       setInviteRole('MEMBER')
       setInviteOpen(false)
       onRefetch()
+      void invitations.refetch()
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  const resendInvitation = trpc.organisations.resendInvitation.useMutation({
+    onSuccess: () => {
+      toast.success('Invitation resent')
+      void invitations.refetch()
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  const cancelInvitation = trpc.organisations.cancelInvitation.useMutation({
+    onSuccess: () => {
+      toast.success('Invitation cancelled')
+      void invitations.refetch()
     },
     onError: (error) => toast.error(error.message),
   })
@@ -111,6 +156,8 @@ export function OrgMembersCard({
     onError: (error) => toast.error(error.message),
   })
 
+  const pendingInvitations = invitations.data ?? []
+
   return (
     <Card>
       <CardHeader>
@@ -129,14 +176,14 @@ export function OrgMembersCard({
               <DialogTrigger asChild>
                 <Button size="sm">
                   <UserPlus className="mr-2 h-4 w-4" />
-                  Invite
+                  Send Invitation
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Invite Member</DialogTitle>
+                  <DialogTitle>Send Invitation</DialogTitle>
                   <DialogDescription>
-                    Invite a user by their email address. They must already have an account.
+                    Send an email invitation. They do not need an account yet.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -170,15 +217,22 @@ export function OrgMembersCard({
                 <DialogFooter>
                   <Button
                     onClick={() =>
-                      invite.mutate({
+                      sendInvitation.mutate({
                         organisationId,
                         email: inviteEmail,
                         role: inviteRole,
                       })
                     }
-                    disabled={!inviteEmail || invite.isPending}
+                    disabled={!inviteEmail || sendInvitation.isPending}
                   >
-                    {invite.isPending ? 'Inviting...' : 'Invite'}
+                    {sendInvitation.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending…
+                      </>
+                    ) : (
+                      'Send Invitation'
+                    )}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -269,6 +323,63 @@ export function OrgMembersCard({
             )
           })}
         </div>
+
+        {canManageMembers && pendingInvitations.length > 0 && (
+          <>
+            <Separator className="my-4" />
+            <div className="space-y-3">
+              <h4 className="flex items-center gap-2 font-medium text-sm">
+                <Mail className="h-4 w-4" />
+                Pending Invitations
+              </h4>
+              <div className="space-y-2">
+                {pendingInvitations.map((invitation) => (
+                  <div
+                    key={invitation.id}
+                    className="flex items-center justify-between rounded-md border border-dashed p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{invitation.email}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {formatExpiryDate(new Date(invitation.expiresAt))}
+                          {invitation.invitedBy?.name &&
+                            ` · Invited by ${invitation.invitedBy.name}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={ROLE_BADGE_VARIANT[invitation.role] ?? 'outline'}>
+                        {invitation.role}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => resendInvitation.mutate({ invitationId: invitation.id })}
+                        disabled={resendInvitation.isPending}
+                        title="Resend invitation"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => cancelInvitation.mutate({ invitationId: invitation.id })}
+                        disabled={cancelInvitation.isPending}
+                        title="Cancel invitation"
+                      >
+                        <X className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   )
