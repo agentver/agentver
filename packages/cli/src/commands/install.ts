@@ -384,7 +384,7 @@ async function installFromPlatform(
     )
 
     // Git-backed package — delegate to the standard git install flow
-    if (resolved.source !== 'platform' || !resolved.files?.length) {
+    if (resolved.source !== 'platform') {
       let fullSource = resolved.gitPath ? `${resolved.gitUri}/${resolved.gitPath}` : resolved.gitUri
 
       if (parsed.ref) {
@@ -395,6 +395,14 @@ async function installFromPlatform(
 
       spinner.stop()
       return installPackage(fullSource, options)
+    }
+
+    // Platform-hosted but no files returned — the platform failed to fetch them
+    if (!resolved.files?.length) {
+      throw new AgentverError(
+        'NOT_FOUND',
+        `Package "${displayName}" is hosted on the platform but no files were returned. The platform may be experiencing issues — try again later.`
+      )
     }
 
     // Platform-hosted package — install directly from response files

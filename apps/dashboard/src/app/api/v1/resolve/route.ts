@@ -1,7 +1,10 @@
 import { prisma } from '@agentver/database'
+import { createLogger } from '@agentver/shared'
 import { NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth/api-auth'
 import { getGitProvider } from '@/lib/git'
+
+const logger = createLogger('api:resolve')
 
 /**
  * Shared include clause for package lookups — keeps both direct and
@@ -122,6 +125,17 @@ export async function GET(request: Request) {
     try {
       const provider = getGitProvider()
       const fileEntries = await provider.listSkillFiles(orgSlug, pkg.name)
+      if (fileEntries.length === 0) {
+        logger.warn('Platform-hosted skill has no files', { org: orgSlug, package: pkg.name })
+        return NextResponse.json(
+          {
+            error: `Package "${name}" exists but has no files — it may not have been published yet`,
+            suggestion: 'Publish the skill via the dashboard before installing.',
+          },
+          { status: 404 }
+        )
+      }
+
       const files = await Promise.all(
         fileEntries
           .filter((e) => e.type === 'file')
@@ -138,15 +152,19 @@ export async function GET(request: Request) {
         source: 'platform',
         files,
       })
-    } catch {
-      // If file fetching fails, return metadata without files
-      return NextResponse.json({
-        gitUri: pkg.gitUri,
-        gitPath: pkg.gitPath,
-        gitRef,
-        source: 'platform',
-        files: [],
+    } catch (error) {
+      logger.error('Failed to fetch platform-hosted skill files', {
+        org: orgSlug,
+        package: pkg.name,
+        error: String(error),
       })
+      return NextResponse.json(
+        {
+          error: `Failed to retrieve files for "${name}" — the platform could not read the skill content`,
+          suggestion: 'Check that the skill has been published and try again.',
+        },
+        { status: 502 }
+      )
     }
   }
 
