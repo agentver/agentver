@@ -7,6 +7,7 @@ import {
 } from '@/components/branch-timeline'
 import { FadeIn } from '@/components/fade-in'
 import { LogoIcon } from '@/components/logo'
+import { HeroHeadline } from '@/components/rotating-text'
 import { Terminal } from '@/components/terminal'
 
 const HERO_AGENTS = ['Claude Code', 'Cursor', 'Copilot', 'Windsurf', 'Gemini CLI'] as const
@@ -106,17 +107,13 @@ function Hero() {
               </svg>
               <span className="font-medium text-primary text-xs">Open source</span>
             </div>
-            <h1 className="font-bold font-display text-5xl leading-[1.06] tracking-tight md:text-7xl">
-              The GitHub
-              <br />
-              <span className="text-primary">for AI agents</span>
-            </h1>
+            <HeroHeadline />
           </div>
 
           <p className="mt-8 max-w-lg animate-fade-up text-lg text-muted leading-relaxed [animation-delay:100ms] md:text-xl">
-            Manage, version, and share AI agent skills across 43+ agents. Import what you already
-            have, keep everything in sync, and collaborate with your team — from the terminal,
-            desktop, or browser.
+            Write a skill once and deploy it to Claude Code, Cursor, Copilot, Windsurf, and 40+ more
+            — for every teammate, every time. Version-controlled, security-scanned, and simple to
+            manage.
           </p>
 
           <div className="mt-10 flex animate-fade-up flex-wrap items-center gap-3 [animation-delay:200ms]">
