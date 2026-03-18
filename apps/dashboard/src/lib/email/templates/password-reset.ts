@@ -6,17 +6,13 @@ type PasswordResetEmailParams = {
   expiresInMinutes: number
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+function getSafeResetUrl(url: string): string {
+  if (url.startsWith('https://') || url.startsWith('/')) return url
+  return '#'
 }
 
 export function buildPasswordResetEmail(params: PasswordResetEmailParams): EmailMessage {
-  const safeUrl = escapeHtml(params.resetUrl)
+  const safeUrl = getSafeResetUrl(params.resetUrl)
 
   return {
     to: params.recipientEmail,

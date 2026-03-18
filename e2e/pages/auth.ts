@@ -7,6 +7,7 @@ export class SignInPage {
   readonly passwordInput: Locator
   readonly submitButton: Locator
   readonly signUpLink: Locator
+  readonly forgotPasswordLink: Locator
   readonly githubButton: Locator
   readonly googleButton: Locator
   readonly errorMessage: Locator
@@ -18,6 +19,7 @@ export class SignInPage {
     this.passwordInput = page.getByLabel('Password')
     this.submitButton = page.getByRole('button', { name: /sign in/i })
     this.signUpLink = page.getByRole('link', { name: /sign up/i })
+    this.forgotPasswordLink = page.getByRole('link', { name: /forgot your password/i })
     this.githubButton = page.getByRole('button', { name: /github/i })
     this.googleButton = page.getByRole('button', { name: /google/i })
     this.errorMessage = page.getByRole('alert')

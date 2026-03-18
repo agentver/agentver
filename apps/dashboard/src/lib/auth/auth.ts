@@ -1,11 +1,14 @@
 import { prisma } from '@agentver/database'
+import { createLogger } from '@agentver/shared'
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { nextCookies } from 'better-auth/next-js'
 import { getEmailProvider } from '../email'
 import { buildPasswordResetEmail } from '../email/templates/password-reset'
 
-const PASSWORD_RESET_TOKEN_EXPIRES_IN = 3600 // 1 hour
+const logger = createLogger('auth')
+
+const PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = 3600
 
 const allowedDomains = process.env.ALLOWED_SIGNUP_DOMAINS
   ? process.env.ALLOWED_SIGNUP_DOMAINS.split(',').map((d) => d.trim().toLowerCase())
@@ -19,15 +22,19 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   emailAndPassword: {
     enabled: true,
-    resetPasswordTokenExpiresIn: PASSWORD_RESET_TOKEN_EXPIRES_IN,
+    resetPasswordTokenExpiresIn: PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS,
     sendResetPassword: async ({ user, url }) => {
       const emailProvider = getEmailProvider()
       const message = buildPasswordResetEmail({
         recipientEmail: user.email,
         resetUrl: url,
-        expiresInMinutes: PASSWORD_RESET_TOKEN_EXPIRES_IN / 60,
+        expiresInMinutes: PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS / 60,
       })
-      void emailProvider.send(message)
+      try {
+        await emailProvider.send(message)
+      } catch (error) {
+        logger.error('Failed to send password reset email', { email: user.email, error })
+      }
     },
     ...(allowedDomains
       ? {

@@ -21,6 +21,13 @@ test.describe('auth', () => {
     await expect(signIn.signUpLink).toHaveAttribute('href', '/sign-up')
   })
 
+  test('sign-in page has forgot password link', async ({ page }) => {
+    const signIn = new SignInPage(page)
+    await signIn.goto()
+    await expect(signIn.forgotPasswordLink).toBeVisible()
+    await expect(signIn.forgotPasswordLink).toHaveAttribute('href', '/forgot-password')
+  })
+
   test('sign-up page renders with name, email, and password fields', async ({ page }) => {
     const signUp = new SignUpPage(page)
     await signUp.goto()

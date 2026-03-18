@@ -6,7 +6,7 @@ import { Label } from '@agentver/ui/components/label'
 import { LogoIcon } from '@agentver/ui/components/logo'
 import Link from 'next/link'
 import { useState } from 'react'
-import { forgetPassword } from '@/lib/auth/client'
+import { requestPasswordReset } from '@/lib/auth/client'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -19,7 +19,7 @@ export default function ForgotPasswordPage() {
     setError(null)
     setLoading(true)
 
-    const result = await forgetPassword({
+    const result = await requestPasswordReset({
       email,
       redirectTo: '/reset-password',
     })

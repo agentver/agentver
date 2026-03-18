@@ -6,10 +6,10 @@ import { Label } from '@agentver/ui/components/label'
 import { LogoIcon } from '@agentver/ui/components/logo'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { resetPassword } from '@/lib/auth/client'
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const token = searchParams.get('token')
@@ -49,6 +49,7 @@ export default function ResetPasswordPage() {
       return
     }
 
+    setLoading(false)
     router.push('/sign-in?reset=success')
   }
 
@@ -119,5 +120,13 @@ export default function ResetPasswordPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense>
+      <ResetPasswordContent />
+    </Suspense>
   )
 }

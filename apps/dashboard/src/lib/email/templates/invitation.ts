@@ -1,4 +1,5 @@
 import type { EmailMessage } from '../types'
+import { escapeHtml } from '../utils'
 
 type InvitationEmailParams = {
   recipientEmail: string
@@ -7,15 +8,6 @@ type InvitationEmailParams = {
   role: string
   acceptUrl: string
   expiresAt: Date
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
 }
 
 export function buildInvitationEmail(params: InvitationEmailParams): EmailMessage {
