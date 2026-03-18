@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { type Prisma, prisma } from '@agentver/database'
-import { createLogger } from '@agentver/shared'
+import { createLogger, parseFrontmatter } from '@agentver/shared'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest } from '@/lib/auth/api-auth'
@@ -21,6 +21,7 @@ const publishSchema = z.object({
     .string()
     .regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'Must be valid semver')
     .optional(),
+  visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
 })
 
 export async function POST(
@@ -53,7 +54,7 @@ export async function POST(
     )
   }
 
-  const { files, version } = parsed.data
+  const { files, version, visibility } = parsed.data
 
   // Verify membership
   const orgRecord = await prisma.organisation.findUnique({
@@ -68,6 +69,48 @@ export async function POST(
   }
 
   try {
+    // Find or auto-create the Package record
+    const existingPkg = await prisma.package.findFirst({
+      where: { name, organisationId: orgRecord.id },
+    })
+
+    let pkg = existingPkg
+    if (!pkg) {
+      const skillMd = files.find((f) => f.path === 'SKILL.md' || f.path.endsWith('/SKILL.md'))
+      if (!skillMd) {
+        return NextResponse.json({ error: 'SKILL.md required for new packages' }, { status: 400 })
+      }
+
+      const { rawData } = parseFrontmatter(skillMd.content)
+
+      pkg = await prisma.package.create({
+        data: {
+          name,
+          slug: `${org}/${name}`,
+          description: typeof rawData.description === 'string' ? rawData.description : '',
+          type: 'SKILL',
+          visibility: visibility ?? 'PRIVATE',
+          tags: Array.isArray(rawData.tags) ? (rawData.tags as string[]) : [],
+          compatibilityAgents: Array.isArray(rawData.compatibility)
+            ? (rawData.compatibility as string[])
+            : [],
+          readme: skillMd.content,
+          organisationId: orgRecord.id,
+          authorId: authResult.userId,
+        },
+      })
+
+      logger.info('Auto-created package for new skill', { org, name, packageId: pkg.id })
+    }
+
+    // Update visibility if explicitly requested on an existing package
+    if (visibility && existingPkg) {
+      await prisma.package.update({
+        where: { id: pkg.id },
+        data: { visibility },
+      })
+    }
+
     const gitService = getGitProvider()
     const commitMessage = version ? `Publish ${name}@${version}` : `Publish ${name}`
 
@@ -85,37 +128,30 @@ export async function POST(
     if (version) {
       await gitService.createVersion(org, name, version, `Release ${version}`, result.commitSha)
 
-      // Create a PackageVersion record if the package exists in the database
-      const pkg = await prisma.package.findFirst({
-        where: { name, organisationId: orgRecord.id },
+      const allContent = files.map((f) => f.content).join('\n')
+      const sha256 = createHash('sha256').update(allContent).digest('hex')
+      const size = Buffer.byteLength(allContent, 'utf-8')
+
+      const existingVersion = await prisma.packageVersion.findFirst({
+        where: { packageId: pkg.id, version },
       })
 
-      if (pkg) {
-        const allContent = files.map((f) => f.content).join('\n')
-        const sha256 = createHash('sha256').update(allContent).digest('hex')
-        const size = Buffer.byteLength(allContent, 'utf-8')
+      if (!existingVersion) {
+        const fileManifest: Prisma.InputJsonValue = Object.fromEntries(
+          files.map((f) => [f.path, { size: Buffer.byteLength(f.content, 'utf-8') }])
+        )
 
-        const existingVersion = await prisma.packageVersion.findFirst({
-          where: { packageId: pkg.id, version },
+        await prisma.packageVersion.create({
+          data: {
+            packageId: pkg.id,
+            version,
+            gitRef: `v/${name}/${version}`,
+            gitCommitSha: result.commitSha,
+            sha256,
+            size,
+            fileManifest,
+          },
         })
-
-        if (!existingVersion) {
-          const fileManifest: Prisma.InputJsonValue = Object.fromEntries(
-            files.map((f) => [f.path, { size: Buffer.byteLength(f.content, 'utf-8') }])
-          )
-
-          await prisma.packageVersion.create({
-            data: {
-              packageId: pkg.id,
-              version,
-              gitRef: `v/${name}/${version}`,
-              gitCommitSha: result.commitSha,
-              sha256,
-              size,
-              fileManifest,
-            },
-          })
-        }
       }
 
       resolvedVersion = version
