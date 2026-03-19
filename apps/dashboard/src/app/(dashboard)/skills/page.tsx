@@ -1,6 +1,5 @@
 'use client'
 
-import { Badge } from '@agentver/ui/components/badge'
 import { Button } from '@agentver/ui/components/button'
 import {
   Dialog,
@@ -24,13 +23,11 @@ import {
   Check,
   CheckCircle,
   Download,
-  FileText,
   GitBranch,
   Layers,
   Loader2,
   Package,
   Search as SearchIcon,
-  Settings,
   Terminal,
   Trash2,
   X,
@@ -40,8 +37,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { FadeIn } from '@/components/fade-in'
-import { DETECTED_TYPE_COLOURS, DETECTED_TYPE_LABELS } from '@/components/import/shared-constants'
-import type { DetectedFileType, ScannedFile } from '@/components/import/shared-types'
+import { ScannedFileList } from '@/components/import/scanned-file-list'
+import type { ScannedFile } from '@/components/import/shared-types'
 import { SkillFilters } from '@/components/skills/skill-filters'
 import { SkillGrid } from '@/components/skills/skill-grid'
 import { SkillList } from '@/components/skills/skill-list'
@@ -554,81 +551,12 @@ function ImportFromUrlDialog({
                 </Button>
               </div>
 
-              {scannedFiles.length === 0 ? (
-                <p className="py-4 text-center text-muted-foreground text-sm">
-                  No skill or config files found in this repository.
-                </p>
-              ) : (
-                <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
-                  {Object.entries(
-                    scannedFiles.reduce<Record<string, ScannedFile[]>>((groups, file) => {
-                      const group = groups[file.detectedType] ?? []
-                      group.push(file)
-                      groups[file.detectedType] = group
-                      return groups
-                    }, {})
-                  ).map(([groupType, groupFiles]) => (
-                    <div key={groupType}>
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <Badge
-                          variant="secondary"
-                          className={`text-xs ${DETECTED_TYPE_COLOURS[groupType as DetectedFileType] ?? ''}`}
-                        >
-                          {DETECTED_TYPE_LABELS[groupType as DetectedFileType] ?? groupType}
-                        </Badge>
-                        <span className="text-muted-foreground text-xs">
-                          {groupFiles.length} file{groupFiles.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {groupFiles.map((file) => {
-                          const isSelected = selectedPaths.has(file.path)
-                          return (
-                            <button
-                              key={file.path}
-                              type="button"
-                              onClick={() => toggleFile(file.path)}
-                              className={`flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition-colors ${
-                                isSelected
-                                  ? 'border-primary bg-primary/5'
-                                  : 'border-border hover:border-muted-foreground/50'
-                              }`}
-                            >
-                              <div
-                                className={`flex size-4 shrink-0 items-center justify-center rounded border ${
-                                  isSelected
-                                    ? 'border-primary bg-primary text-primary-foreground'
-                                    : 'border-muted-foreground/30'
-                                }`}
-                              >
-                                {isSelected && <Check className="size-3" />}
-                              </div>
-
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  {file.detectedType === 'AGENT_CONFIG' ? (
-                                    <Settings className="size-3.5 shrink-0 text-muted-foreground" />
-                                  ) : (
-                                    <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                                  )}
-                                  <span className="truncate font-mono text-xs">{file.path}</span>
-                                </div>
-                              </div>
-
-                              <Badge
-                                variant="secondary"
-                                className={`shrink-0 text-xs ${DETECTED_TYPE_COLOURS[file.detectedType] ?? ''}`}
-                              >
-                                {DETECTED_TYPE_LABELS[file.detectedType] ?? file.detectedType}
-                              </Badge>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <ScannedFileList
+                files={scannedFiles}
+                selectedPaths={selectedPaths}
+                onToggleFile={toggleFile}
+                compact
+              />
 
               {!selectedOrgId && (
                 <div className="space-y-2">
