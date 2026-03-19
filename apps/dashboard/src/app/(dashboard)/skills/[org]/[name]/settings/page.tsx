@@ -134,6 +134,7 @@ export default function SkillSettingsPage({
 
   const enableSyncMutation = trpc.imports.enableGitHubSync.useMutation({
     onSuccess: () => {
+      setSyncOverride('MIRROR')
       toast.success('Mirror sync enabled')
       utils.skills.getBySlug.invalidate({ org, name })
     },
@@ -144,6 +145,7 @@ export default function SkillSettingsPage({
 
   const disableSyncMutation = trpc.imports.disableGitHubSync.useMutation({
     onSuccess: () => {
+      setSyncOverride('COPY')
       toast.success('Mirror sync disabled')
       utils.skills.getBySlug.invalidate({ org, name })
     },
@@ -151,6 +153,8 @@ export default function SkillSettingsPage({
       toast.error('Failed to disable sync', { description: error.message })
     },
   })
+
+  const [syncOverride, setSyncOverride] = useState<'MIRROR' | 'COPY' | null>(null)
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
@@ -163,16 +167,17 @@ export default function SkillSettingsPage({
   const hasSource = !!pkg?.gitUri && !isForgejoBacked
 
   const adoptionMode = useMemo(() => {
+    if (syncOverride) return syncOverride
     if (pkg?.tags.includes('mirrored')) return 'MIRROR' as const
     if (pkg?.tags.includes('linked')) return 'LINK' as const
     return 'COPY' as const
-  }, [pkg?.tags])
+  }, [syncOverride, pkg?.tags])
 
   const gitHubOwnerRepo = useMemo(() => {
     if (!isGitHubBacked || !pkg?.gitUri) return null
     const cleaned = pkg.gitUri.replace(/^https?:\/\//, '').replace(/^github\.com\//, '')
     const parts = cleaned.split('/')
-    if (parts.length >= 2) return { owner: parts[0]!, repo: parts[1]! }
+    if (parts.length >= 2) return { owner: parts[0]!, repo: parts[1]!.replace(/\.git$/, '') }
     return null
   }, [isGitHubBacked, pkg?.gitUri])
 

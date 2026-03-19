@@ -8,9 +8,9 @@ export type ScannedFile = {
   agentId: string
   downloadUrl: string
   preview: string | null
-  /** GitLab-specific: the project ID within GitLab */
+  /** Provider-specific project or repository identifier */
   projectId?: number
-  /** GitLab-specific: the git ref (branch/tag) */
+  /** Git ref (branch or tag) to fetch from */
   ref?: string
 }
 

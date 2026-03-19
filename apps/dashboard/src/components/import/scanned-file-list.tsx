@@ -86,22 +86,12 @@ export function ScannedFileList({
                       <span className={`truncate font-mono ${compact ? 'text-xs' : 'text-sm'}`}>
                         {file.path}
                       </span>
-                      {compact && (
-                        <Badge
-                          variant="secondary"
-                          className={`shrink-0 text-xs ${DETECTED_TYPE_COLOURS[file.detectedType] ?? ''}`}
-                        >
-                          {DETECTED_TYPE_LABELS[file.detectedType] ?? file.detectedType}
-                        </Badge>
-                      )}
-                      {!compact && (
-                        <Badge
-                          variant="secondary"
-                          className={`shrink-0 text-xs ${DETECTED_TYPE_COLOURS[file.detectedType] ?? ''}`}
-                        >
-                          {DETECTED_TYPE_LABELS[file.detectedType] ?? file.detectedType}
-                        </Badge>
-                      )}
+                      <Badge
+                        variant="secondary"
+                        className={`shrink-0 text-xs ${DETECTED_TYPE_COLOURS[file.detectedType] ?? ''}`}
+                      >
+                        {DETECTED_TYPE_LABELS[file.detectedType] ?? file.detectedType}
+                      </Badge>
                     </div>
                     {!compact && (
                       <>

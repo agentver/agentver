@@ -38,7 +38,7 @@ import { Suspense, useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { FadeIn } from '@/components/fade-in'
 import { ScannedFileList } from '@/components/import/scanned-file-list'
-import type { ScannedFile } from '@/components/import/shared-types'
+import type { ImportResult, ScannedFile } from '@/components/import/shared-types'
 import { SkillFilters } from '@/components/skills/skill-filters'
 import { SkillGrid } from '@/components/skills/skill-grid'
 import { SkillList } from '@/components/skills/skill-list'
@@ -77,11 +77,6 @@ type ImportFromUrlState = 'idle' | 'importing' | 'success' | 'error'
 
 type ScanStep = 'input' | 'scanning' | 'select' | 'importing' | 'done'
 
-type ScanImportResult = {
-  imported: Array<{ path: string; packageId: string; name: string }>
-  errors: Array<{ path: string; error: string }>
-}
-
 type ScanProvider = 'github' | 'gitlab' | 'bitbucket'
 
 /**
@@ -111,12 +106,12 @@ function ImportFromUrlDialog({
   const [scannedFiles, setScannedFiles] = useState<ScannedFile[]>([])
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [repoLabel, setRepoLabel] = useState('')
-  const [scanImportResult, setScanImportResult] = useState<ScanImportResult | null>(null)
+  const [scanImportResult, setScanImportResult] = useState<ImportResult | null>(null)
   const [scanProvider, setScanProvider] = useState<ScanProvider>('github')
   const [adoptionMode, setAdoptionMode] = useState<'COPY' | 'MIRROR' | 'LINK'>('COPY')
 
   const { data: orgs } = trpc.organisations.list.useQuery()
-  const accounts = trpc.connections.list.useQuery()
+  const accounts = trpc.connections.list.useQuery(undefined, { enabled: open })
   const hasGitHubAccount = accounts.data?.some((a) => a.provider === 'GITHUB') ?? false
   const utils = trpc.useUtils()
 
