@@ -43,6 +43,7 @@ import { FadeIn } from '@/components/fade-in'
 import { SkillFilters } from '@/components/skills/skill-filters'
 import { SkillGrid } from '@/components/skills/skill-grid'
 import { SkillList } from '@/components/skills/skill-list'
+import { AdoptionModeSelector } from '@/components/sources/adoption-mode-selector'
 import { PackageManagerTabs } from '@/components/ui/package-manager-tabs'
 import { useOrgContext } from '@/hooks/use-org-context'
 import { trpc } from '@/trpc/client'
@@ -143,8 +144,11 @@ function ImportFromUrlDialog({
   const [repoLabel, setRepoLabel] = useState('')
   const [scanImportResult, setScanImportResult] = useState<ScanImportResult | null>(null)
   const [scanProvider, setScanProvider] = useState<ScanProvider>('github')
+  const [adoptionMode, setAdoptionMode] = useState<'COPY' | 'MIRROR' | 'LINK'>('COPY')
 
   const { data: orgs } = trpc.organisations.list.useQuery()
+  const accounts = trpc.connections.list.useQuery()
+  const hasGitHubAccount = accounts.data?.some((a) => a.provider === 'GITHUB') ?? false
   const utils = trpc.useUtils()
 
   const importMutation = trpc.skills.importFromUrl.useMutation({
@@ -314,7 +318,7 @@ function ImportFromUrlDialog({
         repo: repoLabel,
         projectId: firstFile.projectId ?? 0,
         organisationId: selectedOrgId,
-        adoptionMode: 'COPY',
+        adoptionMode,
         files: filesToImport.map((f) => ({
           path: f.path,
           name: f.name,
@@ -336,7 +340,7 @@ function ImportFromUrlDialog({
         repoSlug: segments[1] ?? '',
         mainBranch: filesToImport[0]?.ref ?? 'main',
         organisationId: selectedOrgId,
-        adoptionMode: 'COPY',
+        adoptionMode,
         files: filesToImport.map((f) => ({
           path: f.path,
           name: f.name,
@@ -353,7 +357,7 @@ function ImportFromUrlDialog({
     bulkImportGitHubMutation.mutate({
       repo: repoLabel,
       organisationId: selectedOrgId,
-      adoptionMode: 'COPY',
+      adoptionMode,
       files: filesToImport.map((f) => ({
         path: f.path,
         name: f.name,
@@ -369,6 +373,7 @@ function ImportFromUrlDialog({
     scannedFiles,
     repoLabel,
     scanProvider,
+    adoptionMode,
     bulkImportGitHubMutation,
     bulkImportGitLabMutation,
     bulkImportBitbucketMutation,
@@ -409,6 +414,7 @@ function ImportFromUrlDialog({
         setRepoLabel('')
         setScanImportResult(null)
         setScanProvider('github')
+        setAdoptionMode('COPY')
       }
       onOpenChange(nextOpen)
     },
@@ -669,6 +675,20 @@ function ImportFromUrlDialog({
                   </Select>
                 </div>
               )}
+
+              <AdoptionModeSelector
+                value={adoptionMode}
+                onChange={setAdoptionMode}
+                disabledModes={
+                  scanProvider === 'github'
+                    ? hasGitHubAccount
+                      ? undefined
+                      : { MIRROR: 'Connect your GitHub account to enable mirror sync' }
+                    : scanProvider === 'gitlab'
+                      ? { MIRROR: 'Coming soon — webhook sync for GitLab is not yet available' }
+                      : { MIRROR: 'Coming soon — webhook sync for Bitbucket is not yet available' }
+                }
+              />
             </div>
           )}
 
