@@ -351,7 +351,15 @@ export function BitbucketImportFlow() {
           Import More
         </Button>
         <Button asChild>
-          <a href="/skills">View Packages</a>
+          <a
+            href={
+              importResult?.imported.length === 1 && selectedOrg
+                ? `/skills/${selectedOrg.slug}/${importResult.imported[0]!.name}`
+                : '/skills'
+            }
+          >
+            {importResult?.imported.length === 1 ? 'View Package' : 'View Packages'}
+          </a>
         </Button>
       </div>
     </div>

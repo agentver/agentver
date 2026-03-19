@@ -138,7 +138,7 @@ export function SkillList({ packages, selectable, selectedIds, onToggleSelect }:
               {PACKAGE_TYPE_DISPLAY[pkg.type]?.label ?? pkg.type.toLowerCase()}
             </span>
             <span className="w-36 text-center">
-              {pkg.gitUri ? (
+              {pkg.gitUri && !pkg.gitUri.startsWith('agentver://') ? (
                 <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
                   <GitBranch className="size-3" />
                   <span className="max-w-[120px] truncate font-mono">{pkg.gitUri}</span>
