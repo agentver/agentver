@@ -311,6 +311,19 @@ describe('commands/pin', () => {
       )
       expect(process.exit).toHaveBeenCalledWith(1)
     })
+
+    it('outputs "user" scope label in terminal message for global pin', async () => {
+      const pkg = createManifestPackage()
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      await runPin(['pin', 'my-skill', '--global'])
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('user'))
+      consoleSpy.mockRestore()
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -374,6 +387,20 @@ describe('commands/pin', () => {
         expect.stringContaining('not installed')
       )
       expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('outputs "user" scope label in terminal message for global unpin', async () => {
+      const pkg = createManifestPackage()
+      pkg.pinned = true
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      await runUnpin(['unpin', 'my-skill', '--global'])
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('user'))
+      consoleSpy.mockRestore()
     })
   })
 })

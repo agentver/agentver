@@ -1,5 +1,3 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { AgentId } from '@agentver/agent-definitions'
 import { getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { UpdateResult } from '@agentver/shared'
@@ -17,6 +15,7 @@ import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
+import { resolvePlacementPath } from '../utils/paths'
 import { installPackage } from './install'
 
 type UpdateInfo = {
@@ -422,9 +421,7 @@ export function registerUpdateCommand(program: Command): void {
             ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
             : null
           const fallbackDir = placementPath
-            ? scope === 'global'
-              ? placementPath.replace('~', homedir())
-              : join(projectRoot, placementPath)
+            ? resolvePlacementPath(placementPath, projectRoot, scope)
             : null
           const skillDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
 

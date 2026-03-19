@@ -996,7 +996,7 @@ describe('commands/update', () => {
 
       expect(installPackage).toHaveBeenCalledWith(
         expect.any(String),
-        expect.objectContaining({ global: true })
+        expect.objectContaining({ global: true, agent: 'claude-code' })
       )
     })
 
@@ -1026,6 +1026,72 @@ describe('commands/update', () => {
 
       expect(outputModule.outputSuccess).toHaveBeenCalledWith(
         expect.objectContaining({ updated: [], skipped: [] })
+      )
+    })
+
+    it('skips install and reports dry-run for global packages with --dry-run', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      setupSinglePackage('test-skill')
+      setupResolveToNewSha()
+
+      await updateAction('test-skill', { global: true, dryRun: true })
+
+      expect(installPackage).not.toHaveBeenCalled()
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          updated: [],
+          skipped: expect.arrayContaining([
+            expect.objectContaining({ name: 'test-skill', reason: 'dry-run' }),
+          ]),
+        })
+      )
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 13. Patch mode with global scope
+  // -------------------------------------------------------------------------
+
+  describe('patch mode with --global', () => {
+    it('passes global scope to readLockfile and installPackage in patch update', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      setupSinglePackage('test-skill')
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/home/testuser/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: 'modified locally', size: 16 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different')
+
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: createFetchedFiles(1),
+        commitSha: OLD_SHA,
+        source: createGitSource(),
+      })
+
+      vi.mocked(patchesModule.generatePatch).mockReturnValue(
+        '--- a/test-skill/SKILL.md\n+++ b/test-skill/SKILL.md\n@@ -1,1 +1,1 @@\n-original\n+modified locally\n'
+      )
+      vi.mocked(patchesModule.savePatch).mockReturnValue(
+        '/project/.agentver/patches/test-skill.patch'
+      )
+      vi.mocked(patchesModule.applyPatch).mockReturnValue({ applied: true, conflicts: [] })
+
+      vi.mocked(prompts)
+        .mockResolvedValueOnce({ confirmed: true })
+        .mockResolvedValueOnce({ action: 'patch' })
+
+      await updateAction('test-skill', { global: true })
+
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ global: true, agent: 'claude-code' })
       )
     })
   })

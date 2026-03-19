@@ -1,0 +1,25 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+/**
+ * Resolves a skill placement path to a full absolute path.
+ *
+ * For global scope: expands a leading ~ to the user's home directory.
+ *   Returns null if the path does not start with ~ (unsafe) or resolves
+ *   outside the home directory (path traversal guard).
+ * For project scope: joins with projectRoot.
+ */
+export function resolvePlacementPath(
+  placementPath: string,
+  projectRoot: string,
+  scope: 'project' | 'global'
+): string | null {
+  if (scope === 'global') {
+    const home = homedir()
+    if (!placementPath.startsWith('~')) return null
+    const resolved = join(home, placementPath.slice(1))
+    if (!resolved.startsWith(home + '/') && resolved !== home) return null
+    return resolved
+  }
+  return join(projectRoot, placementPath)
+}

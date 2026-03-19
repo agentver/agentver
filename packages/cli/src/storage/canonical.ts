@@ -69,7 +69,11 @@ export function createAgentSymlinks(
     if (!placementPath) continue
 
     const agentSkillPath =
-      scope === 'global' ? placementPath.replace('~', homedir()) : join(projectRoot, placementPath)
+      scope === 'global'
+        ? placementPath.startsWith('~')
+          ? join(homedir(), placementPath.slice(1))
+          : placementPath
+        : join(projectRoot, placementPath)
 
     // If this path already exists (file, directory, or symlink), remove it first
     if (existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
@@ -116,7 +120,11 @@ export function removeAgentSymlinks(
     if (!placementPath) continue
 
     const agentSkillPath =
-      scope === 'global' ? placementPath.replace('~', homedir()) : join(projectRoot, placementPath)
+      scope === 'global'
+        ? placementPath.startsWith('~')
+          ? join(homedir(), placementPath.slice(1))
+          : placementPath
+        : join(projectRoot, placementPath)
 
     if (existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
       rmSync(agentSkillPath, { recursive: true, force: true })
@@ -178,7 +186,11 @@ export function resolveReadPath(
     if (!placementPath) continue
 
     const fullPath =
-      scope === 'global' ? placementPath.replace('~', homedir()) : join(projectRoot, placementPath)
+      scope === 'global'
+        ? placementPath.startsWith('~')
+          ? join(homedir(), placementPath.slice(1))
+          : placementPath
+        : join(projectRoot, placementPath)
 
     if (existsSync(fullPath)) {
       // If it's a symlink, resolve to the canonical directory

@@ -468,10 +468,6 @@ describe('commands/remove', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Additional edge cases
-  // -------------------------------------------------------------------------
-
-  // -------------------------------------------------------------------------
   // 10. Global scope removal
   // -------------------------------------------------------------------------
 
@@ -605,10 +601,28 @@ describe('commands/remove', () => {
         expect.objectContaining({ recursive: true })
       )
     })
+
+    it('shows "user" scope label in terminal success message for global removal', async () => {
+      setupGlobalPackage('my-skill')
+      const mockSpinner = {
+        start: vi.fn().mockReturnThis(),
+        succeed: vi.fn(),
+        fail: vi.fn(),
+        stop: vi.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        text: '',
+      }
+      vi.mocked(outputModule.createSpinner).mockReturnValue(mockSpinner as never)
+
+      await removeAction('my-skill', { global: true })
+
+      expect(mockSpinner.succeed).toHaveBeenCalledWith(expect.stringContaining('user'))
+    })
   })
 
   // -------------------------------------------------------------------------
-  // Additional edge cases
+  // 11. Non-symlinked (legacy) install removal
   // -------------------------------------------------------------------------
 
   describe('non-symlinked (legacy) install removal', () => {
@@ -676,6 +690,50 @@ describe('commands/remove', () => {
       expect(outputModule.outputError).toHaveBeenCalledWith(
         'NOT_FOUND',
         'Package "nonexistent" is not installed.'
+      )
+    })
+
+    it('shows case-insensitive match hint in terminal error output', async () => {
+      setupInstalledPackage('my-skill')
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(removeAction('My-Skill', {})).rejects.toThrow(ExitError)
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Did you mean: my-skill'))
+      consoleSpy.mockRestore()
+    })
+
+    it('shows wrong-scope hint in terminal error output when package is in global scope', async () => {
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: { 'my-skill': createManifestPackage() },
+          })
+        )
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(removeAction('my-skill', {})).rejects.toThrow(ExitError)
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Found in global scope'))
+      consoleSpy.mockRestore()
+    })
+
+    it('includes project scope hint when package found in project scope with --global', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: { 'my-skill': createManifestPackage() },
+          })
+        )
+
+      await expect(removeAction('my-skill', { global: true })).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Found in project scope')
       )
     })
   })

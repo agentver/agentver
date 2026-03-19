@@ -1,6 +1,4 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { RemoveResult } from '@agentver/shared'
 import chalk from 'chalk'
@@ -15,6 +13,7 @@ import {
 } from '../storage/canonical'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
+import { resolvePlacementPath } from '../utils/paths'
 
 export function registerRemoveCommand(program: Command): void {
   program
@@ -34,7 +33,6 @@ export function registerRemoveCommand(program: Command): void {
         name in manifest.packages ? name : shortName in manifest.packages ? shortName : null
 
       if (!manifestKey) {
-        // Check for case-insensitive match (suggestions)
         const caseMatches = Object.keys(manifest.packages).filter(
           (key) =>
             (key.toLowerCase() === name.toLowerCase() ||
@@ -43,18 +41,20 @@ export function registerRemoveCommand(program: Command): void {
             key !== shortName
         )
 
-        // Check if the package exists in the other scope
         const otherScope = scope === 'project' ? 'global' : 'project'
         const otherManifest = readManifest(projectRoot, otherScope)
         const foundInOther = name in otherManifest.packages || shortName in otherManifest.packages
 
-        // Build hints for the user
         const hints: string[] = []
         if (caseMatches.length > 0) {
           hints.push(`Did you mean: ${caseMatches.join(', ')}?`)
         }
         if (foundInOther) {
-          hints.push(`Found in ${otherScope} scope. Use: agentver remove ${name} --${otherScope}`)
+          if (otherScope === 'global') {
+            hints.push(`Found in global scope — try: agentver remove ${name} --global`)
+          } else {
+            hints.push(`Found in project scope — try without --global`)
+          }
         }
 
         if (jsonMode) {
@@ -83,21 +83,16 @@ export function registerRemoveCommand(program: Command): void {
         for (const agentId of pkg.agents) {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (placementPath) {
-            const fullPath =
-              scope === 'global'
-                ? placementPath.replace('~', homedir())
-                : join(projectRoot, placementPath)
-            removedPaths.push(fullPath)
+            const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+            if (fullPath) removedPaths.push(fullPath)
           }
         }
       } else {
         for (const agentId of pkg.agents) {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
-          const fullPath =
-            scope === 'global'
-              ? placementPath.replace('~', homedir())
-              : join(projectRoot, placementPath)
+          const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+          if (!fullPath) continue
           if (existsSync(fullPath)) {
             removedPaths.push(fullPath)
           }
@@ -124,11 +119,8 @@ export function registerRemoveCommand(program: Command): void {
           for (const agentId of pkg.agents) {
             const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
             if (placementPath) {
-              const fullPath =
-                scope === 'global'
-                  ? placementPath.replace('~', homedir())
-                  : join(projectRoot, placementPath)
-              console.log(chalk.dim(`    ${fullPath}`))
+              const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+              if (fullPath) console.log(chalk.dim(`    ${fullPath}`))
             }
           }
         } else {
@@ -155,10 +147,8 @@ export function registerRemoveCommand(program: Command): void {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
 
-          const fullPath =
-            scope === 'global'
-              ? placementPath.replace('~', homedir())
-              : join(projectRoot, placementPath)
+          const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+          if (!fullPath) continue
           if (existsSync(fullPath) || isSymlinkPath(fullPath)) {
             rmSync(fullPath, { recursive: true, force: true })
           }
