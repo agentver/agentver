@@ -629,4 +629,54 @@ describe('commands/remove', () => {
       expect(fs.rmSync).toHaveBeenCalled()
     })
   })
+
+  // -------------------------------------------------------------------------
+  // 12. Smart UX — case mismatch and wrong scope hints
+  // -------------------------------------------------------------------------
+
+  describe('smart hints', () => {
+    it('suggests case-insensitive match in JSON error message', async () => {
+      setupInstalledPackage('my-skill')
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await expect(removeAction('My-Skill', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Did you mean: my-skill')
+      )
+    })
+
+    it('includes wrong scope hint in JSON error message', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      // Set up: empty project manifest, package in global manifest
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest()) // project scope (empty)
+        .mockReturnValueOnce(
+          createManifest({
+            packages: { 'my-skill': createManifestPackage() },
+          })
+        ) // global scope (has package)
+
+      await expect(removeAction('my-skill', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Found in global scope')
+      )
+    })
+
+    it('does not suggest other scope when package is not found anywhere', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+
+      await expect(removeAction('nonexistent', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        'Package "nonexistent" is not installed.'
+      )
+    })
+  })
 })

@@ -34,11 +34,41 @@ export function registerRemoveCommand(program: Command): void {
         name in manifest.packages ? name : shortName in manifest.packages ? shortName : null
 
       if (!manifestKey) {
+        // Check for case-insensitive match (suggestions)
+        const caseMatches = Object.keys(manifest.packages).filter(
+          (key) =>
+            (key.toLowerCase() === name.toLowerCase() ||
+              key.toLowerCase() === shortName.toLowerCase()) &&
+            key !== name &&
+            key !== shortName
+        )
+
+        // Check if the package exists in the other scope
+        const otherScope = scope === 'project' ? 'global' : 'project'
+        const otherManifest = readManifest(projectRoot, otherScope)
+        const foundInOther = name in otherManifest.packages || shortName in otherManifest.packages
+
+        // Build hints for the user
+        const hints: string[] = []
+        if (caseMatches.length > 0) {
+          hints.push(`Did you mean: ${caseMatches.join(', ')}?`)
+        }
+        if (foundInOther) {
+          hints.push(`Found in ${otherScope} scope. Use: agentver remove ${name} --${otherScope}`)
+        }
+
         if (jsonMode) {
-          outputError('NOT_FOUND', `Package "${name}" is not installed.`)
+          const msg =
+            hints.length > 0
+              ? `Package "${name}" is not installed. ${hints.join(' ')}`
+              : `Package "${name}" is not installed.`
+          outputError('NOT_FOUND', msg)
           process.exit(1)
         }
         console.error(chalk.red(`Package "${name}" is not installed.`))
+        for (const hint of hints) {
+          console.error(chalk.dim(hint))
+        }
         process.exit(1)
       }
 
