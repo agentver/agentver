@@ -344,6 +344,7 @@ describe('imports router', () => {
   describe('importFromGitHub — MIRROR mode', () => {
     it('registers a webhook and returns syncStatus active', async () => {
       process.env.NEXT_PUBLIC_APP_URL = 'https://example.com'
+      vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token')
       const { registerWebhook } = await import('@/lib/import/github-webhook')
       const { commitImportedFiles } = await import('@/lib/import/shared')
       const { user, org } = await createTestOrgWithOwner()
@@ -384,6 +385,7 @@ describe('imports router', () => {
 
     it('returns syncStatus failed when webhook registration throws', async () => {
       process.env.NEXT_PUBLIC_APP_URL = 'https://example.com'
+      vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token')
       const { registerWebhook } = await import('@/lib/import/github-webhook')
       const { commitImportedFiles } = await import('@/lib/import/shared')
       vi.mocked(registerWebhook).mockRejectedValueOnce(new Error('GitHub API rate limit'))
