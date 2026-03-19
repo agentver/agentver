@@ -240,12 +240,12 @@ export async function scanRepoForSkills(
 }
 
 export async function getRepoDefaultBranch(
-  accessToken: string,
+  token: string | null,
   owner: string,
   repo: string
 ): Promise<string> {
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-    headers: githubHeaders(accessToken),
+    headers: githubHeaders(token),
   })
 
   if (!response.ok) {
@@ -285,7 +285,7 @@ type SkillDirectoryFile = {
  * each file's content. Only fetches files (not subdirectories).
  */
 export async function fetchSkillDirectoryFiles(
-  accessToken: string,
+  token: string | null,
   owner: string,
   repo: string,
   dirPath: string
@@ -293,7 +293,7 @@ export async function fetchSkillDirectoryFiles(
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}`,
     {
-      headers: githubHeaders(accessToken),
+      headers: githubHeaders(token),
     }
   )
 
@@ -314,7 +314,7 @@ export async function fetchSkillDirectoryFiles(
     if (entry.type !== 'file' || !entry.download_url) continue
 
     try {
-      const content = await fetchFileContent(entry.download_url, accessToken)
+      const content = await fetchFileContent(entry.download_url, token)
       files.push({ name: entry.name, content })
     } catch (error) {
       logger.warn('Failed to fetch file from skill directory', {

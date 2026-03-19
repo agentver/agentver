@@ -88,29 +88,6 @@ function parseRepoUrl(url: string): { owner: string; name: string } {
   })
 }
 
-async function getGitHubAccessToken(
-  userId: string
-): Promise<{ accessToken: string; accountId: string }> {
-  const account = await prisma.connectedAccount.findUnique({
-    where: {
-      userId_provider: {
-        userId,
-        provider: 'GITHUB',
-      },
-    },
-    select: { id: true, accessToken: true },
-  })
-
-  if (!account) {
-    throw new TRPCError({
-      code: 'PRECONDITION_FAILED',
-      message: 'No GitHub account connected. Please connect your GitHub account first.',
-    })
-  }
-
-  return { accessToken: account.accessToken, accountId: account.id }
-}
-
 async function getGitLabAccessToken(
   userId: string
 ): Promise<{ accessToken: string; accountId: string }> {
@@ -907,7 +884,7 @@ export const importsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { accessToken } = await getGitHubAccessToken(ctx.user.id)
+      const token = await getGitHubToken(ctx.user.id)
       const org = await validateOrgForAdoption(
         input.organisationId,
         ctx.user.id,
@@ -932,7 +909,7 @@ export const importsRouter = router({
           if (file.type === 'skill' && !file.downloadUrl && repoOwnerParsed && repoNameParsed) {
             // Skill directory — fetch all files within it
             const dirFiles = await fetchSkillDirectoryFiles(
-              accessToken,
+              token,
               repoOwnerParsed,
               repoNameParsed,
               file.path
@@ -959,9 +936,7 @@ export const importsRouter = router({
             })
           } else {
             // Single file (config, rules, or file with download URL)
-            const content = file.downloadUrl
-              ? await fetchFileContent(file.downloadUrl, accessToken)
-              : ''
+            const content = file.downloadUrl ? await fetchFileContent(file.downloadUrl, token) : ''
             filesToAdopt.push({
               path: file.path,
               name: file.name,
@@ -979,9 +954,7 @@ export const importsRouter = router({
 
       const [repoOwner, repoName] = input.repo.split('/')
       const defaultBranch =
-        repoOwner && repoName
-          ? await getRepoDefaultBranch(accessToken, repoOwner, repoName)
-          : 'main'
+        repoOwner && repoName ? await getRepoDefaultBranch(token, repoOwner, repoName) : 'main'
 
       const adoptionCtx: AdoptionContext = {
         orgId: org.id,
@@ -1001,7 +974,12 @@ export const importsRouter = router({
 
       if (input.adoptionMode === 'MIRROR' && imported.length > 0) {
         const [repoOwner, repoName] = input.repo.split('/')
-        if (repoOwner && repoName) {
+        if (!token) {
+          syncStatus = 'failed'
+          logger.warn('Mirror sync requires a connected GitHub account for webhook registration', {
+            repo: input.repo,
+          })
+        } else if (repoOwner && repoName) {
           try {
             const account = await prisma.connectedAccount.findUnique({
               where: { userId_provider: { userId: ctx.user.id, provider: 'GITHUB' } },
@@ -1029,7 +1007,7 @@ export const importsRouter = router({
                 if (baseUrl) {
                   const webhookUrl = `${baseUrl}/api/webhooks/github`
                   const { webhookId } = await registerWebhook(
-                    accessToken,
+                    token,
                     repoOwner,
                     repoName,
                     webhookUrl

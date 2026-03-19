@@ -84,12 +84,14 @@ export function GitHubImportFlow() {
   const [scannedFiles, setScannedFiles] = useState<ScannedFile[]>([])
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  const [adoptionMode, setAdoptionMode] = useState<'COPY' | 'MIRROR' | 'LINK'>('MIRROR')
-
   const { selectedOrg } = useOrgContext()
 
   const accounts = trpc.connections.list.useQuery()
   const hasGitHubAccount = accounts.data?.some((a) => a.provider === 'GITHUB') ?? false
+
+  const [adoptionMode, setAdoptionMode] = useState<'COPY' | 'MIRROR' | 'LINK'>(
+    hasGitHubAccount ? 'MIRROR' : 'COPY'
+  )
 
   const scanMutation = trpc.imports.scanGitHub.useMutation({
     onSuccess: (data) => {
@@ -389,7 +391,15 @@ export function GitHubImportFlow() {
           </CardContent>
         </Card>
 
-        <AdoptionModeSelector value={adoptionMode} onChange={setAdoptionMode} />
+        <AdoptionModeSelector
+          value={adoptionMode}
+          onChange={setAdoptionMode}
+          disabledModes={
+            hasGitHubAccount
+              ? undefined
+              : { MIRROR: 'Connect your GitHub account to enable mirror sync' }
+          }
+        />
 
         <Separator />
 
