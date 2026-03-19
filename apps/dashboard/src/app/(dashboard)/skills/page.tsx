@@ -40,6 +40,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { FadeIn } from '@/components/fade-in'
+import { DETECTED_TYPE_COLOURS, DETECTED_TYPE_LABELS } from '@/components/import/shared-constants'
+import type { DetectedFileType, ScannedFile } from '@/components/import/shared-types'
 import { SkillFilters } from '@/components/skills/skill-filters'
 import { SkillGrid } from '@/components/skills/skill-grid'
 import { SkillList } from '@/components/skills/skill-list'
@@ -76,33 +78,11 @@ export default function SkillsPage() {
 
 type ImportFromUrlState = 'idle' | 'importing' | 'success' | 'error'
 
-type DetectedFileType = 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT'
-
-type ScannedFile = {
-  path: string
-  name: string
-  type: 'skill' | 'config' | 'rules'
-  detectedType: DetectedFileType
-  agentId: string
-  downloadUrl: string
-  preview: string | null
-  projectId?: number
-  ref?: string
-}
-
 type ScanStep = 'input' | 'scanning' | 'select' | 'importing' | 'done'
 
 type ScanImportResult = {
   imported: Array<{ path: string; packageId: string; name: string }>
   errors: Array<{ path: string; error: string }>
-}
-
-const DETECTED_TYPE_LABELS: Record<DetectedFileType, string> = {
-  AGENT_CONFIG: 'Agent Config',
-  SKILL: 'Skill',
-  PLUGIN: 'Plugin',
-  SCRIPT: 'Script',
-  PROMPT: 'Prompt',
 }
 
 type ScanProvider = 'github' | 'gitlab' | 'bitbucket'
@@ -116,14 +96,6 @@ function detectProviderFromUrl(url: string): ScanProvider {
   if (cleaned.startsWith('gitlab.com/')) return 'gitlab'
   if (cleaned.startsWith('bitbucket.org/')) return 'bitbucket'
   return 'github'
-}
-
-const DETECTED_TYPE_COLOURS: Record<DetectedFileType, string> = {
-  AGENT_CONFIG: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
-  SKILL: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
-  PLUGIN: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200',
-  SCRIPT: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200',
-  PROMPT: 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200',
 }
 
 function ImportFromUrlDialog({
