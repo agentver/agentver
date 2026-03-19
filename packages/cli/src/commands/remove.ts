@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { RemoveResult } from '@agentver/shared'
@@ -52,14 +53,21 @@ export function registerRemoveCommand(program: Command): void {
         for (const agentId of pkg.agents) {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (placementPath) {
-            removedPaths.push(join(projectRoot, placementPath))
+            const fullPath =
+              scope === 'global'
+                ? placementPath.replace('~', homedir())
+                : join(projectRoot, placementPath)
+            removedPaths.push(fullPath)
           }
         }
       } else {
         for (const agentId of pkg.agents) {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
-          const fullPath = join(projectRoot, placementPath)
+          const fullPath =
+            scope === 'global'
+              ? placementPath.replace('~', homedir())
+              : join(projectRoot, placementPath)
           if (existsSync(fullPath)) {
             removedPaths.push(fullPath)
           }
@@ -86,7 +94,11 @@ export function registerRemoveCommand(program: Command): void {
           for (const agentId of pkg.agents) {
             const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
             if (placementPath) {
-              console.log(chalk.dim(`    ${join(projectRoot, placementPath)}`))
+              const fullPath =
+                scope === 'global'
+                  ? placementPath.replace('~', homedir())
+                  : join(projectRoot, placementPath)
+              console.log(chalk.dim(`    ${fullPath}`))
             }
           }
         } else {
@@ -113,7 +125,10 @@ export function registerRemoveCommand(program: Command): void {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
 
-          const fullPath = join(projectRoot, placementPath)
+          const fullPath =
+            scope === 'global'
+              ? placementPath.replace('~', homedir())
+              : join(projectRoot, placementPath)
           if (existsSync(fullPath) || isSymlinkPath(fullPath)) {
             rmSync(fullPath, { recursive: true, force: true })
           }
