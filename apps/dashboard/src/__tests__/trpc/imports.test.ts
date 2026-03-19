@@ -9,16 +9,20 @@ import { createTestCaller } from '~/test/helpers/trpc'
 vi.mock('@/lib/import/github', () => ({
   scanRepoForSkills: vi.fn().mockResolvedValue([
     {
-      path: 'skills/test/SKILL.md',
-      name: 'SKILL.md',
+      path: '.claude/skills/code-review',
+      name: 'code-review',
       type: 'skill',
       detectedType: 'SKILL',
       agentId: 'claude-code',
-      downloadUrl: 'https://raw.githubusercontent.com/test',
-      preview: '# Test',
+      downloadUrl: '',
+      preview: '# Code Review',
     },
   ]),
   fetchFileContent: vi.fn().mockResolvedValue('# Test Skill Content'),
+  fetchSkillDirectoryFiles: vi.fn().mockResolvedValue([
+    { name: 'SKILL.md', content: '# Code Review Skill\nReview code for quality.' },
+    { name: 'helpers.md', content: '# Helper utilities' },
+  ]),
   getRepoDefaultBranch: vi.fn().mockResolvedValue('main'),
   isGitHubApiError: vi.fn().mockReturnValue(false),
 }))
@@ -35,32 +39,32 @@ vi.mock('@/lib/import/github-webhook', () => ({
 vi.mock('@/lib/import/gitlab', () => ({
   scanGitLabRepo: vi.fn().mockResolvedValue([
     {
-      path: 'skills/test/SKILL.md',
-      name: 'SKILL.md',
-      type: 'skill',
-      detectedType: 'SKILL',
+      path: 'CLAUDE.md',
+      name: 'CLAUDE.md',
+      type: 'config',
+      detectedType: 'AGENT_CONFIG',
       agentId: 'claude-code',
       projectId: 1,
       ref: 'main',
-      preview: '# Test',
+      preview: '# Config',
     },
   ]),
-  fetchGitLabFileContent: vi.fn().mockResolvedValue('# GitLab Skill'),
+  fetchGitLabFileContent: vi.fn().mockResolvedValue('# GitLab Config'),
 }))
 
 vi.mock('@/lib/import/bitbucket', () => ({
   scanBitbucketRepo: vi.fn().mockResolvedValue([
     {
-      path: 'skills/test/SKILL.md',
-      name: 'SKILL.md',
-      type: 'skill',
-      detectedType: 'SKILL',
+      path: 'CLAUDE.md',
+      name: 'CLAUDE.md',
+      type: 'config',
+      detectedType: 'AGENT_CONFIG',
       agentId: 'claude-code',
       downloadUrl: 'https://api.bitbucket.org/test',
-      preview: '# Test',
+      preview: '# Config',
     },
   ]),
-  fetchBitbucketFileContent: vi.fn().mockResolvedValue('# Bitbucket Skill'),
+  fetchBitbucketFileContent: vi.fn().mockResolvedValue('# Bitbucket Config'),
   listBitbucketRepos: vi
     .fn()
     .mockResolvedValue([
@@ -222,7 +226,7 @@ describe('imports router', () => {
       expect(result.files).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            path: 'skills/test/SKILL.md',
+            path: '.claude/skills/code-review',
             detectedType: 'SKILL',
             agentId: 'claude-code',
           }),
@@ -271,10 +275,10 @@ describe('imports router', () => {
         adoptionMode: 'COPY',
         files: [
           {
-            path: 'skills/test/SKILL.md',
-            name: 'SKILL.md',
-            type: 'skill',
-            detectedType: 'SKILL',
+            path: 'CLAUDE.md',
+            name: 'CLAUDE.md',
+            type: 'config',
+            detectedType: 'AGENT_CONFIG',
             agentId: 'claude-code',
             downloadUrl: 'https://raw.githubusercontent.com/test',
           },
@@ -284,6 +288,46 @@ describe('imports router', () => {
       expect(result).toHaveProperty('imported')
       expect(result).toHaveProperty('errors')
       expect(result.syncStatus).toBe('not_requested')
+    })
+
+    it('uses the directory name as the package name for skill directories', async () => {
+      const { commitImportedFiles } = await import('@/lib/import/shared')
+      const { user, org } = await createTestOrgWithOwner()
+      await setupGitHubAccount(user.id)
+      await setupOrgWithSkillsRepo(org.id)
+
+      const caller = createTestCaller(user.id)
+      const result = await caller.imports.importFromGitHub({
+        repo: 'acme/skills',
+        organisationId: org.id,
+        adoptionMode: 'COPY',
+        files: [
+          {
+            path: '.claude/skills/code-review',
+            name: 'code-review',
+            type: 'skill',
+            detectedType: 'SKILL',
+            agentId: 'claude-code',
+            downloadUrl: '',
+          },
+        ],
+      })
+
+      expect(result.imported).toHaveLength(1)
+      expect(result.imported[0]?.name).toBe('code-review')
+
+      // Verify commitImportedFiles was called with the correct target path
+      expect(commitImportedFiles).toHaveBeenCalledWith(
+        org.id,
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'SKILL.md' }),
+          expect.objectContaining({ name: 'helpers.md' }),
+        ]),
+        'skills/code-review',
+        expect.any(String),
+        expect.any(String),
+        expect.anything()
+      )
     })
 
     it('throws when the organisation has no skills repo configured', async () => {
@@ -300,10 +344,10 @@ describe('imports router', () => {
           adoptionMode: 'COPY',
           files: [
             {
-              path: 'skills/test/SKILL.md',
-              name: 'SKILL.md',
-              type: 'skill',
-              detectedType: 'SKILL',
+              path: 'CLAUDE.md',
+              name: 'CLAUDE.md',
+              type: 'config',
+              detectedType: 'AGENT_CONFIG',
               agentId: 'claude-code',
               downloadUrl: 'https://raw.githubusercontent.com/test',
             },
@@ -326,10 +370,10 @@ describe('imports router', () => {
         adoptionMode: 'LINK',
         files: [
           {
-            path: 'skills/test/SKILL.md',
-            name: 'SKILL.md',
-            type: 'skill',
-            detectedType: 'SKILL',
+            path: 'CLAUDE.md',
+            name: 'CLAUDE.md',
+            type: 'config',
+            detectedType: 'AGENT_CONFIG',
             agentId: 'claude-code',
             downloadUrl: 'https://raw.githubusercontent.com/test',
           },
@@ -338,6 +382,40 @@ describe('imports router', () => {
 
       // LINK mode must not perform a git commit
       expect(commitImportedFiles).not.toHaveBeenCalled()
+    })
+
+    it('uses the directory name as the package name for skill directories', async () => {
+      const { commitImportedFiles } = await import('@/lib/import/shared')
+      const { user, org } = await createTestOrgWithOwner()
+      await setupGitHubAccount(user.id)
+
+      const caller = createTestCaller(user.id)
+      const result = await caller.imports.importFromGitHub({
+        repo: 'acme/skills',
+        organisationId: org.id,
+        adoptionMode: 'LINK',
+        files: [
+          {
+            path: '.claude/skills/code-review',
+            name: 'code-review',
+            type: 'skill',
+            detectedType: 'SKILL',
+            agentId: 'claude-code',
+            downloadUrl: '',
+          },
+        ],
+      })
+
+      expect(commitImportedFiles).not.toHaveBeenCalled()
+      expect(result.imported).toHaveLength(1)
+      expect(result.imported[0]?.name).toBe('code-review')
+
+      // Verify the DB record has the correct name
+      const pkg = await prisma.package.findFirst({
+        where: { organisationId: org.id, name: 'code-review' },
+      })
+      expect(pkg).not.toBeNull()
+      expect(pkg?.name).toBe('code-review')
     })
   })
 
@@ -368,10 +446,10 @@ describe('imports router', () => {
         adoptionMode: 'MIRROR',
         files: [
           {
-            path: 'skills/test/SKILL.md',
-            name: 'SKILL.md',
-            type: 'skill',
-            detectedType: 'SKILL',
+            path: 'CLAUDE.md',
+            name: 'CLAUDE.md',
+            type: 'config',
+            detectedType: 'AGENT_CONFIG',
             agentId: 'claude-code',
             downloadUrl: 'https://raw.githubusercontent.com/test',
           },
@@ -410,10 +488,10 @@ describe('imports router', () => {
         adoptionMode: 'MIRROR',
         files: [
           {
-            path: 'skills/test/SKILL.md',
-            name: 'SKILL.md',
-            type: 'skill',
-            detectedType: 'SKILL',
+            path: 'CLAUDE.md',
+            name: 'CLAUDE.md',
+            type: 'config',
+            detectedType: 'AGENT_CONFIG',
             agentId: 'claude-code',
             downloadUrl: 'https://raw.githubusercontent.com/test',
           },
@@ -505,8 +583,8 @@ describe('imports router', () => {
       expect(result.files).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            path: 'skills/test/SKILL.md',
-            detectedType: 'SKILL',
+            path: 'CLAUDE.md',
+            detectedType: 'AGENT_CONFIG',
           }),
         ])
       )
@@ -543,10 +621,10 @@ describe('imports router', () => {
         adoptionMode: 'COPY',
         files: [
           {
-            path: 'skills/test/SKILL.md',
-            name: 'SKILL.md',
-            type: 'skill',
-            detectedType: 'SKILL',
+            path: 'CLAUDE.md',
+            name: 'CLAUDE.md',
+            type: 'config',
+            detectedType: 'AGENT_CONFIG',
             agentId: 'claude-code',
             downloadUrl: 'https://api.bitbucket.org/test',
           },
@@ -573,10 +651,10 @@ describe('imports router', () => {
           adoptionMode: 'COPY',
           files: [
             {
-              path: 'skills/test/SKILL.md',
-              name: 'SKILL.md',
-              type: 'skill',
-              detectedType: 'SKILL',
+              path: 'CLAUDE.md',
+              name: 'CLAUDE.md',
+              type: 'config',
+              detectedType: 'AGENT_CONFIG',
               agentId: 'claude-code',
               downloadUrl: 'https://api.bitbucket.org/test',
             },

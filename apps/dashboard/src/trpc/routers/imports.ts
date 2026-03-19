@@ -928,7 +928,7 @@ export const importsRouter = router({
 
             filesToAdopt.push({
               path: file.path,
-              name: primaryFile.name,
+              name: file.name,
               content: primaryFile.content,
               detectedType: file.detectedType,
               agentId: file.agentId,
