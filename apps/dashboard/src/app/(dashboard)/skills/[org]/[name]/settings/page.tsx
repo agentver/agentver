@@ -24,7 +24,11 @@ import { Textarea } from '@agentver/ui/components/textarea'
 import {
   AlertTriangle,
   Archive,
+  Copy,
   ExternalLink,
+  GitCompareArrows,
+  Link as LinkIcon,
+  Loader2,
   Pencil,
   RotateCcw,
   Shield,
@@ -32,7 +36,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { use, useState } from 'react'
+import { use, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { trpc } from '@/trpc/client'
 import { SkillHeader } from '../_components/skill-header'
@@ -125,11 +129,57 @@ export default function SkillSettingsPage({
 
   const deleteMutation = trpc.skills.delete.useMutation()
 
+  const accounts = trpc.connections.list.useQuery(undefined, { enabled: canManage })
+  const hasGitHubAccount = accounts.data?.some((a) => a.provider === 'GITHUB') ?? false
+
+  const enableSyncMutation = trpc.imports.enableGitHubSync.useMutation({
+    onSuccess: () => {
+      setSyncOverride('MIRROR')
+      toast.success('Mirror sync enabled')
+      utils.skills.getBySlug.invalidate({ org, name })
+    },
+    onError: (error) => {
+      toast.error('Failed to enable sync', { description: error.message })
+    },
+  })
+
+  const disableSyncMutation = trpc.imports.disableGitHubSync.useMutation({
+    onSuccess: () => {
+      setSyncOverride('COPY')
+      toast.success('Mirror sync disabled')
+      utils.skills.getBySlug.invalidate({ org, name })
+    },
+    onError: (error) => {
+      toast.error('Failed to disable sync', { description: error.message })
+    },
+  })
+
+  const [syncOverride, setSyncOverride] = useState<'MIRROR' | 'COPY' | null>(null)
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [deprecateDialogOpen, setDeprecateDialogOpen] = useState(false)
   const [deprecationNote, setDeprecationNote] = useState('')
+
+  const isForgejoBacked = pkg?.gitUri?.startsWith('agentver://') ?? false
+  const isGitHubBacked = pkg?.gitUri?.includes('github.com') ?? false
+  const hasSource = !!pkg?.gitUri && !isForgejoBacked
+
+  const adoptionMode = useMemo(() => {
+    if (syncOverride) return syncOverride
+    if (pkg?.tags.includes('mirrored')) return 'MIRROR' as const
+    if (pkg?.tags.includes('linked')) return 'LINK' as const
+    return 'COPY' as const
+  }, [syncOverride, pkg?.tags])
+
+  const gitHubOwnerRepo = useMemo(() => {
+    if (!isGitHubBacked || !pkg?.gitUri) return null
+    const cleaned = pkg.gitUri.replace(/^https?:\/\//, '').replace(/^github\.com\//, '')
+    const parts = cleaned.split('/')
+    if (parts.length >= 2) return { owner: parts[0]!, repo: parts[1]!.replace(/\.git$/, '') }
+    return null
+  }, [isGitHubBacked, pkg?.gitUri])
 
   if (pkgLoading) {
     return <SkillPageSkeleton />
@@ -258,6 +308,162 @@ export default function SkillSettingsPage({
               Open the editor to modify the SKILL.md content and metadata.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Source & Sync */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Source &amp; Sync</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {hasSource ? (
+            <>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Label>Import mode</Label>
+                  <Badge
+                    className={
+                      adoptionMode === 'MIRROR'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                        : adoptionMode === 'LINK'
+                          ? 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
+                          : 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                    }
+                  >
+                    {adoptionMode === 'MIRROR' && <GitCompareArrows className="mr-1 size-3" />}
+                    {adoptionMode === 'LINK' && <LinkIcon className="mr-1 size-3" />}
+                    {adoptionMode === 'COPY' && <Copy className="mr-1 size-3" />}
+                    {adoptionMode}
+                  </Badge>
+                </div>
+
+                <div className="rounded-lg border p-3 text-sm">
+                  <dl className="space-y-1.5">
+                    <div className="flex gap-2">
+                      <dt className="shrink-0 text-muted-foreground">Source</dt>
+                      <dd className="truncate font-mono text-xs">{pkg.gitUri}</dd>
+                    </div>
+                    {pkg.gitPath && (
+                      <div className="flex gap-2">
+                        <dt className="shrink-0 text-muted-foreground">Path</dt>
+                        <dd className="truncate font-mono text-xs">{pkg.gitPath}</dd>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <dt className="shrink-0 text-muted-foreground">Ref</dt>
+                      <dd className="font-mono text-xs">{pkg.gitDefaultRef}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {pkg.gitRepoUrl && (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={pkg.gitRepoUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="mr-1.5 size-3" />
+                      View source repository
+                    </a>
+                  </Button>
+                )}
+              </div>
+
+              {/* Sync actions */}
+              {isGitHubBacked && gitHubOwnerRepo && (
+                <div className="space-y-2 border-t pt-4">
+                  {adoptionMode === 'COPY' && hasGitHubAccount && (
+                    <>
+                      <p className="text-muted-foreground text-sm">
+                        Enable mirror sync to automatically detect upstream changes and review
+                        updates.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          enableSyncMutation.mutate({
+                            repoOwner: gitHubOwnerRepo.owner,
+                            repoName: gitHubOwnerRepo.repo,
+                          })
+                        }
+                        disabled={enableSyncMutation.isPending}
+                      >
+                        {enableSyncMutation.isPending ? (
+                          <>
+                            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                            Enabling...
+                          </>
+                        ) : (
+                          <>
+                            <GitCompareArrows className="mr-1.5 size-3.5" />
+                            Enable mirror sync
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                  {adoptionMode === 'COPY' && !hasGitHubAccount && (
+                    <div className="flex items-start gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-blue-500" />
+                      <div>
+                        <p className="text-sm">
+                          Connect your GitHub account to enable mirror sync for this package.
+                        </p>
+                        <Button variant="outline" size="sm" className="mt-2" asChild>
+                          <Link href="/settings/connections">
+                            <ExternalLink className="mr-1.5 size-3" />
+                            Connect GitHub
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {adoptionMode === 'MIRROR' && (
+                    <>
+                      <p className="text-muted-foreground text-sm">
+                        Mirror sync is active. Upstream changes are automatically detected.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          disableSyncMutation.mutate({
+                            repoOwner: gitHubOwnerRepo.owner,
+                            repoName: gitHubOwnerRepo.repo,
+                          })
+                        }
+                        disabled={disableSyncMutation.isPending}
+                      >
+                        {disableSyncMutation.isPending ? (
+                          <>
+                            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                            Disabling...
+                          </>
+                        ) : (
+                          'Disable sync'
+                        )}
+                      </Button>
+                    </>
+                  )}
+                  {adoptionMode === 'LINK' && (
+                    <p className="text-muted-foreground text-sm">
+                      This package is linked to its source. Content is fetched on demand — no local
+                      copy is stored.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          ) : isForgejoBacked ? (
+            <p className="text-muted-foreground text-sm">
+              This package is stored in the organisation&apos;s internal repository. Source sync is
+              managed automatically.
+            </p>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No external source linked. This package was created directly or imported as a copy
+              without source tracking.
+            </p>
+          )}
         </CardContent>
       </Card>
 
