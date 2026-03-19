@@ -15,6 +15,10 @@ import { createNoopSpinner } from '../helpers/mock-spinner.js'
 // Module-level mocks
 // ---------------------------------------------------------------------------
 
+vi.mock('node:os', () => ({
+  homedir: vi.fn().mockReturnValue('/home/testuser'),
+}))
+
 vi.mock('../../git/index.js', () => ({
   parseGitSource: vi.fn(),
   resolveRef: vi.fn(),
@@ -141,7 +145,10 @@ import * as backupModule from '../../utils/backup'
 // Helper: extract the action callback from registerUpdateCommand
 // ---------------------------------------------------------------------------
 
-type UpdateAction = (name: string | undefined, options: { dryRun?: boolean }) => Promise<void>
+type UpdateAction = (
+  name: string | undefined,
+  options: { dryRun?: boolean; global?: boolean }
+) => Promise<void>
 
 function getUpdateAction(): UpdateAction {
   const mockProgram = {
@@ -943,6 +950,83 @@ describe('commands/update', () => {
       await expect(updateAction(undefined, {})).rejects.toThrow(ExitError)
 
       expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 12. Global scope update
+  // -------------------------------------------------------------------------
+
+  describe('--global update', () => {
+    it('passes global scope to readManifest', async () => {
+      setupSinglePackage('test-skill')
+      setupResolveToSameSha()
+
+      await updateAction('test-skill', { global: true })
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+    })
+
+    it('passes global scope to readLockfile for local modification check', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      setupSinglePackage('test-skill')
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/home/testuser/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: 'content', size: 7 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+
+      await updateAction('test-skill', { global: true })
+
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
+    })
+
+    it('passes global flag to installPackage', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      setupSinglePackage('test-skill')
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', { global: true })
+
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ global: true })
+      )
+    })
+
+    it('resolves global paths correctly for skill directory fallback', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      setupSinglePackage('test-skill')
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/.claude-code/skills/test-skill')
+
+      await updateAction('test-skill', { global: true })
+
+      expect(backupModule.createBackup).toHaveBeenCalledWith(
+        'test-skill',
+        '/project',
+        '/home/testuser/.claude-code/skills/test-skill'
+      )
+    })
+
+    it('returns empty JSON result when no global packages installed', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+
+      await updateAction(undefined, { global: true })
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({ updated: [], skipped: [] })
+      )
     })
   })
 })

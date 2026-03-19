@@ -49,6 +49,10 @@ vi.mock('@agentver/agent-definitions', () => ({
   getConfigFilePath: vi.fn(),
 }))
 
+vi.mock('node:os', () => ({
+  homedir: vi.fn().mockReturnValue('/home/testuser'),
+}))
+
 vi.mock('node:fs', () => ({
   existsSync: vi.fn().mockReturnValue(true),
   lstatSync: vi.fn().mockReturnValue({ isSymbolicLink: () => false, isDirectory: () => true }),
@@ -81,7 +85,7 @@ import * as manifestModule from '../../storage/manifest'
 // Helper: extract the action callback from registerRemoveCommand
 // ---------------------------------------------------------------------------
 
-type RemoveAction = (name: string, options: { dryRun?: boolean }) => Promise<void>
+type RemoveAction = (name: string, options: { dryRun?: boolean; global?: boolean }) => Promise<void>
 
 function getRemoveAction(): RemoveAction {
   const mockProgram = {
@@ -460,6 +464,146 @@ describe('commands/remove', () => {
 
       expect(process.exit).not.toHaveBeenCalled()
       expect(manifestModule.writeManifest).toHaveBeenCalled()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Additional edge cases
+  // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // 10. Global scope removal
+  // -------------------------------------------------------------------------
+
+  describe('--global removal', () => {
+    function setupGlobalPackage(name: string, agents: string[] = ['claude-code']) {
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/test-repo',
+        path: 'skills/test-skill',
+        ref: 'main',
+        commit: 'abc1234567',
+      })
+
+      const manifest = createManifest({
+        packages: {
+          [name]: createManifestPackage({ source, agents }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          [name]: createLockfilePackage({ source, agents }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(true)
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        `/home/testuser/.agents/skills/${name}`
+      )
+
+      vi.mocked(agentDefs.getSkillPlacementPath).mockImplementation(
+        (id: string, skillName: string) => `~/.${id}/skills/${skillName}`
+      )
+
+      return { manifest, lockfile }
+    }
+
+    it('passes global scope to readManifest', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+    })
+
+    it('passes global scope to writeManifest', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
+    })
+
+    it('passes global scope to writeLockfile', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
+    })
+
+    it('passes global scope to removeAgentSymlinks', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(canonicalModule.removeAgentSymlinks).toHaveBeenCalledWith(
+        '/project',
+        'my-skill',
+        ['claude-code'],
+        'global'
+      )
+    })
+
+    it('resolves global paths correctly — no projectRoot prefix in removedPaths', async () => {
+      setupGlobalPackage('my-skill')
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await removeAction('my-skill', { global: true })
+
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typedData = data as { paths: string[] }
+
+      for (const p of typedData.paths) {
+        expect(p).not.toContain('/project/')
+        expect(p).toMatch(/^\/home\/testuser\//)
+      }
+    })
+
+    it('resolves global paths correctly in dry-run JSON output', async () => {
+      setupGlobalPackage('my-skill')
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await removeAction('my-skill', { global: true, dryRun: true })
+
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typedData = data as { paths: string[] }
+
+      for (const p of typedData.paths) {
+        expect(p).not.toContain('/project/')
+        expect(p).toMatch(/^\/home\/testuser\//)
+      }
+    })
+
+    it('package not found in global scope exits with error', async () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+
+      await expect(removeAction('nonexistent', { global: true })).rejects.toThrow(ExitError)
+
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('uses direct rmSync with global paths for non-symlinked installs', async () => {
+      setupGlobalPackage('legacy-skill', ['claude-code'])
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      await removeAction('legacy-skill', { global: true })
+
+      expect(fs.rmSync).toHaveBeenCalledWith(
+        '/home/testuser/.claude-code/skills/legacy-skill',
+        expect.objectContaining({ recursive: true })
+      )
     })
   })
 
