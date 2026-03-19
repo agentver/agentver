@@ -111,9 +111,12 @@ export function SkillHeader({ pkg, org, name, canManage }: SkillHeaderProps) {
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
 
   const latestVersion = pkg.versions[0]?.version ?? '0.0.0'
-  const gitViewUrl = buildGitViewUrl(pkg.gitRepoUrl, pkg.gitPath, pkg.gitDefaultRef)
+  const isInternalGit = pkg.gitUri?.startsWith('agentver://')
+  const gitViewUrl = isInternalGit
+    ? null
+    : buildGitViewUrl(pkg.gitRepoUrl, pkg.gitPath, pkg.gitDefaultRef)
 
-  const hasExternalGitSource = pkg.gitUri && !pkg.gitUri.startsWith('agentver://')
+  const hasExternalGitSource = pkg.gitUri && !isInternalGit
   const installIdentifier = hasExternalGitSource
     ? pkg.gitPath
       ? `${pkg.gitUri}/${pkg.gitPath}@${pkg.gitDefaultRef}`
@@ -230,7 +233,7 @@ export function SkillHeader({ pkg, org, name, canManage }: SkillHeaderProps) {
             </div>
           )}
 
-          {pkg.gitUri && (
+          {pkg.gitUri && !isInternalGit && (
             <div className="mt-2 flex items-center gap-2 text-muted-foreground text-sm">
               <GitBranch className="size-3.5 shrink-0" />
               <span className="font-mono text-xs">{pkg.gitUri}</span>
