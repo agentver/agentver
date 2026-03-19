@@ -175,7 +175,7 @@ export function SkillCard({
           </p>
         )}
 
-        {gitUri && (
+        {gitUri && !gitUri.startsWith('agentver://') && (
           <div className="mt-3 flex items-center gap-2 text-muted-foreground text-xs">
             <GitBranch className="size-3 shrink-0" />
             <span className="truncate font-mono">{gitUri}</span>
