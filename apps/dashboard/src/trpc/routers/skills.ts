@@ -973,8 +973,31 @@ export const skillsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Package not found' })
       }
 
+      let resolvedReadme = pkg.readme
+
+      if (!resolvedReadme && isAgentverProvider(pkg.organisation)) {
+        try {
+          const content = await getGitProvider().getSkillFile(
+            pkg.organisation.slug,
+            pkg.name,
+            'SKILL.md',
+            pkg.gitDefaultRef || undefined
+          )
+          if (content) {
+            resolvedReadme = content
+          }
+        } catch (error) {
+          logger.warn('Failed to resolve skill content from Forgejo for public view', {
+            org: pkg.organisation.slug,
+            name: pkg.name,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+
       return {
         ...pkg,
+        readme: resolvedReadme,
         gitRepoUrl: buildGitRepoUrl(pkg.gitUri),
       }
     }),

@@ -40,7 +40,10 @@ export default function SkillDetailPage({
     return <div className="py-16 text-center text-muted-foreground">Package not found</div>
   }
 
-  const gitViewUrl = buildGitViewUrl(pkg.gitRepoUrl, pkg.gitPath, pkg.gitDefaultRef)
+  const isInternalGit = pkg.gitUri?.startsWith('agentver://')
+  const gitViewUrl = isInternalGit
+    ? null
+    : buildGitViewUrl(pkg.gitRepoUrl, pkg.gitPath, pkg.gitDefaultRef)
   const licence = pkg.readme ? extractLicence(pkg.readme) : null
 
   return (
@@ -124,7 +127,7 @@ export default function SkillDetailPage({
                 </>
               )}
 
-              {pkg.gitUri && (
+              {pkg.gitUri && !isInternalGit && (
                 <>
                   <Separator />
                   <div className="flex justify-between">
@@ -142,6 +145,15 @@ export default function SkillDetailPage({
                     <Badge variant="outline" className="font-mono text-xs">
                       {pkg.gitDefaultRef}
                     </Badge>
+                  </div>
+                </>
+              )}
+              {isInternalGit && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Storage</span>
+                    <span className="text-xs">Agentver</span>
                   </div>
                 </>
               )}
