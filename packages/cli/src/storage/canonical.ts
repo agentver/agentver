@@ -165,7 +165,7 @@ export function resolveReadPath(
 
   const root = scope === 'global' ? homedir() : projectRoot
   const resolvedPath = resolve(root, CANONICAL_DIR, packageName)
-  if (!resolvedPath.startsWith(resolve(root))) {
+  if (!resolvedPath.startsWith(resolve(root) + '/') && resolvedPath !== resolve(root)) {
     throw new Error(`Invalid package name: resolved path escapes project root`)
   }
 
@@ -217,7 +217,7 @@ function isSymlink(filePath: string): boolean {
 function cleanupEmptyParents(dirPath: string, stopAt: string): void {
   let current = dirPath
 
-  while (current !== stopAt && current.startsWith(stopAt)) {
+  while (current !== stopAt && current.startsWith(stopAt + '/')) {
     try {
       const entries = readdirSync(current)
       if (entries.length === 0) {

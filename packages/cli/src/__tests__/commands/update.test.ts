@@ -279,6 +279,7 @@ describe('commands/update', () => {
       skillDir: '/project/.agents/skills/test-skill',
       manifestEntry: null,
       lockfileEntry: null,
+      scope: 'project',
     })
 
     updateAction = getUpdateAction()
@@ -319,7 +320,8 @@ describe('commands/update', () => {
       expect(backupModule.createBackup).toHaveBeenCalledWith(
         'test-skill',
         '/project',
-        expect.any(String)
+        expect.any(String),
+        'project'
       )
     })
 
@@ -638,6 +640,7 @@ describe('commands/update', () => {
           skillDir: null,
           manifestEntry: null,
           lockfileEntry: null,
+          scope: 'project',
         }
       })
       vi.mocked(installPackage).mockImplementation(async () => {
@@ -1014,7 +1017,8 @@ describe('commands/update', () => {
       expect(backupModule.createBackup).toHaveBeenCalledWith(
         'test-skill',
         '/project',
-        '/home/testuser/.claude-code/skills/test-skill'
+        '/home/testuser/.claude-code/skills/test-skill',
+        'global'
       )
     })
 

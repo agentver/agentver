@@ -51,5 +51,10 @@ describe('utils/resolvePlacementPath', () => {
         '/project/.claude/skills/org/my-skill'
       )
     })
+
+    it('resolves an absolute path safely under project root via join', () => {
+      // path.join('/project', '/etc/passwd') = '/project/etc/passwd' — stays within projectRoot
+      expect(resolvePlacementPath('/etc/passwd', '/project', 'project')).toBe('/project/etc/passwd')
+    })
   })
 })

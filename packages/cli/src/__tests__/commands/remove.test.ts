@@ -551,6 +551,18 @@ describe('commands/remove', () => {
       )
     })
 
+    it('passes global scope to removeCanonicalDirectory', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(canonicalModule.removeCanonicalDirectory).toHaveBeenCalledWith(
+        '/project',
+        'my-skill',
+        'global'
+      )
+    })
+
     it('resolves global paths correctly — no projectRoot prefix in removedPaths', async () => {
       setupGlobalPackage('my-skill')
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)

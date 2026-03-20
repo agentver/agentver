@@ -15,19 +15,21 @@ export type BackupState = {
   skillDir: string | null
   manifestEntry: ManifestEntry | null
   lockfileEntry: LockfileEntry | null
+  scope: 'project' | 'global'
 }
 
 export function createBackup(
   packageName: string,
   projectRoot: string,
-  skillDir: string | null
+  skillDir: string | null,
+  scope: 'project' | 'global' = 'project'
 ): BackupState {
   const tempDir = mkdtempSync(join(tmpdir(), 'agentver-backup-'))
 
-  const manifest = readManifest(projectRoot)
+  const manifest = readManifest(projectRoot, scope)
   const manifestEntry = manifest.packages[packageName] ?? null
 
-  const lockfile = readLockfile(projectRoot)
+  const lockfile = readLockfile(projectRoot, scope)
   const lockfileEntry = lockfile.packages[packageName] ?? null
 
   if (skillDir && existsSync(skillDir)) {
@@ -43,6 +45,7 @@ export function createBackup(
     skillDir,
     manifestEntry,
     lockfileEntry,
+    scope,
   }
 }
 
@@ -63,7 +66,7 @@ export function restoreBackup(backup: BackupState): void {
   }
 
   // Restore manifest entry
-  const manifest = readManifest(backup.projectRoot)
+  const manifest = readManifest(backup.projectRoot, backup.scope)
 
   if (backup.manifestEntry) {
     manifest.packages[backup.packageName] = backup.manifestEntry
@@ -71,10 +74,10 @@ export function restoreBackup(backup: BackupState): void {
     delete manifest.packages[backup.packageName]
   }
 
-  writeManifest(backup.projectRoot, manifest)
+  writeManifest(backup.projectRoot, manifest, backup.scope)
 
   // Restore lockfile entry
-  const lockfile = readLockfile(backup.projectRoot)
+  const lockfile = readLockfile(backup.projectRoot, backup.scope)
 
   if (backup.lockfileEntry) {
     lockfile.packages[backup.packageName] = backup.lockfileEntry
@@ -82,7 +85,7 @@ export function restoreBackup(backup: BackupState): void {
     delete lockfile.packages[backup.packageName]
   }
 
-  writeLockfile(backup.projectRoot, lockfile)
+  writeLockfile(backup.projectRoot, lockfile, backup.scope)
 }
 
 export function cleanupBackup(backup: BackupState): void {

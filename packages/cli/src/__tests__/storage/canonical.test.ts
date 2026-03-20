@@ -60,6 +60,18 @@ describe('storage/canonical', () => {
       const result = canonicalModule.getCanonicalSkillPath('/project', 'my-skill', 'global')
       expect(result).toBe('/home/testuser/.agents/skills/my-skill')
     })
+
+    it('throws on name containing path traversal', () => {
+      expect(() => canonicalModule.getCanonicalSkillPath('/project', '../evil', 'project')).toThrow(
+        'path traversal'
+      )
+    })
+
+    it('throws on absolute name', () => {
+      expect(() =>
+        canonicalModule.getCanonicalSkillPath('/project', '/etc/passwd', 'project')
+      ).toThrow('path traversal')
+    })
   })
 
   describe('isSymlinkedInstall', () => {
@@ -236,6 +248,67 @@ describe('storage/canonical', () => {
 
       // rmSync should not be called for the canonical dir (only for cleanup)
       expect(fs.rmSync).not.toHaveBeenCalled()
+    })
+
+    it('removes from home directory path for global scope', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readdirSync).mockReturnValue(['something'] as unknown as ReturnType<
+        typeof fs.readdirSync
+      >)
+
+      canonicalModule.removeCanonicalDirectory('/project', 'my-skill', 'global')
+
+      expect(fs.rmSync).toHaveBeenCalledWith('/home/testuser/.agents/skills/my-skill', {
+        recursive: true,
+        force: true,
+      })
+    })
+
+    it('cleans up empty parent directories after removal', () => {
+      const rmSyncCalls: string[] = []
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.rmSync).mockImplementation((path) => {
+        rmSyncCalls.push(path as string)
+      })
+      vi.mocked(fs.readdirSync).mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>)
+
+      canonicalModule.removeCanonicalDirectory('/project', 'my-skill', 'project')
+
+      // Should remove: canonical dir, then empty .agents/skills, then empty .agents
+      expect(rmSyncCalls).toContain('/project/.agents/skills/my-skill')
+      expect(rmSyncCalls).toContain('/project/.agents/skills')
+      expect(rmSyncCalls).toContain('/project/.agents')
+    })
+
+    it('stops cleanup at the project root boundary', () => {
+      const rmSyncCalls: string[] = []
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.rmSync).mockImplementation((path) => {
+        rmSyncCalls.push(path as string)
+      })
+      vi.mocked(fs.readdirSync).mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>)
+
+      canonicalModule.removeCanonicalDirectory('/project', 'my-skill', 'project')
+
+      // Must NOT remove the project root itself
+      expect(rmSyncCalls).not.toContain('/project')
+    })
+
+    it('stops cleanup at the home directory boundary for global scope', () => {
+      const rmSyncCalls: string[] = []
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.rmSync).mockImplementation((path) => {
+        rmSyncCalls.push(path as string)
+      })
+      vi.mocked(fs.readdirSync).mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>)
+
+      canonicalModule.removeCanonicalDirectory('/project', 'my-skill', 'global')
+
+      // Must NOT remove the home directory itself
+      expect(rmSyncCalls).not.toContain('/home/testuser')
     })
   })
 

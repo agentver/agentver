@@ -173,14 +173,22 @@ async function handlePatchUpdate(
 
   spinner.text = `Reapplying local patch for ${update.name}...`
 
-  const applyResult = applyPatch(projectRoot, patchContent)
+  try {
+    const applyResult = applyPatch(projectRoot, patchContent)
 
-  if (applyResult.applied) {
-    removePatch(projectRoot, update.name)
-    spinner.succeed(`${chalk.green(update.name)}: updated and local patch reapplied successfully`)
-  } else {
+    if (applyResult.applied) {
+      removePatch(projectRoot, update.name)
+      spinner.succeed(`${chalk.green(update.name)}: updated and local patch reapplied successfully`)
+    } else {
+      spinner.warn(
+        `${chalk.yellow(update.name)}: updated but patch had conflicts in: ${applyResult.conflicts.join(', ')}`
+      )
+      console.log(chalk.dim(`  Patch saved at: ${patchPath}`))
+      console.log(chalk.dim('  Review the patch file and apply remaining changes manually.'))
+    }
+  } catch (error) {
     spinner.warn(
-      `${chalk.yellow(update.name)}: updated but patch had conflicts in: ${applyResult.conflicts.join(', ')}`
+      `${chalk.yellow(update.name)}: updated but could not reapply patch: ${error instanceof Error ? error.message : String(error)}`
     )
     console.log(chalk.dim(`  Patch saved at: ${patchPath}`))
     console.log(chalk.dim('  Review the patch file and apply remaining changes manually.'))
@@ -428,7 +436,7 @@ export function registerUpdateCommand(program: Command): void {
           let backup: BackupState | null = null
 
           try {
-            backup = createBackup(update.name, projectRoot, skillDir)
+            backup = createBackup(update.name, projectRoot, skillDir, scope)
 
             const sourceUrl = update.sourcePath
               ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
