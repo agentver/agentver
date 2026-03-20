@@ -99,8 +99,21 @@ describe('utils/backup', () => {
       expect(fs.cpSync).toHaveBeenCalledWith(
         '/project/.agents/skills/my-skill',
         '/tmp/agentver-backup-123/files',
-        { recursive: true }
+        { recursive: true, dereference: true }
       )
+    })
+
+    it('passes scope to readManifest and readLockfile', () => {
+      vi.mocked(fs.mkdtempSync).mockReturnValue('/tmp/agentver-backup-123')
+      vi.mocked(manifestModule.readManifest).mockReturnValue({ version: 2, packages: {} })
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue({ version: 2, packages: {} })
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      const backup = backupModule.createBackup('my-skill', '/project', null, 'global')
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
+      expect(backup.scope).toBe('global')
     })
 
     it('handles missing package entries gracefully', () => {
@@ -141,6 +154,7 @@ describe('utils/backup', () => {
         skillDir: null,
         manifestEntry,
         lockfileEntry,
+        scope: 'project',
       })
 
       expect(manifestModule.writeManifest).toHaveBeenCalled()
@@ -183,6 +197,7 @@ describe('utils/backup', () => {
         skillDir: null,
         manifestEntry: originalEntry,
         lockfileEntry: null,
+        scope: 'project',
       })
 
       const writtenManifest = vi.mocked(manifestModule.writeManifest).mock.calls[0]![1]
@@ -215,10 +230,40 @@ describe('utils/backup', () => {
         skillDir: null,
         manifestEntry: null,
         lockfileEntry: null,
+        scope: 'project',
       })
 
       const writtenManifest = vi.mocked(manifestModule.writeManifest).mock.calls[0]![1]
       expect(writtenManifest.packages['my-skill']).toBeUndefined()
+    })
+
+    it('restores using the correct scope for manifest and lockfile', () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue({ version: 2, packages: {} })
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue({ version: 2, packages: {} })
+      vi.mocked(fs.existsSync).mockReturnValue(false)
+
+      backupModule.restoreBackup({
+        packageName: 'my-skill',
+        projectRoot: '/project',
+        tempDir: '/tmp/backup',
+        skillDir: null,
+        manifestEntry: null,
+        lockfileEntry: null,
+        scope: 'global',
+      })
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
     })
 
     it('restores skill files from backup', () => {
@@ -233,6 +278,7 @@ describe('utils/backup', () => {
         skillDir: '/project/.agents/skills/my-skill',
         manifestEntry: null,
         lockfileEntry: null,
+        scope: 'project',
       })
 
       expect(fs.rmSync).toHaveBeenCalled()
@@ -252,6 +298,7 @@ describe('utils/backup', () => {
         skillDir: null,
         manifestEntry: null,
         lockfileEntry: null,
+        scope: 'project',
       })
 
       expect(fs.rmSync).toHaveBeenCalledWith('/tmp/backup-123', { recursive: true, force: true })
@@ -267,6 +314,7 @@ describe('utils/backup', () => {
         skillDir: null,
         manifestEntry: null,
         lockfileEntry: null,
+        scope: 'project',
       })
 
       expect(fs.rmSync).not.toHaveBeenCalled()

@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import type { AgentId } from '@agentver/agent-definitions'
 import { getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { UpdateResult } from '@agentver/shared'
@@ -16,6 +15,7 @@ import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 import { installPackage } from './install'
 
 type UpdateInfo = {
@@ -52,15 +52,16 @@ function parseUriToCliSource(
 async function checkLocalModifications(
   projectRoot: string,
   packageName: string,
-  agents: string[]
+  agents: string[],
+  scope: Scope = 'project'
 ): Promise<boolean> {
-  const lockfile = readLockfile(projectRoot)
+  const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[packageName]
   if (!lockEntry) return false
 
   const shortName = packageName.split('/').pop()!
 
-  const readPath = resolveReadPath(projectRoot, shortName, agents)
+  const readPath = resolveReadPath(projectRoot, shortName, agents, scope)
   if (readPath) {
     try {
       const localFiles = await readFilesFromDirectory(readPath)
@@ -99,9 +100,10 @@ async function handlePatchUpdate(
   update: UpdateInfo,
   projectRoot: string,
   agents: string[],
-  spinner: ReturnType<typeof ora>
+  spinner: ReturnType<typeof ora>,
+  scope: Scope = 'project'
 ): Promise<{ commitSha: string } | null> {
-  const lockfile = readLockfile(projectRoot)
+  const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[update.name]
   if (!lockEntry) return null
 
@@ -134,7 +136,7 @@ async function handlePatchUpdate(
   }
 
   const localFileArrays: Array<{ path: string; content: string }> = []
-  const readPath = resolveReadPath(projectRoot, shortName, agents)
+  const readPath = resolveReadPath(projectRoot, shortName, agents, scope)
   if (readPath) {
     try {
       const files = await readFilesFromDirectory(readPath)
@@ -164,18 +166,29 @@ async function handlePatchUpdate(
     ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
     : `${update.sourceUri}@${update.ref}`
 
-  const result = await installPackage(sourceUrl, agents[0] ? { agent: agents[0] } : {})
+  const result = await installPackage(sourceUrl, {
+    ...(agents[0] ? { agent: agents[0] } : {}),
+    ...(scope === 'global' ? { global: true } : {}),
+  })
 
   spinner.text = `Reapplying local patch for ${update.name}...`
 
-  const applyResult = applyPatch(projectRoot, patchContent)
+  try {
+    const applyResult = applyPatch(projectRoot, patchContent)
 
-  if (applyResult.applied) {
-    removePatch(projectRoot, update.name)
-    spinner.succeed(`${chalk.green(update.name)}: updated and local patch reapplied successfully`)
-  } else {
+    if (applyResult.applied) {
+      removePatch(projectRoot, update.name)
+      spinner.succeed(`${chalk.green(update.name)}: updated and local patch reapplied successfully`)
+    } else {
+      spinner.warn(
+        `${chalk.yellow(update.name)}: updated but patch had conflicts in: ${applyResult.conflicts.join(', ')}`
+      )
+      console.log(chalk.dim(`  Patch saved at: ${patchPath}`))
+      console.log(chalk.dim('  Review the patch file and apply remaining changes manually.'))
+    }
+  } catch (error) {
     spinner.warn(
-      `${chalk.yellow(update.name)}: updated but patch had conflicts in: ${applyResult.conflicts.join(', ')}`
+      `${chalk.yellow(update.name)}: updated but could not reapply patch: ${error instanceof Error ? error.message : String(error)}`
     )
     console.log(chalk.dim(`  Patch saved at: ${patchPath}`))
     console.log(chalk.dim('  Review the patch file and apply remaining changes manually.'))
@@ -189,10 +202,12 @@ export function registerUpdateCommand(program: Command): void {
     .command('update [name]')
     .description('Update installed skills to their latest upstream version')
     .option('--dry-run', 'Show what would be updated without making changes')
-    .action(async (name: string | undefined, options: { dryRun?: boolean }) => {
+    .option('--global', 'Update skills installed at user level (~/.agents/skills/)')
+    .action(async (name: string | undefined, options: { dryRun?: boolean; global?: boolean }) => {
       const jsonMode = isJSONMode()
       const projectRoot = process.cwd()
-      const manifest = readManifest(projectRoot)
+      const scope = options.global ? 'global' : 'project'
+      const manifest = readManifest(projectRoot, scope)
       const packages = name ? { [name]: manifest.packages[name] } : manifest.packages
 
       const packageNames = Object.keys(packages).filter((n) => packages[n])
@@ -269,7 +284,8 @@ export function registerUpdateCommand(program: Command): void {
               const locallyModified = await checkLocalModifications(
                 projectRoot,
                 pkgName,
-                pkg.agents
+                pkg.agents,
+                scope
               )
 
               updates.push({
@@ -372,7 +388,8 @@ export function registerUpdateCommand(program: Command): void {
                   update,
                   projectRoot,
                   agents,
-                  updateSpinner
+                  updateSpinner,
+                  scope
                 )
 
                 if (patchResult) {
@@ -408,25 +425,27 @@ export function registerUpdateCommand(program: Command): void {
           }
 
           const shortName = update.name.split('/').pop()!
-          const skillDir =
-            resolveReadPath(projectRoot, shortName, agents) ??
-            (agents[0]
-              ? join(
-                  projectRoot,
-                  getSkillPlacementPath(agents[0] as AgentId, shortName, 'project') ?? ''
-                )
-              : null)
+          const placementPath = agents[0]
+            ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
+            : null
+          const fallbackDir = placementPath
+            ? resolvePlacementPath(placementPath, projectRoot, scope)
+            : null
+          const skillDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
 
           let backup: BackupState | null = null
 
           try {
-            backup = createBackup(update.name, projectRoot, skillDir)
+            backup = createBackup(update.name, projectRoot, skillDir, scope)
 
             const sourceUrl = update.sourcePath
               ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
               : `${update.sourceUri}@${update.ref}`
 
-            const result = await installPackage(sourceUrl, agents[0] ? { agent: agents[0] } : {})
+            const result = await installPackage(sourceUrl, {
+              ...(agents[0] ? { agent: agents[0] } : {}),
+              ...(scope === 'global' ? { global: true } : {}),
+            })
 
             cleanupBackup(backup)
 

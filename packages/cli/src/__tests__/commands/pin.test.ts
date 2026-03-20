@@ -251,4 +251,156 @@ describe('commands/pin', () => {
       })
     })
   })
+
+  // -------------------------------------------------------------------------
+  // 9. Global scope pin
+  // -------------------------------------------------------------------------
+
+  describe('--global pin', () => {
+    it('passes global scope to readManifest', async () => {
+      const pkg = createManifestPackage()
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+
+      await runPin(['pin', 'my-skill', '--global'])
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+    })
+
+    it('passes global scope to writeManifest', async () => {
+      const pkg = createManifestPackage()
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+
+      await runPin(['pin', 'my-skill', '--global'])
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
+    })
+
+    it('sets pinned: true on global manifest entry', async () => {
+      const pkg = createManifestPackage()
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+
+      await runPin(['pin', 'my-skill', '--global'])
+
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(manifest.packages['my-skill']!.pinned).toBe(true)
+    })
+
+    it('errors when package not found in global scope', async () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      try {
+        await runPin(['pin', 'nonexistent', '--global'])
+      } catch {
+        // Expected — code continues past mocked process.exit
+      }
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('not installed')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('outputs "user" scope label in terminal message for global pin', async () => {
+      const pkg = createManifestPackage()
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      await runPin(['pin', 'my-skill', '--global'])
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('user'))
+      consoleSpy.mockRestore()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 10. Global scope unpin
+  // -------------------------------------------------------------------------
+
+  describe('--global unpin', () => {
+    it('passes global scope to readManifest', async () => {
+      const pkg = createManifestPackage()
+      pkg.pinned = true
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+
+      await runUnpin(['unpin', 'my-skill', '--global'])
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+    })
+
+    it('passes global scope to writeManifest', async () => {
+      const pkg = createManifestPackage()
+      pkg.pinned = true
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+
+      await runUnpin(['unpin', 'my-skill', '--global'])
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
+    })
+
+    it('removes pinned flag from global manifest entry', async () => {
+      const pkg = createManifestPackage()
+      pkg.pinned = true
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+
+      await runUnpin(['unpin', 'my-skill', '--global'])
+
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(manifest.packages['my-skill']!.pinned).toBeUndefined()
+    })
+
+    it('errors when package not found in global scope', async () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      try {
+        await runUnpin(['unpin', 'nonexistent', '--global'])
+      } catch {
+        // Expected — code continues past mocked process.exit
+      }
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('not installed')
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('outputs "user" scope label in terminal message for global unpin', async () => {
+      const pkg = createManifestPackage()
+      pkg.pinned = true
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({ packages: { 'my-skill': pkg } })
+      )
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      await runUnpin(['unpin', 'my-skill', '--global'])
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('user'))
+      consoleSpy.mockRestore()
+    })
+  })
 })

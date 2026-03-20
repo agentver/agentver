@@ -3,8 +3,7 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputSuccess } from '../output.js'
 import { readManifest } from '../storage/manifest'
-
-type Scope = 'project' | 'global'
+import type { Scope } from '../utils/paths'
 
 const SCOPE_LABELS: Record<Scope, string> = {
   project: 'Project packages',

@@ -1,5 +1,4 @@
-import { existsSync, lstatSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, rmSync } from 'node:fs'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { RemoveResult } from '@agentver/shared'
 import chalk from 'chalk'
@@ -8,12 +7,14 @@ import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output
 import { reportRemoval } from '../registry/reporter.js'
 import {
   getCanonicalSkillPath,
+  isSymlink,
   isSymlinkedInstall,
   removeAgentSymlinks,
   removeCanonicalDirectory,
 } from '../storage/canonical'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 export function registerRemoveCommand(program: Command): void {
   program
@@ -24,7 +25,7 @@ export function registerRemoveCommand(program: Command): void {
     .option('--global', 'Remove from user level (~/.agents/skills/) instead of project level')
     .action(async (name: string, options: { dryRun?: boolean; global?: boolean }) => {
       const jsonMode = isJSONMode()
-      const scope = options.global ? 'global' : 'project'
+      const scope: Scope = options.global ? 'global' : 'project'
       const projectRoot = process.cwd()
       const manifest = readManifest(projectRoot, scope)
 
@@ -33,11 +34,42 @@ export function registerRemoveCommand(program: Command): void {
         name in manifest.packages ? name : shortName in manifest.packages ? shortName : null
 
       if (!manifestKey) {
+        const caseMatches = Object.keys(manifest.packages).filter(
+          (key) =>
+            (key.toLowerCase() === name.toLowerCase() ||
+              key.toLowerCase() === shortName.toLowerCase()) &&
+            key !== name &&
+            key !== shortName
+        )
+
+        const otherScope: Scope = scope === 'project' ? 'global' : 'project'
+        const otherManifest = readManifest(projectRoot, otherScope)
+        const foundInOther = name in otherManifest.packages || shortName in otherManifest.packages
+
+        const hints: string[] = []
+        if (caseMatches.length > 0) {
+          hints.push(`Did you mean: ${caseMatches.join(', ')}?`)
+        }
+        if (foundInOther) {
+          if (otherScope === 'global') {
+            hints.push(`Found in global scope — try: agentver remove ${name} --global`)
+          } else {
+            hints.push(`Found in project scope — try without --global`)
+          }
+        }
+
         if (jsonMode) {
-          outputError('NOT_FOUND', `Package "${name}" is not installed.`)
+          const msg =
+            hints.length > 0
+              ? `Package "${name}" is not installed. ${hints.join(' ')}`
+              : `Package "${name}" is not installed.`
+          outputError('NOT_FOUND', msg)
           process.exit(1)
         }
         console.error(chalk.red(`Package "${name}" is not installed.`))
+        for (const hint of hints) {
+          console.error(chalk.dim(hint))
+        }
         process.exit(1)
       }
 
@@ -52,14 +84,16 @@ export function registerRemoveCommand(program: Command): void {
         for (const agentId of pkg.agents) {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (placementPath) {
-            removedPaths.push(join(projectRoot, placementPath))
+            const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+            if (fullPath) removedPaths.push(fullPath)
           }
         }
       } else {
         for (const agentId of pkg.agents) {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
-          const fullPath = join(projectRoot, placementPath)
+          const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+          if (!fullPath) continue
           if (existsSync(fullPath)) {
             removedPaths.push(fullPath)
           }
@@ -86,7 +120,8 @@ export function registerRemoveCommand(program: Command): void {
           for (const agentId of pkg.agents) {
             const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
             if (placementPath) {
-              console.log(chalk.dim(`    ${join(projectRoot, placementPath)}`))
+              const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+              if (fullPath) console.log(chalk.dim(`    ${fullPath}`))
             }
           }
         } else {
@@ -113,8 +148,9 @@ export function registerRemoveCommand(program: Command): void {
           const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
           if (!placementPath) continue
 
-          const fullPath = join(projectRoot, placementPath)
-          if (existsSync(fullPath) || isSymlinkPath(fullPath)) {
+          const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+          if (!fullPath) continue
+          if (existsSync(fullPath) || isSymlink(fullPath)) {
             rmSync(fullPath, { recursive: true, force: true })
           }
         }
@@ -140,12 +176,4 @@ export function registerRemoveCommand(program: Command): void {
         spinner.succeed(`Removed ${chalk.green(name)} ${chalk.dim(`(${scopeLabel})`)}`)
       }
     })
-}
-
-function isSymlinkPath(filePath: string): boolean {
-  try {
-    return lstatSync(filePath).isSymbolicLink()
-  } catch {
-    return false
-  }
 }

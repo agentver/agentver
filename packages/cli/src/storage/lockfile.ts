@@ -3,19 +3,20 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
 import { lockfileAnySchema } from '@agentver/shared'
+import type { Scope } from '../utils/paths'
 import { serialiseDeterministic } from './serialise'
 
 const LOCKFILE_DIR = '.agentver'
 const LOCKFILE_FILE = 'lockfile.json'
 
-function getLockfileRoot(projectRoot: string, scope: 'project' | 'global'): string {
+function getLockfileRoot(projectRoot: string, scope: Scope): string {
   if (scope === 'global') {
     return join(homedir(), LOCKFILE_DIR)
   }
   return join(projectRoot, LOCKFILE_DIR)
 }
 
-function getLockfilePath(projectRoot: string, scope: 'project' | 'global' = 'project'): string {
+function getLockfilePath(projectRoot: string, scope: Scope = 'project'): string {
   return join(getLockfileRoot(projectRoot, scope), LOCKFILE_FILE)
 }
 
@@ -45,10 +46,7 @@ function migrateV1ToV2(v1: {
   return { version: 2, packages }
 }
 
-export function readLockfile(
-  projectRoot: string,
-  scope: 'project' | 'global' = 'project'
-): LockfileV2 {
+export function readLockfile(projectRoot: string, scope: Scope = 'project'): LockfileV2 {
   const lockfilePath = getLockfilePath(projectRoot, scope)
 
   if (!existsSync(lockfilePath)) {
@@ -81,7 +79,7 @@ export function readLockfile(
 export function writeLockfile(
   projectRoot: string,
   lockfile: LockfileV2,
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): void {
   const dir = getLockfileRoot(projectRoot, scope)
 

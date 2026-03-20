@@ -26,6 +26,7 @@ vi.mock('../../storage/lockfile', () => ({
 vi.mock('../../storage/canonical', () => ({
   getCanonicalSkillPath: vi.fn(),
   createAgentSymlinks: vi.fn(),
+  isSymlink: vi.fn(),
   isSymlinkedInstall: vi.fn(),
   removeAgentSymlinks: vi.fn(),
   removeCanonicalDirectory: vi.fn(),
@@ -47,6 +48,10 @@ vi.mock('@agentver/agent-definitions', () => ({
   getSkillPlacementPath: vi.fn(),
   detectInstalledAgents: vi.fn(),
   getConfigFilePath: vi.fn(),
+}))
+
+vi.mock('node:os', () => ({
+  homedir: vi.fn().mockReturnValue('/home/testuser'),
 }))
 
 vi.mock('node:fs', () => ({
@@ -81,7 +86,7 @@ import * as manifestModule from '../../storage/manifest'
 // Helper: extract the action callback from registerRemoveCommand
 // ---------------------------------------------------------------------------
 
-type RemoveAction = (name: string, options: { dryRun?: boolean }) => Promise<void>
+type RemoveAction = (name: string, options: { dryRun?: boolean; global?: boolean }) => Promise<void>
 
 function getRemoveAction(): RemoveAction {
   const mockProgram = {
@@ -464,7 +469,173 @@ describe('commands/remove', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Additional edge cases
+  // 10. Global scope removal
+  // -------------------------------------------------------------------------
+
+  describe('--global removal', () => {
+    function setupGlobalPackage(name: string, agents: string[] = ['claude-code']) {
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/test-repo',
+        path: 'skills/test-skill',
+        ref: 'main',
+        commit: 'abc1234567',
+      })
+
+      const manifest = createManifest({
+        packages: {
+          [name]: createManifestPackage({ source, agents }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          [name]: createLockfilePackage({ source, agents }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(true)
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        `/home/testuser/.agents/skills/${name}`
+      )
+
+      vi.mocked(agentDefs.getSkillPlacementPath).mockImplementation(
+        (id: string, skillName: string) => `~/.${id}/skills/${skillName}`
+      )
+
+      return { manifest, lockfile }
+    }
+
+    it('passes global scope to readManifest', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+    })
+
+    it('passes global scope to writeManifest', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
+    })
+
+    it('passes global scope to writeLockfile', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
+        '/project',
+        expect.any(Object),
+        'global'
+      )
+    })
+
+    it('passes global scope to removeAgentSymlinks', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(canonicalModule.removeAgentSymlinks).toHaveBeenCalledWith(
+        '/project',
+        'my-skill',
+        ['claude-code'],
+        'global'
+      )
+    })
+
+    it('passes global scope to removeCanonicalDirectory', async () => {
+      setupGlobalPackage('my-skill')
+
+      await removeAction('my-skill', { global: true })
+
+      expect(canonicalModule.removeCanonicalDirectory).toHaveBeenCalledWith(
+        '/project',
+        'my-skill',
+        'global'
+      )
+    })
+
+    it('resolves global paths correctly — no projectRoot prefix in removedPaths', async () => {
+      setupGlobalPackage('my-skill')
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await removeAction('my-skill', { global: true })
+
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typedData = data as { paths: string[] }
+
+      for (const p of typedData.paths) {
+        expect(p).not.toContain('/project/')
+        expect(p).toMatch(/^\/home\/testuser\//)
+      }
+    })
+
+    it('resolves global paths correctly in dry-run JSON output', async () => {
+      setupGlobalPackage('my-skill')
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await removeAction('my-skill', { global: true, dryRun: true })
+
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typedData = data as { paths: string[] }
+
+      for (const p of typedData.paths) {
+        expect(p).not.toContain('/project/')
+        expect(p).toMatch(/^\/home\/testuser\//)
+      }
+    })
+
+    it('package not found in global scope exits with error', async () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+
+      await expect(removeAction('nonexistent', { global: true })).rejects.toThrow(ExitError)
+
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('uses direct rmSync with global paths for non-symlinked installs', async () => {
+      setupGlobalPackage('legacy-skill', ['claude-code'])
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      await removeAction('legacy-skill', { global: true })
+
+      expect(fs.rmSync).toHaveBeenCalledWith(
+        '/home/testuser/.claude-code/skills/legacy-skill',
+        expect.objectContaining({ recursive: true })
+      )
+    })
+
+    it('shows "user" scope label in terminal success message for global removal', async () => {
+      setupGlobalPackage('my-skill')
+      const mockSpinner = {
+        start: vi.fn().mockReturnThis(),
+        succeed: vi.fn(),
+        fail: vi.fn(),
+        stop: vi.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        text: '',
+      }
+      vi.mocked(outputModule.createSpinner).mockReturnValue(mockSpinner as never)
+
+      await removeAction('my-skill', { global: true })
+
+      expect(mockSpinner.succeed).toHaveBeenCalledWith(expect.stringContaining('user'))
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 11. Non-symlinked (legacy) install removal
   // -------------------------------------------------------------------------
 
   describe('non-symlinked (legacy) install removal', () => {
@@ -483,6 +654,120 @@ describe('commands/remove', () => {
       expect(canonicalModule.removeAgentSymlinks).not.toHaveBeenCalled()
       expect(canonicalModule.removeCanonicalDirectory).not.toHaveBeenCalled()
       expect(fs.rmSync).toHaveBeenCalled()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 12. Smart UX — case mismatch and wrong scope hints
+  // -------------------------------------------------------------------------
+
+  describe('smart hints', () => {
+    it('suggests case-insensitive match in JSON error message', async () => {
+      setupInstalledPackage('my-skill')
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await expect(removeAction('My-Skill', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Did you mean: my-skill')
+      )
+    })
+
+    it('includes wrong scope hint in JSON error message', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      // Set up: empty project manifest, package in global manifest
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest()) // project scope (empty)
+        .mockReturnValueOnce(
+          createManifest({
+            packages: { 'my-skill': createManifestPackage() },
+          })
+        ) // global scope (has package)
+
+      await expect(removeAction('my-skill', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Found in global scope')
+      )
+    })
+
+    it('does not suggest other scope when package is not found anywhere', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+
+      await expect(removeAction('nonexistent', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        'Package "nonexistent" is not installed.'
+      )
+    })
+
+    it('shows case-insensitive match hint in terminal error output', async () => {
+      setupInstalledPackage('my-skill')
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(removeAction('My-Skill', {})).rejects.toThrow(ExitError)
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Did you mean: my-skill'))
+      consoleSpy.mockRestore()
+    })
+
+    it('shows wrong-scope hint in terminal error output when package is in global scope', async () => {
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: { 'my-skill': createManifestPackage() },
+          })
+        )
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(removeAction('my-skill', {})).rejects.toThrow(ExitError)
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Found in global scope'))
+      consoleSpy.mockRestore()
+    })
+
+    it('includes project scope hint when package found in project scope with --global', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: { 'my-skill': createManifestPackage() },
+          })
+        )
+
+      await expect(removeAction('my-skill', { global: true })).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Found in project scope')
+      )
+    })
+
+    it('combines case-mismatch and wrong-scope hints in the same error message', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      // First call (project scope): manifest has 'my-skill' — triggers case-insensitive match for 'My-Skill'
+      // Second call (global scope): manifest has 'My-Skill' exactly — triggers foundInOther
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest({ packages: { 'my-skill': createManifestPackage() } }))
+        .mockReturnValueOnce(createManifest({ packages: { 'My-Skill': createManifestPackage() } }))
+
+      await expect(removeAction('My-Skill', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Did you mean: my-skill')
+      )
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Found in global scope')
+      )
     })
   })
 })

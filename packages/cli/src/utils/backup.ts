@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { LockfileV2, ManifestV2 } from '@agentver/shared'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
+import type { Scope } from './paths'
 
 type ManifestEntry = ManifestV2['packages'][string]
 type LockfileEntry = LockfileV2['packages'][string]
@@ -15,25 +16,27 @@ export type BackupState = {
   skillDir: string | null
   manifestEntry: ManifestEntry | null
   lockfileEntry: LockfileEntry | null
+  scope: Scope
 }
 
 export function createBackup(
   packageName: string,
   projectRoot: string,
-  skillDir: string | null
+  skillDir: string | null,
+  scope: Scope = 'project'
 ): BackupState {
   const tempDir = mkdtempSync(join(tmpdir(), 'agentver-backup-'))
 
-  const manifest = readManifest(projectRoot)
+  const manifest = readManifest(projectRoot, scope)
   const manifestEntry = manifest.packages[packageName] ?? null
 
-  const lockfile = readLockfile(projectRoot)
+  const lockfile = readLockfile(projectRoot, scope)
   const lockfileEntry = lockfile.packages[packageName] ?? null
 
   if (skillDir && existsSync(skillDir)) {
     const backupSkillDir = join(tempDir, 'files')
     mkdirSync(backupSkillDir, { recursive: true })
-    cpSync(skillDir, backupSkillDir, { recursive: true })
+    cpSync(skillDir, backupSkillDir, { recursive: true, dereference: true })
   }
 
   return {
@@ -43,6 +46,7 @@ export function createBackup(
     skillDir,
     manifestEntry,
     lockfileEntry,
+    scope,
   }
 }
 
@@ -63,7 +67,7 @@ export function restoreBackup(backup: BackupState): void {
   }
 
   // Restore manifest entry
-  const manifest = readManifest(backup.projectRoot)
+  const manifest = readManifest(backup.projectRoot, backup.scope)
 
   if (backup.manifestEntry) {
     manifest.packages[backup.packageName] = backup.manifestEntry
@@ -71,10 +75,10 @@ export function restoreBackup(backup: BackupState): void {
     delete manifest.packages[backup.packageName]
   }
 
-  writeManifest(backup.projectRoot, manifest)
+  writeManifest(backup.projectRoot, manifest, backup.scope)
 
   // Restore lockfile entry
-  const lockfile = readLockfile(backup.projectRoot)
+  const lockfile = readLockfile(backup.projectRoot, backup.scope)
 
   if (backup.lockfileEntry) {
     lockfile.packages[backup.packageName] = backup.lockfileEntry
@@ -82,7 +86,7 @@ export function restoreBackup(backup: BackupState): void {
     delete lockfile.packages[backup.packageName]
   }
 
-  writeLockfile(backup.projectRoot, lockfile)
+  writeLockfile(backup.projectRoot, lockfile, backup.scope)
 }
 
 export function cleanupBackup(backup: BackupState): void {

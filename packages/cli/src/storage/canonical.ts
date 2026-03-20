@@ -12,6 +12,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import { createLogger } from '@agentver/shared'
 import chalk from 'chalk'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 const logger = createLogger('canonical')
 
@@ -22,11 +23,7 @@ const CANONICAL_DIR = '.agents/skills'
  * For project scope: `<projectRoot>/.agents/skills/<name>`
  * For global scope: `~/.agents/skills/<name>`
  */
-export function getCanonicalSkillPath(
-  projectRoot: string,
-  name: string,
-  scope: 'project' | 'global'
-): string {
+export function getCanonicalSkillPath(projectRoot: string, name: string, scope: Scope): string {
   if (name.includes('..') || name.startsWith('/')) {
     throw new Error(`Invalid skill name: path traversal detected in "${name}"`)
   }
@@ -45,7 +42,7 @@ export function getCanonicalSkillPath(
 export function isSymlinkedInstall(
   projectRoot: string,
   name: string,
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): boolean {
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
   return existsSync(canonicalPath) && lstatSync(canonicalPath).isDirectory()
@@ -60,7 +57,7 @@ export function createAgentSymlinks(
   projectRoot: string,
   name: string,
   agents: string[],
-  scope: 'project' | 'global'
+  scope: Scope
 ): void {
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
 
@@ -68,8 +65,8 @@ export function createAgentSymlinks(
     const placementPath = getSkillPlacementPath(agentId as AgentId, name, scope)
     if (!placementPath) continue
 
-    const agentSkillPath =
-      scope === 'global' ? placementPath.replace('~', homedir()) : join(projectRoot, placementPath)
+    const agentSkillPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!agentSkillPath) continue
 
     // If this path already exists (file, directory, or symlink), remove it first
     if (existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
@@ -109,32 +106,29 @@ export function removeAgentSymlinks(
   projectRoot: string,
   name: string,
   agents: string[],
-  scope: 'project' | 'global'
+  scope: Scope
 ): void {
   for (const agentId of agents) {
     const placementPath = getSkillPlacementPath(agentId as AgentId, name, scope)
     if (!placementPath) continue
 
-    const agentSkillPath =
-      scope === 'global' ? placementPath.replace('~', homedir()) : join(projectRoot, placementPath)
+    const agentSkillPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!agentSkillPath) continue
 
     if (existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
       rmSync(agentSkillPath, { recursive: true, force: true })
     }
 
     // Clean up empty parent directories
-    cleanupEmptyParents(dirname(agentSkillPath), projectRoot)
+    const stopAt = scope === 'global' ? homedir() : projectRoot
+    cleanupEmptyParents(dirname(agentSkillPath), stopAt)
   }
 }
 
 /**
  * Removes the canonical skill directory.
  */
-export function removeCanonicalDirectory(
-  projectRoot: string,
-  name: string,
-  scope: 'project' | 'global'
-): void {
+export function removeCanonicalDirectory(projectRoot: string, name: string, scope: Scope): void {
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
 
   if (existsSync(canonicalPath)) {
@@ -142,7 +136,8 @@ export function removeCanonicalDirectory(
   }
 
   // Clean up empty parent directories
-  cleanupEmptyParents(dirname(canonicalPath), projectRoot)
+  const stopAt = scope === 'global' ? homedir() : projectRoot
+  cleanupEmptyParents(dirname(canonicalPath), stopAt)
 }
 
 /**
@@ -154,7 +149,7 @@ export function resolveReadPath(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): string | null {
   if (packageName.includes('..') || packageName.startsWith('/')) {
     throw new Error(`Invalid package name: path traversal detected in "${packageName}"`)
@@ -162,7 +157,7 @@ export function resolveReadPath(
 
   const root = scope === 'global' ? homedir() : projectRoot
   const resolvedPath = resolve(root, CANONICAL_DIR, packageName)
-  if (!resolvedPath.startsWith(resolve(root))) {
+  if (!resolvedPath.startsWith(resolve(root) + '/') && resolvedPath !== resolve(root)) {
     throw new Error(`Invalid package name: resolved path escapes project root`)
   }
 
@@ -177,8 +172,8 @@ export function resolveReadPath(
     const placementPath = getSkillPlacementPath(agentId as AgentId, packageName, scope)
     if (!placementPath) continue
 
-    const fullPath =
-      scope === 'global' ? placementPath.replace('~', homedir()) : join(projectRoot, placementPath)
+    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!fullPath) continue
 
     if (existsSync(fullPath)) {
       // If it's a symlink, resolve to the canonical directory
@@ -199,7 +194,7 @@ export function resolveReadPath(
 /**
  * Checks if a path is a symlink (even if broken).
  */
-function isSymlink(filePath: string): boolean {
+export function isSymlink(filePath: string): boolean {
   try {
     const stats = lstatSync(filePath)
     return stats.isSymbolicLink()
@@ -214,7 +209,7 @@ function isSymlink(filePath: string): boolean {
 function cleanupEmptyParents(dirPath: string, stopAt: string): void {
   let current = dirPath
 
-  while (current !== stopAt && current.startsWith(stopAt)) {
+  while (current !== stopAt && current.startsWith(stopAt + '/')) {
     try {
       const entries = readdirSync(current)
       if (entries.length === 0) {
