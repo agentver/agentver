@@ -12,7 +12,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import { createLogger } from '@agentver/shared'
 import chalk from 'chalk'
-import { resolvePlacementPath } from '../utils/paths'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 const logger = createLogger('canonical')
 
@@ -23,11 +23,7 @@ const CANONICAL_DIR = '.agents/skills'
  * For project scope: `<projectRoot>/.agents/skills/<name>`
  * For global scope: `~/.agents/skills/<name>`
  */
-export function getCanonicalSkillPath(
-  projectRoot: string,
-  name: string,
-  scope: 'project' | 'global'
-): string {
+export function getCanonicalSkillPath(projectRoot: string, name: string, scope: Scope): string {
   if (name.includes('..') || name.startsWith('/')) {
     throw new Error(`Invalid skill name: path traversal detected in "${name}"`)
   }
@@ -46,7 +42,7 @@ export function getCanonicalSkillPath(
 export function isSymlinkedInstall(
   projectRoot: string,
   name: string,
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): boolean {
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
   return existsSync(canonicalPath) && lstatSync(canonicalPath).isDirectory()
@@ -61,7 +57,7 @@ export function createAgentSymlinks(
   projectRoot: string,
   name: string,
   agents: string[],
-  scope: 'project' | 'global'
+  scope: Scope
 ): void {
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
 
@@ -110,7 +106,7 @@ export function removeAgentSymlinks(
   projectRoot: string,
   name: string,
   agents: string[],
-  scope: 'project' | 'global'
+  scope: Scope
 ): void {
   for (const agentId of agents) {
     const placementPath = getSkillPlacementPath(agentId as AgentId, name, scope)
@@ -132,11 +128,7 @@ export function removeAgentSymlinks(
 /**
  * Removes the canonical skill directory.
  */
-export function removeCanonicalDirectory(
-  projectRoot: string,
-  name: string,
-  scope: 'project' | 'global'
-): void {
+export function removeCanonicalDirectory(projectRoot: string, name: string, scope: Scope): void {
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
 
   if (existsSync(canonicalPath)) {
@@ -157,7 +149,7 @@ export function resolveReadPath(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): string | null {
   if (packageName.includes('..') || packageName.startsWith('/')) {
     throw new Error(`Invalid package name: path traversal detected in "${packageName}"`)
@@ -202,7 +194,7 @@ export function resolveReadPath(
 /**
  * Checks if a path is a symlink (even if broken).
  */
-function isSymlink(filePath: string): boolean {
+export function isSymlink(filePath: string): boolean {
   try {
     const stats = lstatSync(filePath)
     return stats.isSymbolicLink()

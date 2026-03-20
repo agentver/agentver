@@ -224,6 +224,39 @@ describe('storage/canonical', () => {
         expect.objectContaining({ recursive: true, force: true })
       )
     })
+
+    it('cleans up empty parent directories after symlink removal', () => {
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude-code/skills/my-skill')
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.lstatSync).mockReturnValue({
+        isSymbolicLink: () => true,
+      } as ReturnType<typeof fs.lstatSync>)
+      vi.mocked(fs.readdirSync).mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>)
+
+      canonicalModule.removeAgentSymlinks('/project', 'my-skill', ['claude-code'], 'project')
+
+      // Should attempt to clean up empty parent dirs
+      expect(fs.rmSync).toHaveBeenCalled()
+    })
+
+    it('stops cleanup at home directory boundary for global scope', () => {
+      const rmSyncCalls: string[] = []
+
+      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/.claude-code/skills/my-skill')
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.lstatSync).mockReturnValue({
+        isSymbolicLink: () => true,
+      } as ReturnType<typeof fs.lstatSync>)
+      vi.mocked(fs.rmSync).mockImplementation((path) => {
+        rmSyncCalls.push(path as string)
+      })
+      vi.mocked(fs.readdirSync).mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>)
+
+      canonicalModule.removeAgentSymlinks('/project', 'my-skill', ['claude-code'], 'global')
+
+      // Must NOT remove the home directory itself
+      expect(rmSyncCalls).not.toContain('/home/testuser')
+    })
   })
 
   describe('removeCanonicalDirectory', () => {
@@ -372,6 +405,18 @@ describe('storage/canonical', () => {
 
       expect(result).toBe('/home/testuser/.claude-code/skills/my-skill')
       expect(result).not.toContain('~')
+    })
+
+    it('throws on name containing path traversal', () => {
+      expect(() => canonicalModule.resolveReadPath('/project', '../evil', ['claude'])).toThrow(
+        'path traversal'
+      )
+    })
+
+    it('throws on name with encoded traversal that escapes root', () => {
+      expect(() =>
+        canonicalModule.resolveReadPath('/project', '../../etc/passwd', ['claude'])
+      ).toThrow()
     })
   })
 })

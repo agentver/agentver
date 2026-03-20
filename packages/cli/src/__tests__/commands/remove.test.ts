@@ -26,6 +26,7 @@ vi.mock('../../storage/lockfile', () => ({
 vi.mock('../../storage/canonical', () => ({
   getCanonicalSkillPath: vi.fn(),
   createAgentSymlinks: vi.fn(),
+  isSymlink: vi.fn(),
   isSymlinkedInstall: vi.fn(),
   removeAgentSymlinks: vi.fn(),
   removeCanonicalDirectory: vi.fn(),

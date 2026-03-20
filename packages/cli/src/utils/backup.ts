@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { LockfileV2, ManifestV2 } from '@agentver/shared'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
+import type { Scope } from './paths'
 
 type ManifestEntry = ManifestV2['packages'][string]
 type LockfileEntry = LockfileV2['packages'][string]
@@ -15,14 +16,14 @@ export type BackupState = {
   skillDir: string | null
   manifestEntry: ManifestEntry | null
   lockfileEntry: LockfileEntry | null
-  scope: 'project' | 'global'
+  scope: Scope
 }
 
 export function createBackup(
   packageName: string,
   projectRoot: string,
   skillDir: string | null,
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): BackupState {
   const tempDir = mkdtempSync(join(tmpdir(), 'agentver-backup-'))
 
@@ -35,7 +36,7 @@ export function createBackup(
   if (skillDir && existsSync(skillDir)) {
     const backupSkillDir = join(tempDir, 'files')
     mkdirSync(backupSkillDir, { recursive: true })
-    cpSync(skillDir, backupSkillDir, { recursive: true })
+    cpSync(skillDir, backupSkillDir, { recursive: true, dereference: true })
   }
 
   return {

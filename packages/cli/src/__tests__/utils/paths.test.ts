@@ -26,8 +26,8 @@ describe('utils/resolvePlacementPath', () => {
       expect(resolvePlacementPath('', '/project', 'global')).toBeNull()
     })
 
-    it('resolves bare ~ to exactly the home directory', () => {
-      expect(resolvePlacementPath('~', '/project', 'global')).toBe('/home/testuser')
+    it('returns null for bare ~ (too broad — would resolve to home directory)', () => {
+      expect(resolvePlacementPath('~', '/project', 'global')).toBeNull()
     })
 
     it('expands a deeply nested tilde path correctly', () => {
@@ -52,8 +52,9 @@ describe('utils/resolvePlacementPath', () => {
       )
     })
 
-    it('resolves an absolute path safely under project root via join', () => {
-      // path.join('/project', '/etc/passwd') = '/project/etc/passwd' — stays within projectRoot
+    it('path.join normalises absolute input under projectRoot — not a supported input but cannot escape root', () => {
+      // path.join('/project', '/etc/passwd') = '/project/etc/passwd'
+      // This is a Node.js path.join artefact, not a supported input from getSkillPlacementPath
       expect(resolvePlacementPath('/etc/passwd', '/project', 'project')).toBe('/project/etc/passwd')
     })
   })

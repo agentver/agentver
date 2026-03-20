@@ -15,7 +15,7 @@ import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
-import { resolvePlacementPath } from '../utils/paths'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 import { installPackage } from './install'
 
 type UpdateInfo = {
@@ -53,7 +53,7 @@ async function checkLocalModifications(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): Promise<boolean> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[packageName]
@@ -101,7 +101,7 @@ async function handlePatchUpdate(
   projectRoot: string,
   agents: string[],
   spinner: ReturnType<typeof ora>,
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): Promise<{ commitSha: string } | null> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[update.name]

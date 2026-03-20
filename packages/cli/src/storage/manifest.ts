@@ -3,19 +3,20 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ManifestV2 } from '@agentver/shared'
 import { manifestAnySchema } from '@agentver/shared'
+import type { Scope } from '../utils/paths'
 import { serialiseDeterministic } from './serialise'
 
 const MANIFEST_DIR = '.agentver'
 const MANIFEST_FILE = 'manifest.json'
 
-function getManifestRoot(projectRoot: string, scope: 'project' | 'global'): string {
+function getManifestRoot(projectRoot: string, scope: Scope): string {
   if (scope === 'global') {
     return join(homedir(), MANIFEST_DIR)
   }
   return join(projectRoot, MANIFEST_DIR)
 }
 
-function getManifestPath(projectRoot: string, scope: 'project' | 'global' = 'project'): string {
+function getManifestPath(projectRoot: string, scope: Scope = 'project'): string {
   return join(getManifestRoot(projectRoot, scope), MANIFEST_FILE)
 }
 
@@ -43,10 +44,7 @@ function migrateV1ToV2(v1: {
   return { version: 2, packages }
 }
 
-export function readManifest(
-  projectRoot: string,
-  scope: 'project' | 'global' = 'project'
-): ManifestV2 {
+export function readManifest(projectRoot: string, scope: Scope = 'project'): ManifestV2 {
   const manifestPath = getManifestPath(projectRoot, scope)
 
   if (!existsSync(manifestPath)) {
@@ -79,7 +77,7 @@ export function readManifest(
 export function writeManifest(
   projectRoot: string,
   manifest: ManifestV2,
-  scope: 'project' | 'global' = 'project'
+  scope: Scope = 'project'
 ): void {
   const dir = getManifestRoot(projectRoot, scope)
 

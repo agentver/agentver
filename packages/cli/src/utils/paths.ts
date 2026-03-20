@@ -1,6 +1,8 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+export type Scope = 'project' | 'global'
+
 /**
  * Resolves a skill placement path to a full absolute path.
  *
@@ -13,13 +15,13 @@ import { join } from 'node:path'
 export function resolvePlacementPath(
   placementPath: string,
   projectRoot: string,
-  scope: 'project' | 'global'
+  scope: Scope
 ): string | null {
   if (scope === 'global') {
     const home = homedir()
     if (!placementPath.startsWith('~')) return null
     const resolved = join(home, placementPath.slice(1))
-    if (!resolved.startsWith(`${home}/`) && resolved !== home) return null
+    if (!resolved.startsWith(`${home}/`)) return null
     return resolved
   }
   const resolved = join(projectRoot, placementPath)

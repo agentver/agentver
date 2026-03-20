@@ -99,7 +99,7 @@ describe('utils/backup', () => {
       expect(fs.cpSync).toHaveBeenCalledWith(
         '/project/.agents/skills/my-skill',
         '/tmp/agentver-backup-123/files',
-        { recursive: true }
+        { recursive: true, dereference: true }
       )
     })
 

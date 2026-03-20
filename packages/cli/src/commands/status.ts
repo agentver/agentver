@@ -9,8 +9,7 @@ import { resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
-
-type Scope = 'project' | 'global'
+import type { Scope } from '../utils/paths'
 
 type StatusCategory = 'up-to-date' | 'modified' | 'upstream' | 'both' | 'unknown'
 

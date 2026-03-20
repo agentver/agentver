@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { RemoveResult } from '@agentver/shared'
 import chalk from 'chalk'
@@ -7,13 +7,14 @@ import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output
 import { reportRemoval } from '../registry/reporter.js'
 import {
   getCanonicalSkillPath,
+  isSymlink,
   isSymlinkedInstall,
   removeAgentSymlinks,
   removeCanonicalDirectory,
 } from '../storage/canonical'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
-import { resolvePlacementPath } from '../utils/paths'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 export function registerRemoveCommand(program: Command): void {
   program
@@ -24,7 +25,7 @@ export function registerRemoveCommand(program: Command): void {
     .option('--global', 'Remove from user level (~/.agents/skills/) instead of project level')
     .action(async (name: string, options: { dryRun?: boolean; global?: boolean }) => {
       const jsonMode = isJSONMode()
-      const scope = options.global ? 'global' : 'project'
+      const scope: Scope = options.global ? 'global' : 'project'
       const projectRoot = process.cwd()
       const manifest = readManifest(projectRoot, scope)
 
@@ -41,7 +42,7 @@ export function registerRemoveCommand(program: Command): void {
             key !== shortName
         )
 
-        const otherScope = scope === 'project' ? 'global' : 'project'
+        const otherScope: Scope = scope === 'project' ? 'global' : 'project'
         const otherManifest = readManifest(projectRoot, otherScope)
         const foundInOther = name in otherManifest.packages || shortName in otherManifest.packages
 
@@ -149,7 +150,7 @@ export function registerRemoveCommand(program: Command): void {
 
           const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
           if (!fullPath) continue
-          if (existsSync(fullPath) || isSymlinkPath(fullPath)) {
+          if (existsSync(fullPath) || isSymlink(fullPath)) {
             rmSync(fullPath, { recursive: true, force: true })
           }
         }
@@ -175,12 +176,4 @@ export function registerRemoveCommand(program: Command): void {
         spinner.succeed(`Removed ${chalk.green(name)} ${chalk.dim(`(${scopeLabel})`)}`)
       }
     })
-}
-
-function isSymlinkPath(filePath: string): boolean {
-  try {
-    return lstatSync(filePath).isSymbolicLink()
-  } catch {
-    return false
-  }
 }
