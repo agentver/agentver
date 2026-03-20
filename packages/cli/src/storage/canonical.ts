@@ -12,6 +12,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import { createLogger } from '@agentver/shared'
 import chalk from 'chalk'
+import { resolvePlacementPath } from '../utils/paths'
 
 const logger = createLogger('canonical')
 
@@ -68,12 +69,8 @@ export function createAgentSymlinks(
     const placementPath = getSkillPlacementPath(agentId as AgentId, name, scope)
     if (!placementPath) continue
 
-    const agentSkillPath =
-      scope === 'global'
-        ? placementPath.startsWith('~')
-          ? join(homedir(), placementPath.slice(1))
-          : placementPath
-        : join(projectRoot, placementPath)
+    const agentSkillPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!agentSkillPath) continue
 
     // If this path already exists (file, directory, or symlink), remove it first
     if (existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
@@ -119,19 +116,16 @@ export function removeAgentSymlinks(
     const placementPath = getSkillPlacementPath(agentId as AgentId, name, scope)
     if (!placementPath) continue
 
-    const agentSkillPath =
-      scope === 'global'
-        ? placementPath.startsWith('~')
-          ? join(homedir(), placementPath.slice(1))
-          : placementPath
-        : join(projectRoot, placementPath)
+    const agentSkillPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!agentSkillPath) continue
 
     if (existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
       rmSync(agentSkillPath, { recursive: true, force: true })
     }
 
     // Clean up empty parent directories
-    cleanupEmptyParents(dirname(agentSkillPath), projectRoot)
+    const stopAt = scope === 'global' ? homedir() : projectRoot
+    cleanupEmptyParents(dirname(agentSkillPath), stopAt)
   }
 }
 
@@ -150,7 +144,8 @@ export function removeCanonicalDirectory(
   }
 
   // Clean up empty parent directories
-  cleanupEmptyParents(dirname(canonicalPath), projectRoot)
+  const stopAt = scope === 'global' ? homedir() : projectRoot
+  cleanupEmptyParents(dirname(canonicalPath), stopAt)
 }
 
 /**
@@ -185,12 +180,8 @@ export function resolveReadPath(
     const placementPath = getSkillPlacementPath(agentId as AgentId, packageName, scope)
     if (!placementPath) continue
 
-    const fullPath =
-      scope === 'global'
-        ? placementPath.startsWith('~')
-          ? join(homedir(), placementPath.slice(1))
-          : placementPath
-        : join(projectRoot, placementPath)
+    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!fullPath) continue
 
     if (existsSync(fullPath)) {
       // If it's a symlink, resolve to the canonical directory

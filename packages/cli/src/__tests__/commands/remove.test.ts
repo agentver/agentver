@@ -736,5 +736,25 @@ describe('commands/remove', () => {
         expect.stringContaining('Found in project scope')
       )
     })
+
+    it('combines case-mismatch and wrong-scope hints in the same error message', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      // First call (project scope): manifest has 'my-skill' — triggers case-insensitive match for 'My-Skill'
+      // Second call (global scope): manifest has 'My-Skill' exactly — triggers foundInOther
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest({ packages: { 'my-skill': createManifestPackage() } }))
+        .mockReturnValueOnce(createManifest({ packages: { 'My-Skill': createManifestPackage() } }))
+
+      await expect(removeAction('My-Skill', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Did you mean: my-skill')
+      )
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('Found in global scope')
+      )
+    })
   })
 })
