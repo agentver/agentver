@@ -1604,6 +1604,55 @@ describe('commands/install', () => {
       // Should write manifest and lockfile
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+
+      // The commit field must not be empty — it should use the content-hash fallback
+      const manifestCall = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const manifestData = manifestCall[1]
+      const manifestSource = manifestData.packages['google-search-console']!.source
+      expect(manifestSource.type).toBe('git')
+      if (manifestSource.type === 'git') {
+        expect(manifestSource.commit).toBeTruthy()
+        expect(manifestSource.commit.length).toBeGreaterThanOrEqual(7)
+      }
+
+      const lockfileCall = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
+      const lockfileData = lockfileCall[1]
+      const lockfileSource = lockfileData.packages['google-search-console']!.source
+      expect(lockfileSource.type).toBe('git')
+      if (lockfileSource.type === 'git') {
+        expect(lockfileSource.commit).toBeTruthy()
+        expect(lockfileSource.commit.length).toBeGreaterThanOrEqual(7)
+      }
+    })
+
+    it('uses commitSha from platform response when available', async () => {
+      const platformCommitSha = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'
+      const platformFiles = [
+        { path: 'SKILL.md', content: '# Google Search Console\n\nSkill content.' },
+        { path: 'references/api.md', content: '# API Reference\n\nAPI docs.' },
+      ]
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'google-search-console',
+        gitRef: 'main',
+        commitSha: platformCommitSha,
+        source: 'platform',
+        files: platformFiles,
+      })
+
+      const result = await installPackage(
+        'agentver://lleverage/skills/google-search-console@main',
+        { agent: 'claude-code' }
+      )
+
+      expect(result).toBeDefined()
+      expect(result!.commitSha).toBe(platformCommitSha)
+
+      const manifestCall = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const manifestSource = manifestCall[1].packages['google-search-console']!.source
+      if (manifestSource.type === 'git') {
+        expect(manifestSource.commit).toBe(platformCommitSha)
+      }
     })
 
     it('delegates to git install flow when platform resolves a git-backed package', async () => {

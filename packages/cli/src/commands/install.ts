@@ -66,6 +66,7 @@ type ResolveResponse = {
   gitUri: string
   gitPath: string
   gitRef: string
+  commitSha?: string
   source?: 'git' | 'platform'
   files?: Array<{ path: string; content: string }>
 }
@@ -491,6 +492,7 @@ async function installFromPlatform(
     }
 
     const integrity = computeSha256FromFiles(files)
+    const commit = resolved.commitSha || integrity.replace('sha256-', '').slice(0, 40)
     const projectRoot = process.cwd()
     const scope = options.global ? 'global' : 'project'
     const sourceUri = `agentver://${parsed.org}`
@@ -534,7 +536,7 @@ async function installFromPlatform(
         } else {
           spinner.warn('No agents detected. Use --agent to specify one.')
         }
-        return { name: shortName, ref, commitSha: '', agents: [] }
+        return { name: shortName, ref, commitSha: commit, agents: [] }
       }
 
       const packageType = detectPackageType(files)
@@ -560,7 +562,7 @@ async function installFromPlatform(
           audit: buildAuditData(securityScanResult),
         })
       }
-      return { name: shortName, ref, commitSha: '', agents }
+      return { name: shortName, ref, commitSha: commit, agents }
     }
 
     const gitSourceRecord: GitSource = {
@@ -568,7 +570,7 @@ async function installFromPlatform(
       uri: sourceUri,
       path: resolved.gitPath ?? '',
       ref,
-      commit: '',
+      commit,
     }
 
     const manifest = readManifest(projectRoot, scope)
@@ -617,7 +619,7 @@ async function installFromPlatform(
       )
     }
 
-    return { name: shortName, ref, commitSha: '', agents }
+    return { name: shortName, ref, commitSha: commit, agents }
   } catch (error) {
     const { code, message } = extractError(error, 'INSTALL_FAILED')
     if (jsonMode) {
