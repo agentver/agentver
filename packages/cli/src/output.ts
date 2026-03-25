@@ -45,6 +45,36 @@ export function isJSONMode(): boolean {
 }
 
 /**
+ * Check if verbose output mode is active (--verbose).
+ */
+export function isVerbose(): boolean {
+  return process.argv.includes('--verbose')
+}
+
+/**
+ * Check if quiet output mode is active (--quiet).
+ * Suppresses all non-essential output (spinners, informational messages).
+ */
+export function isQuiet(): boolean {
+  return process.argv.includes('--quiet')
+}
+
+/**
+ * Get the appropriate tslog minLevel based on CLI flags.
+ * verbose=0 (all), default=4 (warn+), quiet=6 (fatal only).
+ * Errors if both --verbose and --quiet are passed.
+ */
+export function getLogLevel(): number {
+  if (isVerbose() && isQuiet()) {
+    process.stderr.write('Cannot use --verbose and --quiet together.\n')
+    process.exit(1)
+  }
+  if (isVerbose()) return 0
+  if (isQuiet()) return 6
+  return 4
+}
+
+/**
  * Output a successful result as JSON to stdout.
  */
 export function outputSuccess<T>(data: T, warnings?: string[]): void {
@@ -67,11 +97,11 @@ export function outputError(code: string, message: string): void {
 }
 
 /**
- * Create an ora spinner that is silent in JSON mode.
- * Returns a no-op spinner interface when --json is active.
+ * Create an ora spinner that is silent in JSON or quiet mode.
+ * Returns a no-op spinner interface when --json or --quiet is active.
  */
 export function createSpinner(text: string): Spinner | SpinnerLike {
-  if (isJSONMode()) {
+  if (isJSONMode() || isQuiet()) {
     return { ...noopSpinner, text }
   }
   return ora(text)

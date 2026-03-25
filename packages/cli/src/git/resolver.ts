@@ -1,8 +1,9 @@
-import { AgentverError, createLogger } from '@agentver/shared'
+import { AgentverError } from '@agentver/shared'
+import { createCliLogger } from '../utils.js'
 import { buildRepoUrl, execGit } from './fetcher.js'
 import type { GitSource, ResolvedRef } from './types.js'
 
-const logger = createLogger('git:resolver')
+const logger = createCliLogger('git:resolver')
 
 const RESOLVE_TIMEOUT_MS = 15_000
 

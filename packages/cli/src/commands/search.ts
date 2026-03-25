@@ -127,6 +127,15 @@ export function registerSearchCommand(program: Command): void {
       '--source <source>',
       'Search source: platform, community (skills.sh), well-known (domain), or all'
     )
+    .addHelpText(
+      'after',
+      `
+Sources:
+  all         Search platform + community registries (default)
+  platform    Search your connected platform only
+  community   Search skills.sh community registry only
+  well-known  Fetch from a domain's /.well-known/skills/index.json`
+    )
     .action(
       async (query: string, options: { type?: string; category?: string; source?: string }) => {
         const connected = await isConnected()

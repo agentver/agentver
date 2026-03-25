@@ -5,6 +5,7 @@ import chalk from 'chalk'
 import { Command } from 'commander'
 import updateNotifier from 'update-notifier'
 import { registerAdoptCommand } from '../src/commands/adopt'
+import { registerAgentsCommand } from '../src/commands/agents'
 import { registerAuditCommand } from '../src/commands/audit'
 import { registerCompletionCommand } from '../src/commands/completion'
 import { registerConfigCommand } from '../src/commands/config'
@@ -30,6 +31,7 @@ import { registerSuggestionsCommand } from '../src/commands/suggestions'
 import { registerSyncCommand } from '../src/commands/sync'
 import { registerUpdateCommand } from '../src/commands/update'
 import { registerUpgradeCommand } from '../src/commands/upgrade'
+import { registerValidateCommand } from '../src/commands/validate'
 import { registerVerifyCommand } from '../src/commands/verify'
 import { registerVersionCommand } from '../src/commands/version'
 import { registerWhoamiCommand } from '../src/commands/whoami'
@@ -48,8 +50,11 @@ program
   .description('Agent skill registry — store, version, and distribute AI agent skills')
   .version(pkg.version)
   .option('--json', 'Output results as structured JSON')
+  .option('--verbose', 'Show detailed debug output')
+  .option('--quiet', 'Suppress all non-essential output')
 
 registerAdoptCommand(program)
+registerAgentsCommand(program)
 registerAuditCommand(program)
 registerCompletionCommand(program)
 registerConfigCommand(program)
@@ -76,6 +81,7 @@ registerSyncCommand(program)
 registerUnpinCommand(program)
 registerUpdateCommand(program)
 registerUpgradeCommand(program)
+registerValidateCommand(program)
 registerVerifyCommand(program)
 registerVersionCommand(program)
 registerWhoamiCommand(program)

@@ -50,6 +50,10 @@ vi.mock('@agentver/agent-definitions', () => ({
   getConfigFilePath: vi.fn(),
 }))
 
+vi.mock('prompts', () => ({
+  default: vi.fn().mockResolvedValue({ confirmed: true }),
+}))
+
 vi.mock('node:fs', () => ({
   existsSync: vi.fn().mockReturnValue(true),
   lstatSync: vi.fn().mockReturnValue({ isSymbolicLink: () => false, isDirectory: () => true }),
@@ -90,7 +94,10 @@ class ExitError extends Error {
   }
 }
 
-type RemoveAction = (name: string, options: { dryRun?: boolean; global?: boolean }) => Promise<void>
+type RemoveAction = (
+  name: string,
+  options: { dryRun?: boolean; global?: boolean; yes?: boolean }
+) => Promise<void>
 
 function getRemoveAction(): RemoveAction {
   const mockProgram = {

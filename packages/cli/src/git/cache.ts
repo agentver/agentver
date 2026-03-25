@@ -2,10 +2,10 @@ import type { Dirent } from 'node:fs'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { createLogger } from '@agentver/shared'
+import { createCliLogger } from '../utils.js'
 import type { FetchedFile, GitSource } from './types.js'
 
-const logger = createLogger('git:cache')
+const logger = createCliLogger('git:cache')
 
 export function getCacheDir(): string {
   return join(homedir(), '.agentver', 'cache')

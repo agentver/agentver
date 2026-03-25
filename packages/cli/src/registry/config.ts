@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ScanSeverity } from '../security/types.js'
+import { createCliLogger } from '../utils.js'
 import { getCredentials } from './auth.js'
+
+const logger = createCliLogger('config')
 
 export const DEFAULT_PLATFORM_URL = 'https://app.agentver.com'
 
@@ -35,6 +38,7 @@ export function readConfig(): AgentverConfig {
     const raw = readFileSync(CONFIG_PATH, 'utf-8')
     return JSON.parse(raw) as AgentverConfig
   } catch {
+    logger.warn(`Could not parse config at ${CONFIG_PATH}. Using defaults.`)
     return {}
   }
 }

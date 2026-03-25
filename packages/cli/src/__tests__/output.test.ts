@@ -220,5 +220,102 @@ describe('output', () => {
       // that our no-op spinner does not — check for ora-specific properties
       expect(spinner).toHaveProperty('isSpinning')
     })
+
+    it('should return a no-op spinner when in quiet mode', () => {
+      process.argv = ['node', 'agentver', '--quiet', 'list']
+      const spinner = outputModule.createSpinner('Working...') as SpinnerLike
+
+      spinner.start()
+      spinner.succeed('Done')
+      spinner.stop()
+
+      expect(stdoutWriteSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // isVerbose
+  // ---------------------------------------------------------------------------
+
+  describe('isVerbose', () => {
+    const originalArgv = process.argv
+
+    afterEach(() => {
+      process.argv = originalArgv
+    })
+
+    it('should return false by default', () => {
+      process.argv = ['node', 'agentver', 'list']
+      expect(outputModule.isVerbose()).toBe(false)
+    })
+
+    it('should return true when process.argv includes --verbose', () => {
+      process.argv = ['node', 'agentver', 'list', '--verbose']
+      expect(outputModule.isVerbose()).toBe(true)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // isQuiet
+  // ---------------------------------------------------------------------------
+
+  describe('isQuiet', () => {
+    const originalArgv = process.argv
+
+    afterEach(() => {
+      process.argv = originalArgv
+    })
+
+    it('should return false by default', () => {
+      process.argv = ['node', 'agentver', 'list']
+      expect(outputModule.isQuiet()).toBe(false)
+    })
+
+    it('should return true when process.argv includes --quiet', () => {
+      process.argv = ['node', 'agentver', 'list', '--quiet']
+      expect(outputModule.isQuiet()).toBe(true)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // getLogLevel
+  // ---------------------------------------------------------------------------
+
+  describe('getLogLevel', () => {
+    const originalArgv = process.argv
+    const originalExit = process.exit
+
+    afterEach(() => {
+      process.argv = originalArgv
+      process.exit = originalExit
+    })
+
+    it('should return 0 for --verbose', () => {
+      process.argv = ['node', 'agentver', '--verbose', 'list']
+      expect(outputModule.getLogLevel()).toBe(0)
+    })
+
+    it('should return 6 for --quiet', () => {
+      process.argv = ['node', 'agentver', '--quiet', 'list']
+      expect(outputModule.getLogLevel()).toBe(6)
+    })
+
+    it('should return 4 by default (warn+)', () => {
+      process.argv = ['node', 'agentver', 'list']
+      expect(outputModule.getLogLevel()).toBe(4)
+    })
+
+    it('should error when both --verbose and --quiet are passed', () => {
+      process.argv = ['node', 'agentver', '--verbose', '--quiet']
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      process.exit = vi.fn().mockImplementation(() => {
+        throw new Error('exit')
+      }) as never
+
+      expect(() => outputModule.getLogLevel()).toThrow('exit')
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Cannot use --verbose and --quiet together')
+      )
+    })
   })
 })

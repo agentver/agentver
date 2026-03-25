@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { createCliLogger } from '../utils.js'
+
+const logger = createCliLogger('auth')
 
 type Credentials = {
   token?: string
@@ -23,6 +26,9 @@ export async function getCredentials(): Promise<Credentials | null> {
   try {
     return JSON.parse(raw) as Credentials
   } catch {
+    logger.warn(
+      `Could not parse credentials at ${credPath}. Re-authenticate with \`agentver login\`.`
+    )
     return null
   }
 }

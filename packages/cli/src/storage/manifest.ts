@@ -4,7 +4,10 @@ import { join } from 'node:path'
 import type { ManifestV2 } from '@agentver/shared'
 import { manifestAnySchema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
+import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
+
+const logger = createCliLogger('manifest')
 
 const MANIFEST_DIR = '.agentver'
 const MANIFEST_FILE = 'manifest.json'
@@ -57,11 +60,15 @@ export function readManifest(projectRoot: string, scope: Scope = 'project'): Man
   try {
     parsed = JSON.parse(raw)
   } catch {
+    logger.warn(`Corrupt manifest at ${manifestPath} — could not parse JSON. Using empty manifest.`)
     return { version: 2, packages: {} }
   }
 
   const result = manifestAnySchema.safeParse(parsed)
   if (!result.success) {
+    logger.warn(
+      `Invalid manifest at ${manifestPath} — schema validation failed. Using empty manifest.`
+    )
     return { version: 2, packages: {} }
   }
 

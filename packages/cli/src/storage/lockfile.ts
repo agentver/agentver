@@ -4,7 +4,10 @@ import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
 import { lockfileAnySchema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
+import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
+
+const logger = createCliLogger('lockfile')
 
 const LOCKFILE_DIR = '.agentver'
 const LOCKFILE_FILE = 'lockfile.json'
@@ -59,11 +62,15 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
   try {
     parsed = JSON.parse(raw)
   } catch {
+    logger.warn(`Corrupt lockfile at ${lockfilePath} — could not parse JSON. Using empty lockfile.`)
     return { version: 2, packages: {} }
   }
 
   const result = lockfileAnySchema.safeParse(parsed)
   if (!result.success) {
+    logger.warn(
+      `Invalid lockfile at ${lockfilePath} — schema validation failed. Using empty lockfile.`
+    )
     return { version: 2, packages: {} }
   }
 

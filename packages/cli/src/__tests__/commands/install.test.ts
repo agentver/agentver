@@ -1668,7 +1668,7 @@ describe('commands/install', () => {
       ).rejects.toThrow(ExitError)
 
       expect(outputModule.outputError).toHaveBeenCalledWith(
-        'INSTALL_FAILED',
+        'VALIDATION_ERROR',
         expect.stringContaining('platform connection')
       )
     })

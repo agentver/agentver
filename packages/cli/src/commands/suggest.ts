@@ -11,6 +11,7 @@ import { getPlatformUrl } from '../registry/config.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractError } from '../utils.js'
 
 const HTTP_TIMEOUT_MS = 15_000
 
@@ -319,7 +320,7 @@ export function registerSuggestCommand(program: Command): void {
               spinner.stop()
             }
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const { message } = extractError(error, 'SUGGEST_FAILED')
             outcomes.push({ package: targetName, success: false, error: message })
 
             if (!json) {

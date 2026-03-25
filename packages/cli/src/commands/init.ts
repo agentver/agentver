@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { InitResult } from '@agentver/shared'
+import { type InitResult, validateSkillName } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
@@ -291,6 +291,16 @@ export function registerInitCommand(program: Command): void {
     .option('--repo', 'Scaffold in a Git-repo-friendly structure')
     .option('--name <name>', 'Package name (required in JSON mode)')
     .option('--description <desc>', 'Package description')
+    .addHelpText(
+      'after',
+      `
+Types:
+  skill     SKILL.md with frontmatter and instructions (default)
+  agent     Agent config (CLAUDE.md / .cursorrules / etc.)
+  plugin    Plugin with plugin.json manifest
+  script    Automation script with script.json manifest
+  prompt    PROMPT.md template with variants`
+    )
     .action(
       async (options: { type: string; repo?: boolean; name?: string; description?: string }) => {
         let packageName: string
@@ -302,9 +312,19 @@ export function registerInitCommand(program: Command): void {
             outputError('VALIDATION_ERROR', 'Name is required in JSON mode (use --name flag)')
             process.exit(1)
           }
+          const nameCheck = validateSkillName(options.name)
+          if (!nameCheck.valid) {
+            outputError('VALIDATION_ERROR', nameCheck.error ?? 'Invalid name')
+            process.exit(1)
+          }
           packageName = options.name
           description = options.description ?? ''
         } else if (options.name) {
+          const nameCheck = validateSkillName(options.name)
+          if (!nameCheck.valid) {
+            process.stderr.write(chalk.red(`${nameCheck.error ?? 'Invalid name'}\n`))
+            process.exit(1)
+          }
           packageName = options.name
           description = options.description ?? ''
 
@@ -322,7 +342,10 @@ export function registerInitCommand(program: Command): void {
               type: 'text',
               name: 'name',
               message: 'Package name:',
-              validate: (value: string) => (value.length > 0 ? true : 'Name is required'),
+              validate: (value: string) => {
+                const result = validateSkillName(value)
+                return result.valid ? true : (result.error ?? 'Invalid name')
+              },
             },
             {
               type: 'text',

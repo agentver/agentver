@@ -16,6 +16,7 @@ import { readManifest } from '../storage/manifest'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
+import { extractError } from '../utils.js'
 import { installPackage } from './install'
 
 type UpdateInfo = {
@@ -512,13 +513,12 @@ export function registerUpdateCommand(program: Command): void {
 
         console.log()
       } catch (error) {
+        const { code, message } = extractError(error, 'UPDATE_FAILED')
         if (jsonMode) {
-          outputError('UPDATE_FAILED', error instanceof Error ? error.message : String(error))
+          outputError(code, message)
           process.exit(1)
         }
-        spinner.fail(
-          `Update check failed: ${error instanceof Error ? error.message : String(error)}`
-        )
+        spinner.fail(`Update check failed: ${message}`)
         process.exit(1)
       }
     })

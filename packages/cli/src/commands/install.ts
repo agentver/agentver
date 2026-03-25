@@ -9,7 +9,13 @@ import {
   parseComposedSections,
 } from '@agentver/agent-definitions'
 import type { InstallResult as InstallResultJSON } from '@agentver/shared'
-import { AgentverError, type GitSource, type WellKnownSource } from '@agentver/shared'
+import {
+  AGENT_CONFIG_FILES,
+  AgentverError,
+  type GitSource,
+  PACKAGE_STRUCTURES,
+  type WellKnownSource,
+} from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import type ora from 'ora'
@@ -32,6 +38,7 @@ import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical
 import { computeSha256FromFiles } from '../storage/integrity'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
+import { extractError } from '../utils.js'
 import {
   fetchWellKnownIndex,
   fetchWellKnownSkill,
@@ -350,11 +357,12 @@ async function installFromWellKnown(
 
     return { name: selectedEntry.name, ref: 'well-known', commitSha: '', agents }
   } catch (error) {
+    const { code, message } = extractError(error, 'INSTALL_FAILED')
     if (jsonMode) {
-      outputError('INSTALL_FAILED', error instanceof Error ? error.message : String(error))
+      outputError(code, message)
       process.exit(1)
     }
-    spinner.fail(`Failed to install: ${error instanceof Error ? error.message : String(error)}`)
+    spinner.fail(`Failed to install: ${message}`)
     process.exit(1)
   }
 }
@@ -611,11 +619,12 @@ async function installFromPlatform(
 
     return { name: shortName, ref, commitSha: '', agents }
   } catch (error) {
+    const { code, message } = extractError(error, 'INSTALL_FAILED')
     if (jsonMode) {
-      outputError('INSTALL_FAILED', error instanceof Error ? error.message : String(error))
+      outputError(code, message)
       process.exit(1)
     }
-    spinner.fail(`Failed to install: ${error instanceof Error ? error.message : String(error)}`)
+    spinner.fail(`Failed to install: ${message}`)
     process.exit(1)
   }
 }
@@ -886,11 +895,12 @@ export async function installPackage(
 
     return { name: shortName, ref: gitSource.ref, commitSha: resolved.commitSha, agents }
   } catch (error) {
+    const { code, message } = extractError(error, 'INSTALL_FAILED')
     if (jsonMode) {
-      outputError('INSTALL_FAILED', error instanceof Error ? error.message : String(error))
+      outputError(code, message)
       process.exit(1)
     }
-    spinner.fail(`Failed to install: ${error instanceof Error ? error.message : String(error)}`)
+    spinner.fail(`Failed to install: ${message}`)
     process.exit(1)
   }
 }
@@ -911,20 +921,12 @@ function formatSource(source: { host: string; owner: string; repo: string; path:
 function detectPackageType(files: FetchedFile[]): string {
   const filenames = new Set(files.map((f) => f.path))
 
-  if (filenames.has('SKILL.md')) return 'SKILL'
-  if (filenames.has('plugin.json')) return 'PLUGIN'
-  if (filenames.has('script.json')) return 'SCRIPT'
-  if (filenames.has('PROMPT.md')) return 'PROMPT'
+  for (const [type, structure] of Object.entries(PACKAGE_STRUCTURES)) {
+    if (type === 'AGENT_CONFIG') continue
+    if (filenames.has(structure.entryFile)) return type
+  }
 
-  const configFiles = [
-    'CLAUDE.md',
-    'AGENTS.md',
-    '.cursorrules',
-    '.windsurfrules',
-    '.github/copilot-instructions.md',
-    '.junie/guidelines.md',
-  ]
-  for (const cf of configFiles) {
+  for (const cf of AGENT_CONFIG_FILES) {
     if (filenames.has(cf)) return 'AGENT_CONFIG'
   }
 
@@ -949,14 +951,8 @@ async function installAgentConfig(
 
   spinner.text = `Installing agent config to ${agents.length} agent(s)...`
 
-  const contentFile = files.find(
-    (f) =>
-      f.path === 'CLAUDE.md' ||
-      f.path === 'AGENTS.md' ||
-      f.path === '.cursorrules' ||
-      f.path === '.windsurfrules' ||
-      f.path.endsWith('.md')
-  )
+  const agentConfigSet = new Set<string>(AGENT_CONFIG_FILES)
+  const contentFile = files.find((f) => agentConfigSet.has(f.path) || f.path.endsWith('.md'))
 
   if (!contentFile) {
     spinner.fail('No config content file found in package')
@@ -1103,6 +1099,17 @@ export function registerInstallCommand(program: Command): void {
     .option('--path <path>', 'Override placement path (relative to cwd or absolute)')
     .option('--no-detect', 'Skip agent auto-detection (requires --agent)')
     .option('--skip-audit', 'Skip the security scan')
+    .addHelpText(
+      'after',
+      `
+Source formats:
+  github.com/owner/repo              Git repository (latest default branch)
+  github.com/owner/repo/path@ref     Subdirectory at specific ref
+  github.com/owner/repo#sha          Pinned to exact commit
+  gitlab.com/owner/repo              GitLab repositories
+  example.com/my-skill               Well-known domain (RFC-style discovery)
+  agentver://org/skills/name@ref     Platform-hosted skill`
+    )
     .action(async (source: string, options: InstallOptions) => {
       await installPackage(source, options)
     })

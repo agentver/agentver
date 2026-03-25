@@ -7,6 +7,7 @@ import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractError } from '../utils.js'
 
 const SYNC_TIMEOUT_MS = 30_000
 
@@ -177,11 +178,12 @@ export function registerSyncCommand(program: Command): void {
             spinner.fail('Sync timed out. The platform may be experiencing issues.')
           }
         } else {
+          const { code, message } = extractError(error, 'SYNC_FAILED')
           if (isJSONMode()) {
             spinner.stop()
-            outputError('SYNC_FAILED', error instanceof Error ? error.message : String(error))
+            outputError(code, message)
           } else {
-            spinner.fail(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
+            spinner.fail(`Sync failed: ${message}`)
           }
         }
         process.exit(1)

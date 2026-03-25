@@ -17,6 +17,10 @@ vi.mock('../../registry/config.js', () => ({
   getConfigPath: vi.fn().mockReturnValue('/home/testuser/.agentver/config.json'),
 }))
 
+vi.mock('prompts', () => ({
+  default: vi.fn().mockResolvedValue({ confirmed: true }),
+}))
+
 vi.mock('chalk', () => {
   const identity = (s: string) => s
   const fn = Object.assign(identity, {
@@ -71,11 +75,9 @@ function captureOutput(): { stdout: string[]; stderr: string[] } {
 // ---------------------------------------------------------------------------
 
 describe('logout command', () => {
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>
-
   beforeEach(() => {
     vi.clearAllMocks()
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
     process.argv = ['node', 'agentver', 'logout']
   })
@@ -109,24 +111,27 @@ describe('logout command', () => {
     vi.mocked(isAuthenticated).mockResolvedValue(true)
     vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
     vi.mocked(readConfig).mockReturnValue({ platformUrl: 'https://app.agentver.com' })
+    const { stdout } = captureOutput()
 
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'logout'])
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Logged out successfully.'))
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('https://app.agentver.com'))
+    const output = stdout.join('')
+    expect(output).toContain('Logged out successfully.')
+    expect(output).toContain('https://app.agentver.com')
   })
 
   it('shows success message without URL when no platform URL was configured', async () => {
     vi.mocked(isAuthenticated).mockResolvedValue(true)
     vi.mocked(getPlatformUrl).mockReturnValue(null)
+    const { stdout } = captureOutput()
 
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'logout'])
 
     expect(clearCredentials).toHaveBeenCalled()
     expect(writeConfig).not.toHaveBeenCalled()
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Logged out successfully.'))
+    expect(stdout.join('')).toContain('Logged out successfully.')
   })
 
   // -------------------------------------------------------------------------
@@ -141,8 +146,7 @@ describe('logout command', () => {
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    // Do NOT pass --json to Commander — isJSONMode() reads process.argv directly
-    await program.parseAsync(['node', 'agentver', 'logout'])
+    await program.parseAsync(['node', 'agentver', 'logout', '--yes'])
 
     expect(stdout.length).toBeGreaterThan(0)
     const parsed = JSON.parse(stdout.join('')) as Record<string, unknown>
@@ -162,12 +166,13 @@ describe('logout command', () => {
 
   it('handles gracefully when not logged in (no error thrown)', async () => {
     vi.mocked(isAuthenticated).mockResolvedValue(false)
+    const { stdout } = captureOutput()
 
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'logout'])
 
     expect(clearCredentials).not.toHaveBeenCalled()
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('not currently logged in'))
+    expect(stdout.join('')).toContain('not currently logged in')
   })
 
   it('returns { cleared: true } in JSON mode even when not logged in', async () => {
@@ -176,7 +181,7 @@ describe('logout command', () => {
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    await program.parseAsync(['node', 'agentver', 'logout'])
+    await program.parseAsync(['node', 'agentver', 'logout', '--yes'])
 
     const parsed = JSON.parse(stdout.join('')) as Record<string, unknown>
     expect(parsed.success).toBe(true)
@@ -185,7 +190,44 @@ describe('logout command', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 4. After logout, isAuthenticated would return false
+  // 4. Confirmation prompts
+  // -------------------------------------------------------------------------
+
+  it('does not clear credentials when user cancels confirmation', async () => {
+    vi.mocked(isAuthenticated).mockResolvedValue(true)
+    vi.mocked(getPlatformUrl).mockReturnValue(null)
+    const promptsMod = await import('prompts')
+    vi.mocked(promptsMod.default).mockResolvedValueOnce({ confirmed: false })
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'logout'])
+
+    expect(clearCredentials).not.toHaveBeenCalled()
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('Cancelled'))
+    stdoutSpy.mockRestore()
+  })
+
+  it('outputs CONFIRMATION_REQUIRED error in JSON mode without --yes', async () => {
+    process.argv = ['node', 'agentver', 'logout', '--json']
+    vi.mocked(isAuthenticated).mockResolvedValue(true)
+    vi.mocked(getPlatformUrl).mockReturnValue(null)
+    const { stdout } = captureOutput()
+
+    const program = buildProgram()
+    try {
+      await program.parseAsync(['node', 'agentver', 'logout'])
+    } catch {
+      // process.exit throws in test env
+    }
+
+    const output = stdout.join('')
+    expect(output).toContain('CONFIRMATION_REQUIRED')
+    expect(clearCredentials).not.toHaveBeenCalled()
+  })
+
+  // -------------------------------------------------------------------------
+  // 5. After logout, isAuthenticated would return false
   // -------------------------------------------------------------------------
 
   it('calls clearCredentials which empties the credentials file', async () => {

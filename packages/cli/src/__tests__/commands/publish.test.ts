@@ -192,9 +192,9 @@ describe('publish command', () => {
 
     expect(consoleLogSpy).toHaveBeenCalled()
     const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<string, unknown>
-    expect(output).toHaveProperty('skill')
-    expect(output).toHaveProperty('version')
-    expect(output).toHaveProperty('commitSha')
+    expect(output.skill).toEqual(expect.stringContaining('test-skill'))
+    expect(output).toHaveProperty('version', '1.0.0')
+    expect(output).toHaveProperty('commitSha', 'abc1234567890')
   })
 
   it('outputs valid JSON with --json and --dry-run', async () => {
@@ -207,7 +207,7 @@ describe('publish command', () => {
     expect(consoleLogSpy).toHaveBeenCalled()
     const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<string, unknown>
     expect(output).toHaveProperty('dryRun', true)
-    expect(output).toHaveProperty('version')
+    expect(output).toHaveProperty('version', '1.0.0')
     expect(output).toHaveProperty('files')
     expect(Array.isArray(output.files)).toBe(true)
   })

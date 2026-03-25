@@ -239,7 +239,7 @@ describe('save command', () => {
 
     expect(consoleLogSpy).toHaveBeenCalled()
     const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<string, unknown>
-    expect(output).toHaveProperty('skill')
+    expect(output.skill).toEqual(expect.stringContaining('test-skill'))
     expect(output).toHaveProperty('commitSha', 'def7890abcdef')
     expect(output).toHaveProperty('files')
     expect(Array.isArray(output.files)).toBe(true)
@@ -255,7 +255,7 @@ describe('save command', () => {
     expect(consoleLogSpy).toHaveBeenCalled()
     const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<string, unknown>
     expect(output).toHaveProperty('dryRun', true)
-    expect(output).toHaveProperty('skill')
+    expect(output.skill).toEqual(expect.stringContaining('test-skill'))
     expect(output).toHaveProperty('message')
     expect(output).toHaveProperty('files')
   })

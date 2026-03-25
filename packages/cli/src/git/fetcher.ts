@@ -5,11 +5,12 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { AgentverError, createLogger } from '@agentver/shared'
+import { AgentverError } from '@agentver/shared'
+import { createCliLogger } from '../utils.js'
 import { cacheFiles, getCachedFiles } from './cache.js'
 import type { FetchedFile, FetchResult, FetchStrategy, GitSource, ResolvedRef } from './types.js'
 
-const logger = createLogger('git:fetcher')
+const logger = createCliLogger('git:fetcher')
 
 const execFileAsync = promisify(execFile)
 
