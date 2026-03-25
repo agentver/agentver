@@ -342,6 +342,36 @@ compatibility: [claude-code]
     )
   })
 
+  it('should accept compatibility as a comma-separated string', () => {
+    const content = `---
+name: my-skill
+description: A skill with string compatibility
+license: MIT
+compatibility: claude-code, cursor
+allowed-tools: [Read]
+---`
+
+    const result = validateSkillFrontmatter(content)
+
+    expect(result.valid).toBe(true)
+    expect(result.data?.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
+  it('should accept allowed-tools as a space-separated string', () => {
+    const content = `---
+name: my-skill
+description: A skill with string allowed-tools
+license: MIT
+compatibility: [claude-code]
+allowed-tools: Read Write Bash
+---`
+
+    const result = validateSkillFrontmatter(content)
+
+    expect(result.valid).toBe(true)
+    expect(result.data?.['allowed-tools']).toEqual(['Read', 'Write', 'Bash'])
+  })
+
   it('should return parsed data and body when valid', () => {
     const content = `---
 name: my-skill
