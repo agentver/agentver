@@ -1,4 +1,4 @@
-import { createCLIOutputSchema, installResultSchema } from '@agentver/shared'
+import { AgentverError, createCLIOutputSchema, installResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FetchedFile, FetchResult, ResolvedRef } from '../../git/types'
 import {
@@ -267,20 +267,25 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('security audit BLOCK', () => {
-    it('calls process.exit when security scan returns BLOCK verdict', async () => {
+    it('throws AgentverError when security scan returns BLOCK verdict', async () => {
       setupHappyPathMocks()
       vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(/finding/)
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
     it('does not write manifest when scan blocks installation', async () => {
       setupHappyPathMocks()
       vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
 
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
@@ -289,22 +294,25 @@ describe('commands/install', () => {
       setupHappyPathMocks()
       vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
 
       expect(lockfileModule.writeLockfile).not.toHaveBeenCalled()
     })
 
-    it('outputs JSON error when in JSON mode and scan blocks', async () => {
+    it('throws with SECURITY_BLOCK code when scan blocks in JSON mode', async () => {
       setupHappyPathMocks()
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'SECURITY_BLOCK',
-        expect.stringContaining('finding')
-      )
+      try {
+        await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('SECURITY_BLOCK')
+      }
     })
   })
 
@@ -476,35 +484,41 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('git fetch failure', () => {
-    it('calls process.exit when fetchFiles rejects', async () => {
+    it('throws AgentverError when fetchFiles rejects', async () => {
       setupHappyPathMocks()
       vi.mocked(gitIndex.fetchFiles).mockRejectedValue(new Error('Network timeout whilst fetching'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
     it('does not write manifest when fetchFiles fails', async () => {
       setupHappyPathMocks()
       vi.mocked(gitIndex.fetchFiles).mockRejectedValue(new Error('Network timeout whilst fetching'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
 
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
 
-    it('outputs JSON error when in JSON mode and fetch fails', async () => {
+    it('throws with INSTALL_FAILED code containing the error message', async () => {
       setupHappyPathMocks()
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(gitIndex.fetchFiles).mockRejectedValue(new Error('Network timeout whilst fetching'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'INSTALL_FAILED',
-        expect.stringContaining('Network timeout')
-      )
+      try {
+        await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('INSTALL_FAILED')
+        expect((error as AgentverError).message).toContain('Network timeout')
+      }
     })
   })
 
@@ -513,26 +527,24 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('invalid source format', () => {
-    it('calls process.exit when parseGitSource throws for garbage input', async () => {
+    it('throws AgentverError when short name used without platformUrl', async () => {
       setupHappyPathMocks()
-      vi.mocked(gitIndex.parseGitSource).mockImplementation(() => {
-        throw new Error('Invalid git source "garbage" — expected format: host/owner/repo')
-      })
       vi.mocked(configModule.readConfig).mockReturnValue({})
 
-      await expect(installPackage('garbage', { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage('garbage', { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
     it('does not call resolveRef when source is invalid', async () => {
       setupHappyPathMocks()
-      vi.mocked(gitIndex.parseGitSource).mockImplementation(() => {
-        throw new Error('Invalid git source')
-      })
       vi.mocked(configModule.readConfig).mockReturnValue({})
 
-      await expect(installPackage('garbage', { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage('garbage', { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
 
       expect(gitIndex.resolveRef).not.toHaveBeenCalled()
     })
@@ -627,19 +639,21 @@ describe('commands/install', () => {
   })
 
   describe('resolveRef failure', () => {
-    it('calls process.exit when resolveRef rejects', async () => {
+    it('throws AgentverError when resolveRef rejects', async () => {
       setupHappyPathMocks()
       vi.mocked(gitIndex.resolveRef).mockRejectedValue(new Error('Could not resolve ref "main"'))
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
   })
 
   describe('no files returned from fetch', () => {
-    it('calls process.exit when fetchFiles returns an empty array', async () => {
+    it('throws AgentverError with NO_FILES when fetchFiles returns an empty array', async () => {
       setupHappyPathMocks()
       vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
         files: [],
@@ -647,9 +661,15 @@ describe('commands/install', () => {
         source: createGitSource(),
       })
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      try {
+        await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('NO_FILES')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
   })
@@ -714,7 +734,7 @@ describe('commands/install', () => {
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
     })
 
-    it('exits when both direct and skills/-prefixed paths return no files', async () => {
+    it('throws AgentverError when both direct and skills/-prefixed paths return no files', async () => {
       const gitSource = createGitSource({ path: 'nonexistent-skill' })
       const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
       const emptyResult: FetchResult = { files: [], commitSha: RESOLVED_SHA, source: gitSource }
@@ -735,11 +755,11 @@ describe('commands/install', () => {
         installPackage('github.com/test-org/test-repo/nonexistent-skill@main', {
           agent: 'claude-code',
         })
-      ).rejects.toThrow(ExitError)
+      ).rejects.toThrow(AgentverError)
 
       // Should have tried both the direct path and the skills/ prefix
       expect(gitIndex.fetchFiles).toHaveBeenCalledTimes(2)
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
 
@@ -761,11 +781,11 @@ describe('commands/install', () => {
 
       await expect(
         installPackage('github.com/test-org/test-repo@main', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
+      ).rejects.toThrow(AgentverError)
 
       // Should NOT retry — no path means no skills/ prefix to try
       expect(gitIndex.fetchFiles).toHaveBeenCalledTimes(1)
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
   })
 
@@ -840,22 +860,28 @@ describe('commands/install', () => {
       expect(result!.agents).toEqual(['claude-code'])
     })
 
-    it('exits with NOT_FOUND when skill is not in the well-known index', async () => {
+    it('throws with NOT_FOUND when skill is not in the well-known index', async () => {
       setupWellKnownMocks()
       vi.mocked(wellknownModule.parseWellKnownSource).mockReturnValue({
         baseUrl: 'https://skills.example.com',
         skillName: 'nonexistent-skill',
       })
 
-      await expect(
-        installPackage('https://skills.example.com/nonexistent-skill', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
+      try {
+        await installPackage('https://skills.example.com/nonexistent-skill', {
+          agent: 'claude-code',
+        })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('NOT_FOUND')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
 
-    it('outputs JSON NOT_FOUND error when skill not found in JSON mode', async () => {
+    it('throws with NOT_FOUND containing skill name when not found in JSON mode', async () => {
       setupWellKnownMocks()
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(wellknownModule.parseWellKnownSource).mockReturnValue({
@@ -863,17 +889,19 @@ describe('commands/install', () => {
         skillName: 'nonexistent-skill',
       })
 
-      await expect(
-        installPackage('https://skills.example.com/nonexistent-skill', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'NOT_FOUND',
-        expect.stringContaining('nonexistent-skill')
-      )
+      try {
+        await installPackage('https://skills.example.com/nonexistent-skill', {
+          agent: 'claude-code',
+        })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('NOT_FOUND')
+        expect((error as AgentverError).message).toContain('nonexistent-skill')
+      }
     })
 
-    it('exits with AMBIGUOUS_SKILL when multiple skills found and no specifier', async () => {
+    it('throws with AMBIGUOUS_SKILL when multiple skills found and no specifier', async () => {
       setupWellKnownMocks()
       vi.mocked(wellknownModule.parseWellKnownSource).mockReturnValue({
         baseUrl: 'https://skills.example.com',
@@ -886,14 +914,18 @@ describe('commands/install', () => {
         ],
       })
 
-      await expect(
-        installPackage('https://skills.example.com', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
+      try {
+        await installPackage('https://skills.example.com', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('AMBIGUOUS_SKILL')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
-    it('outputs AMBIGUOUS_SKILL JSON error when multiple skills and JSON mode', async () => {
+    it('throws AMBIGUOUS_SKILL containing skill names when multiple skills and JSON mode', async () => {
       setupWellKnownMocks()
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(wellknownModule.parseWellKnownSource).mockReturnValue({
@@ -907,17 +939,17 @@ describe('commands/install', () => {
         ],
       })
 
-      await expect(
-        installPackage('https://skills.example.com', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'AMBIGUOUS_SKILL',
-        expect.stringContaining('skill-a')
-      )
+      try {
+        await installPackage('https://skills.example.com', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('AMBIGUOUS_SKILL')
+        expect((error as AgentverError).message).toContain('skill-a')
+      }
     })
 
-    it('exits with NO_FILES when well-known fetch returns empty files', async () => {
+    it('throws with NO_FILES when well-known fetch returns empty files', async () => {
       setupWellKnownMocks()
       vi.mocked(wellknownModule.fetchWellKnownSkill).mockResolvedValue({
         name: 'test-skill',
@@ -927,14 +959,18 @@ describe('commands/install', () => {
         hostname: 'skills.example.com',
       })
 
-      await expect(
-        installPackage('https://skills.example.com', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
+      try {
+        await installPackage('https://skills.example.com', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('NO_FILES')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
-    it('outputs NO_FILES JSON error when no files and JSON mode', async () => {
+    it('throws NO_FILES with skill name when no files and JSON mode', async () => {
       setupWellKnownMocks()
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(wellknownModule.fetchWellKnownSkill).mockResolvedValue({
@@ -945,14 +981,14 @@ describe('commands/install', () => {
         hostname: 'skills.example.com',
       })
 
-      await expect(
-        installPackage('https://skills.example.com', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'NO_FILES',
-        expect.stringContaining('test-skill')
-      )
+      try {
+        await installPackage('https://skills.example.com', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('NO_FILES')
+        expect((error as AgentverError).message).toContain('test-skill')
+      }
     })
 
     it('does not write manifest or lockfile in dry-run mode', async () => {
@@ -1001,24 +1037,24 @@ describe('commands/install', () => {
       expect((data.source as Record<string, unknown>).type).toBe('well-known')
     })
 
-    it('catches unexpected errors and exits with INSTALL_FAILED in JSON mode', async () => {
+    it('catches unexpected errors and throws with INSTALL_FAILED in JSON mode', async () => {
       vi.mocked(wellknownModule.looksLikeWellKnownUrl).mockReturnValue(true)
       vi.mocked(wellknownModule.parseWellKnownSource).mockImplementation(() => {
         throw new Error('Unexpected parse failure')
       })
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await expect(
-        installPackage('https://skills.example.com', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'INSTALL_FAILED',
-        expect.stringContaining('Unexpected parse failure')
-      )
+      try {
+        await installPackage('https://skills.example.com', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('INSTALL_FAILED')
+        expect((error as AgentverError).message).toContain('Unexpected parse failure')
+      }
     })
 
-    it('catches unexpected errors and exits in non-JSON mode', async () => {
+    it('catches unexpected errors and throws in non-JSON mode', async () => {
       vi.mocked(wellknownModule.looksLikeWellKnownUrl).mockReturnValue(true)
       vi.mocked(wellknownModule.parseWellKnownSource).mockImplementation(() => {
         throw new Error('Unexpected parse failure')
@@ -1026,9 +1062,9 @@ describe('commands/install', () => {
 
       await expect(
         installPackage('https://skills.example.com', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
+      ).rejects.toThrow(AgentverError)
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
   })
 
@@ -1142,41 +1178,51 @@ describe('commands/install', () => {
       expect(gitIndex.parseGitSource).toHaveBeenCalledWith(expect.stringContaining('@v2.0'))
     })
 
-    it('exits when short name used without platformUrl', async () => {
+    it('throws VALIDATION_ERROR when short name used without platformUrl', async () => {
       setupHappyPathMocks()
       vi.mocked(configModule.readConfig).mockReturnValue({})
 
-      await expect(installPackage('my-org/my-skill', { agent: 'claude-code' })).rejects.toThrow(
-        ExitError
-      )
+      try {
+        await installPackage('my-org/my-skill', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
-    it('outputs VALIDATION_ERROR JSON when short name used without platformUrl in JSON mode', async () => {
+    it('throws VALIDATION_ERROR containing URL hint when no platformUrl in JSON mode', async () => {
       setupHappyPathMocks()
       vi.mocked(configModule.readConfig).mockReturnValue({})
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await expect(installPackage('my-org/my-skill', { agent: 'claude-code' })).rejects.toThrow(
-        ExitError
-      )
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'VALIDATION_ERROR',
-        expect.stringContaining("doesn't look like a Git URL")
-      )
+      try {
+        await installPackage('my-org/my-skill', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+        expect((error as AgentverError).message).toContain("doesn't look like a Git URL")
+      }
     })
 
-    it('rejects single-segment package names', async () => {
+    it('throws VALIDATION_ERROR for single-segment package names', async () => {
       setupHappyPathMocks()
       vi.mocked(configModule.readConfig).mockReturnValue({
         platformUrl: 'https://app.agentver.com',
       })
 
-      await expect(installPackage('my-skill', { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      try {
+        await installPackage('my-skill', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
   })
 
@@ -1227,15 +1273,21 @@ describe('commands/install', () => {
       expect(audit.findings).toBeGreaterThan(0)
     })
 
-    it('prompts user in non-JSON mode and cancels on decline', async () => {
+    it('prompts user in non-JSON mode and throws CANCELLED on decline', async () => {
       setupHappyPathMocks()
       vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('WARN'))
       vi.mocked(promptsDefault).mockResolvedValue({ proceed: false })
 
-      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(ExitError)
+      try {
+        await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('CANCELLED')
+      }
 
       expect(promptsDefault).toHaveBeenCalled()
-      expect(process.exit).toHaveBeenCalledWith(0)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
     it('prompts user in non-JSON mode and proceeds on confirm', async () => {
@@ -1386,25 +1438,33 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('--no-detect without --agent', () => {
-    it('exits with error when --no-detect used without --agent', async () => {
+    it('throws VALIDATION_ERROR when --no-detect used without --agent', async () => {
       setupHappyPathMocks()
 
-      await expect(installPackage(TEST_SOURCE, { detect: false })).rejects.toThrow(ExitError)
+      try {
+        await installPackage(TEST_SOURCE, { detect: false })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
 
-    it('outputs VALIDATION_ERROR in JSON mode when --no-detect used without --agent', async () => {
+    it('throws VALIDATION_ERROR mentioning --agent in JSON mode when --no-detect used without --agent', async () => {
       setupHappyPathMocks()
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await expect(installPackage(TEST_SOURCE, { detect: false })).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'VALIDATION_ERROR',
-        expect.stringContaining('--agent')
-      )
+      try {
+        await installPackage(TEST_SOURCE, { detect: false })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+        expect((error as AgentverError).message).toContain('--agent')
+      }
     })
 
     it('succeeds when --no-detect is used together with --agent', async () => {
@@ -1444,11 +1504,15 @@ describe('commands/install', () => {
       })
       vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
 
-      await expect(installPackage('https://skills.example.com', { detect: false })).rejects.toThrow(
-        ExitError
-      )
+      try {
+        await installPackage('https://skills.example.com', { detect: false })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
   })
 
@@ -1645,32 +1709,36 @@ describe('commands/install', () => {
       expect(result).toBeDefined()
     })
 
-    it('errors when agentver:// URI is used without platformUrl configured', async () => {
+    it('throws VALIDATION_ERROR when agentver:// URI is used without platformUrl configured', async () => {
       vi.mocked(configModule.readConfig).mockReturnValue({})
 
-      await expect(
-        installPackage('agentver://lleverage/skills/google-search-console@main', {
+      try {
+        await installPackage('agentver://lleverage/skills/google-search-console@main', {
           agent: 'claude-code',
         })
-      ).rejects.toThrow(ExitError)
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+      }
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
 
-    it('outputs INSTALL_FAILED JSON error when agentver:// URI used without platformUrl in JSON mode', async () => {
+    it('throws VALIDATION_ERROR with platform hint when agentver:// URI used without platformUrl in JSON mode', async () => {
       vi.mocked(configModule.readConfig).mockReturnValue({})
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await expect(
-        installPackage('agentver://lleverage/skills/google-search-console@main', {
+      try {
+        await installPackage('agentver://lleverage/skills/google-search-console@main', {
           agent: 'claude-code',
         })
-      ).rejects.toThrow(ExitError)
-
-      expect(outputModule.outputError).toHaveBeenCalledWith(
-        'VALIDATION_ERROR',
-        expect.stringContaining('platform connection')
-      )
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('VALIDATION_ERROR')
+        expect((error as AgentverError).message).toContain('platform connection')
+      }
     })
 
     it('uses the ref from the URI when the platform also provides a gitRef', async () => {
@@ -1814,7 +1882,7 @@ describe('commands/install', () => {
       expect(securityModule.scanFiles).not.toHaveBeenCalled()
     })
 
-    it('exits when platform resolve returns an HTTP error', async () => {
+    it('throws AgentverError when platform resolve returns an HTTP error', async () => {
       vi.mocked(configModule.readConfig).mockReturnValue({ platformUrl: PLATFORM_URL })
       vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
 
@@ -1826,9 +1894,9 @@ describe('commands/install', () => {
 
       await expect(
         installPackage('agentver://nonexistent/package@main', { agent: 'claude-code' })
-      ).rejects.toThrow(ExitError)
+      ).rejects.toThrow(AgentverError)
 
-      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(process.exit).not.toHaveBeenCalled()
     })
   })
 

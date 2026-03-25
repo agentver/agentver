@@ -8,6 +8,11 @@ export type AgentverErrorCode =
   | 'RATE_LIMITED'
   | 'STORAGE_ERROR'
   | 'INTEGRITY_ERROR'
+  | 'NO_FILES'
+  | 'SECURITY_BLOCK'
+  | 'AMBIGUOUS_SKILL'
+  | 'CANCELLED'
+  | 'INSTALL_FAILED'
 
 export class AgentverError extends Error {
   readonly code: AgentverErrorCode
