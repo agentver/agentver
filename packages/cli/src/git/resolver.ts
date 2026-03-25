@@ -1,8 +1,9 @@
 import { AgentverError, createLogger } from '@agentver/shared'
+import { getLogLevel } from '../output.js'
 import { buildRepoUrl, execGit } from './fetcher.js'
 import type { GitSource, ResolvedRef } from './types.js'
 
-const logger = createLogger('git:resolver')
+const logger = createLogger('git:resolver', getLogLevel())
 
 const RESOLVE_TIMEOUT_MS = 15_000
 

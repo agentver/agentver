@@ -17,6 +17,10 @@ vi.mock('../../registry/config.js', () => ({
   getConfigPath: vi.fn().mockReturnValue('/home/testuser/.agentver/config.json'),
 }))
 
+vi.mock('prompts', () => ({
+  default: vi.fn().mockResolvedValue({ confirmed: true }),
+}))
+
 vi.mock('chalk', () => {
   const identity = (s: string) => s
   const fn = Object.assign(identity, {
@@ -141,8 +145,7 @@ describe('logout command', () => {
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    // Do NOT pass --json to Commander — isJSONMode() reads process.argv directly
-    await program.parseAsync(['node', 'agentver', 'logout'])
+    await program.parseAsync(['node', 'agentver', 'logout', '--yes'])
 
     expect(stdout.length).toBeGreaterThan(0)
     const parsed = JSON.parse(stdout.join('')) as Record<string, unknown>
@@ -176,7 +179,7 @@ describe('logout command', () => {
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    await program.parseAsync(['node', 'agentver', 'logout'])
+    await program.parseAsync(['node', 'agentver', 'logout', '--yes'])
 
     const parsed = JSON.parse(stdout.join('')) as Record<string, unknown>
     expect(parsed.success).toBe(true)

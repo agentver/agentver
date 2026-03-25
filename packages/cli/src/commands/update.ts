@@ -5,6 +5,7 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import ora from 'ora'
 import prompts from 'prompts'
+import { extractError } from '../constants.js'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import { fetchFiles, resolveRef } from '../git/index.js'
 import type { GitSource as CliGitSource, ResolvedRef } from '../git/types.js'
@@ -512,13 +513,12 @@ export function registerUpdateCommand(program: Command): void {
 
         console.log()
       } catch (error) {
+        const { code, message } = extractError(error, 'UPDATE_FAILED')
         if (jsonMode) {
-          outputError('UPDATE_FAILED', error instanceof Error ? error.message : String(error))
+          outputError(code, message)
           process.exit(1)
         }
-        spinner.fail(
-          `Update check failed: ${error instanceof Error ? error.message : String(error)}`
-        )
+        spinner.fail(`Update check failed: ${message}`)
         process.exit(1)
       }
     })

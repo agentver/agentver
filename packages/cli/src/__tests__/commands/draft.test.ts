@@ -377,7 +377,7 @@ describe('draft command', () => {
         string,
         unknown
       >
-      expect(output).toHaveProperty('skill')
+      expect(output.skill).toEqual(expect.stringContaining('test-skill'))
       expect(output).toHaveProperty('draft', 'my-feature')
       expect(output).toHaveProperty('ref', 'draft/test-skill/my-feature')
     })

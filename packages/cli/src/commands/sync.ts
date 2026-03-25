@@ -3,6 +3,7 @@ import { hostname } from 'node:os'
 import type { SyncResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
+import { extractError } from '../constants.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
@@ -177,11 +178,12 @@ export function registerSyncCommand(program: Command): void {
             spinner.fail('Sync timed out. The platform may be experiencing issues.')
           }
         } else {
+          const { code, message } = extractError(error, 'SYNC_FAILED')
           if (isJSONMode()) {
             spinner.stop()
-            outputError('SYNC_FAILED', error instanceof Error ? error.message : String(error))
+            outputError(code, message)
           } else {
-            spinner.fail(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
+            spinner.fail(`Sync failed: ${message}`)
           }
         }
         process.exit(1)

@@ -4,6 +4,7 @@ import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions
 import type { ManifestV2Package, ProposeResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
+import { extractError } from '../constants.js'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
@@ -319,7 +320,7 @@ export function registerSuggestCommand(program: Command): void {
               spinner.stop()
             }
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const { message } = extractError(error, 'SUGGEST_FAILED')
             outcomes.push({ package: targetName, success: false, error: message })
 
             if (!json) {

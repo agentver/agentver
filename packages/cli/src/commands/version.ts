@@ -3,6 +3,7 @@ import { basename, join } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import ora from 'ora'
+import { extractError, SEMVER_REGEX } from '../constants.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
@@ -27,8 +28,6 @@ type VersionCreateOptions = {
   notes?: string
   json?: boolean
 }
-
-const SEMVER_REGEX = /^\d+\.\d+\.\d+(-[\w.]+)?$/
 
 /**
  * Resolve the skill identity from the current directory and manifest.
@@ -140,9 +139,8 @@ export function registerVersionCommand(program: Command): void {
           )
         }
       } catch (error) {
-        spinner.fail(
-          `Failed to create version: ${error instanceof Error ? error.message : String(error)}`
-        )
+        const { message } = extractError(error, 'VERSION_FAILED')
+        spinner.fail(`Failed to create version: ${message}`)
         process.exit(1)
       }
     })
@@ -190,9 +188,8 @@ export function registerVersionCommand(program: Command): void {
 
         process.stdout.write('\n')
       } catch (error) {
-        spinner.fail(
-          `Failed to list versions: ${error instanceof Error ? error.message : String(error)}`
-        )
+        const { message } = extractError(error, 'VERSION_FAILED')
+        spinner.fail(`Failed to list versions: ${message}`)
         process.exit(1)
       }
     })

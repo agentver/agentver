@@ -3,9 +3,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createLogger } from '@agentver/shared'
+import { getLogLevel } from '../output.js'
 import type { FetchedFile, GitSource } from './types.js'
 
-const logger = createLogger('git:cache')
+const logger = createLogger('git:cache', getLogLevel())
 
 export function getCacheDir(): string {
   return join(homedir(), '.agentver', 'cache')

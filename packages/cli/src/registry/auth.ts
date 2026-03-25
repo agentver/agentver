@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { createLogger } from '@agentver/shared'
+import { getLogLevel } from '../output.js'
+
+const logger = createLogger('auth', getLogLevel())
 
 type Credentials = {
   token?: string
@@ -23,6 +27,9 @@ export async function getCredentials(): Promise<Credentials | null> {
   try {
     return JSON.parse(raw) as Credentials
   } catch {
+    logger.warn(
+      `Could not parse credentials at ${credPath}. Re-authenticate with \`agentver login\`.`
+    )
     return null
   }
 }

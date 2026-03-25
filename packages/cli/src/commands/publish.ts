@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
+import { type AgentverSkill, parseSkillFrontmatter } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import ora from 'ora'
+import { extractError, SEMVER_REGEX } from '../constants.js'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import type { GitSource } from '../git/types.js'
 import { platformFetch } from '../registry/platform.js'
@@ -21,68 +23,24 @@ type PublishResponse = {
   commitSha: string
 }
 
-type SkillFrontmatter = {
-  name: string
-  description: string
-  version: string
-}
-
-const SEMVER_REGEX = /^\d+\.\d+\.\d+(-[\w.]+)?$/
-
-/**
- * Parse YAML-like frontmatter from a SKILL.md file.
- * Intentionally simple — handles the common key: value format.
- */
-function parseFrontmatter(content: string): SkillFrontmatter | null {
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
-  if (!fmMatch?.[1]) return null
-
-  const lines = fmMatch[1].split('\n')
-  const data: Record<string, string> = {}
-
-  for (const line of lines) {
-    const colonIdx = line.indexOf(':')
-    if (colonIdx === -1) continue
-    const key = line.slice(0, colonIdx).trim()
-    const value = line.slice(colonIdx + 1).trim()
-    if (key && value) {
-      data[key] = value
-    }
-  }
-
-  if (!data.name || !data.description || !data.version) {
-    return null
-  }
-
-  return {
-    name: data.name,
-    description: data.description,
-    version: data.version,
-  }
-}
-
 /**
  * Detect the org/namespace from the skill directory context.
  * Uses the directory structure or manifest to determine the namespace.
  */
-function detectNamespace(skillDir: string): { org: string; name: string } | null {
-  const skillMdPath = join(skillDir, 'SKILL.md')
-  if (!existsSync(skillMdPath)) return null
-
-  const content = readFileSync(skillMdPath, 'utf-8')
-  const fm = parseFrontmatter(content)
-  if (!fm) return null
-
+function detectNamespace(
+  skillDir: string,
+  frontmatter: AgentverSkill
+): { org: string; name: string } | null {
   // Try to extract org from directory structure (e.g. .agentver/skills/org/name)
   const parts = skillDir.split('/')
   const skillsIdx = parts.lastIndexOf('skills')
   if (skillsIdx >= 0 && parts.length > skillsIdx + 2) {
-    return { org: parts[skillsIdx + 1]!, name: fm.name }
+    return { org: parts[skillsIdx + 1]!, name: frontmatter.name }
   }
 
   // Fall back to using the parent directory as org
   const parentDir = basename(resolve(skillDir, '..'))
-  return { org: parentDir, name: fm.name }
+  return { org: parentDir, name: frontmatter.name }
 }
 
 export function registerPublishCommand(program: Command): void {
@@ -107,24 +65,29 @@ export function registerPublishCommand(program: Command): void {
       const spinner = ora('Reading skill metadata...').start()
 
       try {
-        // Parse frontmatter
+        // Parse frontmatter using shared validator
         const skillMdContent = readFileSync(join(skillDir, 'SKILL.md'), 'utf-8')
-        const frontmatter = parseFrontmatter(skillMdContent)
 
-        if (!frontmatter) {
+        let frontmatter: AgentverSkill
+        try {
+          const parsed = parseSkillFrontmatter(skillMdContent)
+          frontmatter = parsed.frontmatter
+        } catch (error) {
           spinner.fail(
-            'Invalid SKILL.md frontmatter. Ensure name, description, and version are set.'
+            `Invalid SKILL.md frontmatter: ${error instanceof Error ? error.message : 'Ensure name, description, and version are set.'}`
           )
           process.exit(1)
         }
 
         const version = options.version ?? frontmatter.version
-        if (!SEMVER_REGEX.test(version)) {
-          spinner.fail(`Invalid version "${version}". Must be valid semver (e.g. 1.0.0).`)
+        if (!version || !SEMVER_REGEX.test(version)) {
+          spinner.fail(
+            `Invalid version "${version ?? '(none)'}". Must be valid semver (e.g. 1.0.0).`
+          )
           process.exit(1)
         }
 
-        const namespace = detectNamespace(skillDir)
+        const namespace = detectNamespace(skillDir, frontmatter)
         if (!namespace) {
           spinner.fail(
             'Could not determine skill namespace. Check SKILL.md and directory structure.'
@@ -248,7 +211,8 @@ export function registerPublishCommand(program: Command): void {
           )
         }
       } catch (error) {
-        spinner.fail(`Failed to publish: ${error instanceof Error ? error.message : String(error)}`)
+        const { message } = extractError(error, 'PUBLISH_FAILED')
+        spinner.fail(`Failed to publish: ${message}`)
         process.exit(1)
       }
     })

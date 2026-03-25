@@ -306,7 +306,7 @@ describe('version command', () => {
         string,
         unknown
       >
-      expect(output).toHaveProperty('skill')
+      expect(output).toHaveProperty('skill', '@test-org/test-skill')
       expect(output).toHaveProperty('version', '1.0.0')
       expect(output).toHaveProperty('tag', 'v1.0.0')
       expect(output).toHaveProperty('commitSha', 'abc1234567')

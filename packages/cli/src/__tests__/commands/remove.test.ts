@@ -50,6 +50,10 @@ vi.mock('@agentver/agent-definitions', () => ({
   getConfigFilePath: vi.fn(),
 }))
 
+vi.mock('prompts', () => ({
+  default: vi.fn().mockResolvedValue({ confirmed: true }),
+}))
+
 vi.mock('node:os', () => ({
   homedir: vi.fn().mockReturnValue('/home/testuser'),
 }))
@@ -86,7 +90,10 @@ import * as manifestModule from '../../storage/manifest'
 // Helper: extract the action callback from registerRemoveCommand
 // ---------------------------------------------------------------------------
 
-type RemoveAction = (name: string, options: { dryRun?: boolean; global?: boolean }) => Promise<void>
+type RemoveAction = (
+  name: string,
+  options: { dryRun?: boolean; global?: boolean; yes?: boolean }
+) => Promise<void>
 
 function getRemoveAction(): RemoveAction {
   const mockProgram = {
@@ -313,7 +320,7 @@ describe('commands/remove', () => {
       setupInstalledPackage('my-skill')
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await removeAction('my-skill', {})
+      await removeAction('my-skill', { yes: true })
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
       const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
@@ -328,7 +335,7 @@ describe('commands/remove', () => {
       setupInstalledPackage('my-skill')
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await removeAction('my-skill', {})
+      await removeAction('my-skill', { yes: true })
 
       const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
       const outputSchema = createCLIOutputSchema(removeResultSchema)
@@ -568,7 +575,7 @@ describe('commands/remove', () => {
       setupGlobalPackage('my-skill')
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
-      await removeAction('my-skill', { global: true })
+      await removeAction('my-skill', { global: true, yes: true })
 
       const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
       const typedData = data as { paths: string[] }
