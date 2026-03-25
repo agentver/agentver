@@ -19,11 +19,16 @@ export function registerLogoutCommand(program: Command): void {
           outputSuccess<LogoutResult>({ cleared: true })
           return
         }
-        console.log(chalk.dim('You are not currently logged in.'))
+        process.stdout.write(chalk.dim('You are not currently logged in.\n'))
         return
       }
 
       const platformUrl = getPlatformUrl()
+
+      if (jsonMode && !options.yes) {
+        outputError('CONFIRMATION_REQUIRED', 'Use --yes flag to confirm logout in JSON mode.')
+        process.exit(1)
+      }
 
       if (!options.yes && !jsonMode) {
         const target = platformUrl ? ` from ${platformUrl}` : ''
@@ -35,14 +40,9 @@ export function registerLogoutCommand(program: Command): void {
         })
 
         if (!confirmed) {
-          console.log(chalk.dim('Cancelled.'))
+          process.stdout.write(chalk.dim('Cancelled.\n'))
           return
         }
-      }
-
-      if (jsonMode && !options.yes) {
-        outputError('CONFIRMATION_REQUIRED', 'Use --yes flag to confirm logout in JSON mode.')
-        process.exit(1)
       }
 
       clearCredentials()
@@ -59,10 +59,12 @@ export function registerLogoutCommand(program: Command): void {
       }
 
       if (platformUrl) {
-        console.log(`${chalk.green('Logged out successfully.')} Disconnected from ${platformUrl}`)
+        process.stdout.write(
+          `${chalk.green('Logged out successfully.')} Disconnected from ${platformUrl}\n`
+        )
       } else {
-        console.log(
-          `${chalk.green('Logged out successfully.')} Run \`agentver login\` to sign in again.`
+        process.stdout.write(
+          `${chalk.green('Logged out successfully.')} Run \`agentver login\` to sign in again.\n`
         )
       }
     })

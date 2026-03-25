@@ -1,10 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { createLogger } from '@agentver/shared'
-import { getLogLevel } from '../output.js'
+import { createCliLogger } from '../utils.js'
 
-const logger = createLogger('auth', getLogLevel())
+const logger = createCliLogger('auth')
 
 type Credentials = {
   token?: string

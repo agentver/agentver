@@ -62,8 +62,13 @@ export function isQuiet(): boolean {
 /**
  * Get the appropriate tslog minLevel based on CLI flags.
  * verbose=0 (all), default=4 (warn+), quiet=6 (fatal only).
+ * Errors if both --verbose and --quiet are passed.
  */
 export function getLogLevel(): number {
+  if (isVerbose() && isQuiet()) {
+    process.stderr.write('Cannot use --verbose and --quiet together.\n')
+    process.exit(1)
+  }
   if (isVerbose()) return 0
   if (isQuiet()) return 6
   return 4

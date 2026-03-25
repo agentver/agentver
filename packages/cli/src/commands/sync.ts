@@ -3,11 +3,11 @@ import { hostname } from 'node:os'
 import type { SyncResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { extractError } from '../constants.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractError } from '../utils.js'
 
 const SYNC_TIMEOUT_MS = 30_000
 

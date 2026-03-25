@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { detectGlobalAgents, detectInstalledAgents } from '@agentver/agent-definitions'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { isJSONMode } from '../output.js'
+import { isJSONMode, outputError, outputSuccess } from '../output.js'
 
 type AgentsOptions = {
   global?: boolean
@@ -11,29 +11,36 @@ type AgentsOptions = {
 export function registerAgentsCommand(program: Command): void {
   program
     .command('agents')
-    .description('List detected AI agents in the current project')
+    .description('List detected AI agents')
     .option('--global', 'Show globally detected agents instead of project agents')
     .action(async (options: AgentsOptions) => {
       const jsonMode = isJSONMode()
+      const scope = options.global ? 'global' : 'project'
 
-      const agents = options.global
-        ? detectGlobalAgents(homedir())
-        : detectInstalledAgents(process.cwd())
+      let agents: ReturnType<typeof detectInstalledAgents>
+      try {
+        agents = options.global
+          ? detectGlobalAgents(homedir())
+          : detectInstalledAgents(process.cwd())
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (jsonMode) {
+          outputError('DETECT_FAILED', message)
+          process.exit(1)
+        }
+        process.stderr.write(chalk.red(`Failed to detect agents: ${message}\n`))
+        process.exit(1)
+      }
 
       if (jsonMode) {
-        process.stdout.write(
-          `${JSON.stringify({
-            success: true,
-            data: {
-              agents: agents.map((a) => ({
-                id: a.id,
-                name: a.name,
-                configPath: a.configPath,
-              })),
-              scope: options.global ? 'global' : 'project',
-            },
-          })}\n`
-        )
+        outputSuccess({
+          agents: agents.map((a) => ({
+            id: a.id,
+            name: a.name,
+            configPath: a.configPath,
+          })),
+          scope,
+        })
         return
       }
 

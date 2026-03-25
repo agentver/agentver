@@ -2,12 +2,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
-import { createLogger, lockfileAnySchema } from '@agentver/shared'
-import { getLogLevel } from '../output.js'
+import { lockfileAnySchema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
+import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
 
-const logger = createLogger('lockfile', getLogLevel())
+const logger = createCliLogger('lockfile')
 
 const LOCKFILE_DIR = '.agentver'
 const LOCKFILE_FILE = 'lockfile.json'

@@ -10,12 +10,11 @@ import {
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
-import { createLogger } from '@agentver/shared'
 import chalk from 'chalk'
-import { getLogLevel } from '../output.js'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
+import { createCliLogger } from '../utils.js'
 
-const logger = createLogger('canonical', getLogLevel())
+const logger = createCliLogger('canonical')
 
 const CANONICAL_DIR = '.agents/skills'
 

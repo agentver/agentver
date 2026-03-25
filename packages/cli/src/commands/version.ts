@@ -3,10 +3,10 @@ import { basename, join } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import ora from 'ora'
-import { extractError, SEMVER_REGEX } from '../constants.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractError, SEMVER_REGEX } from '../utils.js'
 
 type VersionInfo = {
   name: string

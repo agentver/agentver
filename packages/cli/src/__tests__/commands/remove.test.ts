@@ -665,7 +665,46 @@ describe('commands/remove', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 12. Smart UX — case mismatch and wrong scope hints
+  // 12. Confirmation prompts
+  // -------------------------------------------------------------------------
+
+  describe('confirmation prompts', () => {
+    it('does not remove when user cancels confirmation', async () => {
+      setupInstalledPackage('my-skill')
+      const prompts = await import('prompts')
+      vi.mocked(prompts.default).mockResolvedValueOnce({ confirmed: false })
+
+      await removeAction('my-skill', {})
+
+      expect(canonicalModule.removeAgentSymlinks).not.toHaveBeenCalled()
+      expect(canonicalModule.removeCanonicalDirectory).not.toHaveBeenCalled()
+      expect(manifestModule.writeManifest).not.toHaveBeenCalled()
+    })
+
+    it('outputs CONFIRMATION_REQUIRED error in JSON mode without --yes', async () => {
+      setupInstalledPackage('my-skill')
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await expect(removeAction('my-skill', {})).rejects.toThrow(ExitError)
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'CONFIRMATION_REQUIRED',
+        expect.stringContaining('--yes')
+      )
+    })
+
+    it('proceeds without prompt when --yes is passed', async () => {
+      setupInstalledPackage('my-skill')
+
+      await removeAction('my-skill', { yes: true })
+
+      expect(canonicalModule.removeAgentSymlinks).toHaveBeenCalled()
+      expect(manifestModule.writeManifest).toHaveBeenCalled()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 13. Smart UX — case mismatch and wrong scope hints
   // -------------------------------------------------------------------------
 
   describe('smart hints', () => {

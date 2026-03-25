@@ -20,7 +20,6 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import type ora from 'ora'
 import prompts from 'prompts'
-import { extractError } from '../constants.js'
 import { fetchFiles, parseGitSource, resolveRef } from '../git/index.js'
 import type { FetchedFile, ResolvedRef } from '../git/types.js'
 import {
@@ -39,6 +38,7 @@ import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical
 import { computeSha256FromFiles } from '../storage/integrity'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
+import { extractError } from '../utils.js'
 import {
   fetchWellKnownIndex,
   fetchWellKnownSkill,

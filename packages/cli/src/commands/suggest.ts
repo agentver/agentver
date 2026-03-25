@@ -4,7 +4,6 @@ import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions
 import type { ManifestV2Package, ProposeResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { extractError } from '../constants.js'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
@@ -12,6 +11,7 @@ import { getPlatformUrl } from '../registry/config.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractError } from '../utils.js'
 
 const HTTP_TIMEOUT_MS = 15_000
 

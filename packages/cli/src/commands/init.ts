@@ -322,7 +322,7 @@ Types:
         } else if (options.name) {
           const nameCheck = validateSkillName(options.name)
           if (!nameCheck.valid) {
-            console.error(chalk.red(nameCheck.error ?? 'Invalid name'))
+            process.stderr.write(chalk.red(`${nameCheck.error ?? 'Invalid name'}\n`))
             process.exit(1)
           }
           packageName = options.name

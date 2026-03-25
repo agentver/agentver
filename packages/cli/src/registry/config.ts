@@ -1,12 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { createLogger } from '@agentver/shared'
-import { getLogLevel } from '../output.js'
 import type { ScanSeverity } from '../security/types.js'
+import { createCliLogger } from '../utils.js'
 import { getCredentials } from './auth.js'
 
-const logger = createLogger('config', getLogLevel())
+const logger = createCliLogger('config')
 
 export const DEFAULT_PLATFORM_URL = 'https://app.agentver.com'
 

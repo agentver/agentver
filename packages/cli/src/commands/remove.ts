@@ -150,7 +150,7 @@ export function registerRemoveCommand(program: Command): void {
           })
 
           if (!confirmed) {
-            console.log(chalk.dim('Cancelled.'))
+            process.stdout.write(chalk.dim('Cancelled.\n'))
             return
           }
         }

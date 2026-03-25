@@ -2,12 +2,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ManifestV2 } from '@agentver/shared'
-import { createLogger, manifestAnySchema } from '@agentver/shared'
-import { getLogLevel } from '../output.js'
+import { manifestAnySchema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
+import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
 
-const logger = createLogger('manifest', getLogLevel())
+const logger = createCliLogger('manifest')
 
 const MANIFEST_DIR = '.agentver'
 const MANIFEST_FILE = 'manifest.json'

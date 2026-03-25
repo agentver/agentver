@@ -4,11 +4,11 @@ import { type AgentverSkill, parseSkillFrontmatter } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import ora from 'ora'
-import { extractError, SEMVER_REGEX } from '../constants.js'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import type { GitSource } from '../git/types.js'
 import { platformFetch } from '../registry/platform.js'
 import { scanFiles } from '../security/index.js'
+import { extractError, SEMVER_REGEX } from '../utils.js'
 
 type PublishOptions = {
   version?: string

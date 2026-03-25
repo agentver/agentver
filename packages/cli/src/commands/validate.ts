@@ -1,13 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { isAgentSkillsSpecCompliant, validateSkillMd } from '@agentver/shared'
+import { validateSkillMd } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { isJSONMode } from '../output.js'
-
-type ValidateOptions = {
-  json?: boolean
-}
+import { isJSONMode, outputError, outputSuccess } from '../output.js'
 
 export function registerValidateCommand(program: Command): void {
   program
@@ -19,7 +15,7 @@ export function registerValidateCommand(program: Command): void {
 Validates frontmatter, required fields, and spec compliance.
 Defaults to SKILL.md in the current directory.`
     )
-    .action(async (pathArg: string | undefined, _options: ValidateOptions) => {
+    .action(async (pathArg: string | undefined) => {
       const jsonMode = isJSONMode()
       const targetPath = pathArg ? resolve(process.cwd(), pathArg) : join(process.cwd(), 'SKILL.md')
 
@@ -27,9 +23,7 @@ Defaults to SKILL.md in the current directory.`
 
       if (!existsSync(skillMdPath)) {
         if (jsonMode) {
-          process.stdout.write(
-            `${JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: `No SKILL.md found at ${skillMdPath}` } })}\n`
-          )
+          outputError('NOT_FOUND', `No SKILL.md found at ${skillMdPath}`)
           process.exit(1)
         }
         process.stderr.write(chalk.red(`No SKILL.md found at ${skillMdPath}\n`))
@@ -38,22 +32,16 @@ Defaults to SKILL.md in the current directory.`
 
       const content = readFileSync(skillMdPath, 'utf-8')
       const result = validateSkillMd(content)
-      const specCompliant = isAgentSkillsSpecCompliant(content)
 
       if (jsonMode) {
-        process.stdout.write(
-          `${JSON.stringify({
-            success: true,
-            data: {
-              path: skillMdPath,
-              valid: result.valid,
-              specCompliant,
-              errors: result.errors,
-              warnings: result.warnings,
-              agentverExtensions: result.agentverExtensions,
-            },
-          })}\n`
-        )
+        outputSuccess({
+          path: skillMdPath,
+          valid: result.valid,
+          specCompliant: result.specCompliant,
+          errors: result.errors,
+          warnings: result.warnings,
+          agentverExtensions: result.agentverExtensions,
+        })
         if (!result.valid) process.exit(1)
         return
       }
@@ -61,7 +49,7 @@ Defaults to SKILL.md in the current directory.`
       if (result.valid) {
         process.stdout.write(chalk.green('✓ SKILL.md is valid\n'))
 
-        if (specCompliant) {
+        if (result.specCompliant) {
           process.stdout.write(chalk.dim('  agentskills.io spec compliant\n'))
         } else {
           process.stdout.write(
