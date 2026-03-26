@@ -47,7 +47,7 @@ const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-
 function assertPathWithin(filePath: string, baseDir: string): void {
   const resolved = resolve(filePath)
   const resolvedBase = resolve(baseDir)
-  if (!resolved.startsWith(resolvedBase + '/') && resolved !== resolvedBase) {
+  if (!resolved.startsWith(`${resolvedBase}/`) && resolved !== resolvedBase) {
     throw new AgentverError(
       'VALIDATION_ERROR',
       `Path traversal detected: "${filePath}" escapes base directory`
@@ -166,7 +166,7 @@ export function registerInstallTool(server: McpServer): void {
       const installedTo: string[] = []
 
       // Determine entry file name from package type (default to SKILL)
-      const entryFile = PACKAGE_STRUCTURES['SKILL']?.entryFile ?? 'SKILL.md'
+      const entryFile = PACKAGE_STRUCTURES.SKILL?.entryFile ?? 'SKILL.md'
 
       for (const agentId of detectedAgents) {
         const placementPath = getSkillPlacementPath(
@@ -179,7 +179,8 @@ export function registerInstallTool(server: McpServer): void {
         const fullPath = isGlobal ? expandTilde(placementPath) : join(projectRoot, placementPath)
 
         // Validate path stays within expected boundaries
-        const baseDir = isGlobal ? join(homedir(), '.agentver') : projectRoot
+        // Global paths resolve to agent-specific dirs under home (e.g. ~/.claude/skills/)
+        const baseDir = isGlobal ? homedir() : projectRoot
         assertPathWithin(fullPath, baseDir)
 
         if (!existsSync(fullPath)) {
@@ -210,7 +211,7 @@ export function registerInstallTool(server: McpServer): void {
       lockfile.packages[packageName] = {
         version: data.version,
         resolved: downloadUrl,
-        integrity: data.sha256 ? `sha256-${data.sha256}` : '',
+        integrity: `sha256-${data.sha256 ?? 'unverified'}`,
         agents: installedTo,
       }
       writeLockfile(root, lockfile)

@@ -1,6 +1,6 @@
 import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import { AgentverError } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -11,6 +11,18 @@ import { readLockfile, readManifest, writeLockfile, writeManifest } from '../sto
 /** Expand a leading ~ to the user's home directory */
 function expandTilde(path: string): string {
   return path.replace(/^~/, homedir())
+}
+
+/** Validate that a resolved path stays within the expected base directory */
+function assertPathWithin(filePath: string, baseDir: string): void {
+  const resolved = resolve(filePath)
+  const resolvedBase = resolve(baseDir)
+  if (!resolved.startsWith(`${resolvedBase}/`) && resolved !== resolvedBase) {
+    throw new AgentverError(
+      'VALIDATION_ERROR',
+      `Path traversal detected: "${filePath}" escapes base directory`
+    )
+  }
 }
 
 export function registerRemoveTool(server: McpServer): void {
@@ -43,12 +55,16 @@ export function registerRemoveTool(server: McpServer): void {
       const shortName = packageName.split('/').pop()!
       const removedFrom: string[] = []
       const scope = isGlobal ? 'global' : 'project'
+      const baseDir = isGlobal ? homedir() : getWorkingDirectory()
 
       for (const agentId of pkg.agents) {
         const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
         if (!placementPath) continue
 
         const fullPath = isGlobal ? expandTilde(placementPath) : join(root, placementPath)
+
+        // Validate path stays within expected boundaries before deletion
+        assertPathWithin(fullPath, baseDir)
 
         if (existsSync(fullPath)) {
           rmSync(fullPath, { recursive: true, force: true })
