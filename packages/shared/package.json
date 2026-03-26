@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@agentver/typescript-config": "workspace:*",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "engines": {
     "node": ">=20"
