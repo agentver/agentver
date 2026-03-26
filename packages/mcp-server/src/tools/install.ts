@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
   type AgentId,
@@ -9,7 +10,7 @@ import { AgentverError } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
-import { isAuthenticated, registryFetch } from '../shared/registry'
+import { getRegistryUrl, isAuthenticated, registryFetch } from '../shared/registry'
 import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
 
 type DownloadResponse = {
@@ -32,15 +33,21 @@ type VersionListResponse = {
   }>
 }
 
-function splitPackageName(name: string): { org: string; pkg: string } {
-  const parts = name.split('/')
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+
+function assertPathWithin(filePath: string, baseDir: string): void {
+  const resolved = resolve(filePath)
+  const resolvedBase = resolve(baseDir)
+  if (!resolved.startsWith(`${resolvedBase}/`) && resolved !== resolvedBase) {
     throw new AgentverError(
       'VALIDATION_ERROR',
-      `Invalid package name "${name}": expected "org/name" format`
+      `Path traversal detected: "${filePath}" escapes base directory`
     )
   }
-  return { org: parts[0], pkg: parts[1] }
+}
+
+function expandTilde(path: string): string {
+  return path.replace(/^~/, homedir())
 }
 
 function extractFilesFromManifest(
@@ -113,13 +120,20 @@ export function registerInstallTool(server: McpServer): void {
         )
       }
 
-      const { org, pkg } = splitPackageName(packageName)
+      if (!SAFE_PACKAGE_NAME.test(packageName)) {
+        throw new AgentverError(
+          'VALIDATION_ERROR',
+          `Invalid package name "${packageName}". Must be in org/name format using alphanumeric characters, hyphens, dots, or underscores.`
+        )
+      }
+
+      const [org, name] = packageName.split('/') as [string, string]
       const projectRoot = getWorkingDirectory()
 
-      const resolvedVersion = version ?? (await resolveLatestVersion(org, pkg))
+      const resolvedVersion = version ?? (await resolveLatestVersion(org, name))
 
       const data = await registryFetch<DownloadResponse>(
-        `/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(resolvedVersion)}/download`
+        `/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/${encodeURIComponent(resolvedVersion)}/download`
       )
 
       const files = extractFilesFromManifest(data.fileManifest)
@@ -148,7 +162,7 @@ export function registerInstallTool(server: McpServer): void {
         }
       }
 
-      const shortName = packageName.split('/').pop()!
+      const shortName = name
       const installedTo: string[] = []
 
       for (const agentId of detectedAgents) {
@@ -159,9 +173,10 @@ export function registerInstallTool(server: McpServer): void {
         )
         if (!placementPath) continue
 
-        const fullPath = isGlobal
-          ? placementPath.replace('~', process.env.HOME ?? '')
-          : join(projectRoot, placementPath)
+        const fullPath = isGlobal ? expandTilde(placementPath) : join(projectRoot, placementPath)
+
+        const baseDir = isGlobal ? homedir() : projectRoot
+        assertPathWithin(fullPath, baseDir)
 
         if (!existsSync(fullPath)) {
           mkdirSync(fullPath, { recursive: true })
@@ -186,24 +201,26 @@ export function registerInstallTool(server: McpServer): void {
       }
 
       // Update manifest
-      const manifest = readManifest(projectRoot)
+      const root = isGlobal ? join(homedir(), '.agentver') : projectRoot
+      const manifest = readManifest(root)
       manifest.packages[packageName] = {
         name: packageName,
         version: data.version,
         agents: installedTo,
         installedAt: new Date().toISOString(),
       }
-      writeManifest(projectRoot, manifest)
+      writeManifest(root, manifest)
 
       // Update lockfile
-      const lockfile = readLockfile(projectRoot)
+      const downloadUrl = `${getRegistryUrl()}/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/${encodeURIComponent(data.version)}/download`
+      const lockfile = readLockfile(root)
       lockfile.packages[packageName] = {
         version: data.version,
-        resolved: `/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(data.version)}/download`,
-        integrity: '',
+        resolved: downloadUrl,
+        integrity: `sha256-${data.sha256 ?? 'unverified'}`,
         agents: installedTo,
       }
-      writeLockfile(projectRoot, lockfile)
+      writeLockfile(root, lockfile)
 
       const summary = [
         `Installed ${packageName}@${data.version}`,

@@ -8,8 +8,10 @@ import { registerRemoveTool } from './tools/remove'
 import { registerSearchTool } from './tools/search'
 import { registerUpdateTool } from './tools/update'
 
+declare const __PKG_VERSION__: string
+
 const SERVER_NAME = 'agentver'
-const SERVER_VERSION = '0.1.0'
+const SERVER_VERSION = __PKG_VERSION__
 
 async function main(): Promise<void> {
   logDebug(`Starting ${SERVER_NAME} MCP server v${SERVER_VERSION}`)

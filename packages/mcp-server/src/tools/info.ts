@@ -2,22 +2,28 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { registryFetch } from '../shared/registry'
 
-type SkillInfoResponse = {
-  slug: string
+/** Matches the GET /skills/{org}/{name} response from the platform API */
+type PackageInfoResponse = {
+  id: string
   name: string
-  description: string
+  slug: string
+  description: string | null
   type: string
   visibility: string
-  latestVersion: string
+  tags: string[]
+  readme: string | null
+  organisation: { slug: string; name: string }
+  author: { name: string | null; image: string | null } | null
   versions: Array<{
     version: string
+    changelog: string | null
     createdAt: string
+    sha256: string | null
   }>
-  agents: string[]
-  downloads: number
-  author: string
-  tags: string[]
+  _count: { installationReports: number; forks: number }
 }
+
+const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
 export function registerInfoTool(server: McpServer): void {
   server.registerTool(
@@ -26,7 +32,7 @@ export function registerInfoTool(server: McpServer): void {
       title: 'Agentver Info',
       description:
         'Get detailed information about a specific package from the Agentver registry. ' +
-        'Returns description, all versions, compatible agents, tags, download count, and install command.',
+        'Returns description, all versions, tags, download count, and install command.',
       inputSchema: z.object({
         package: z
           .string()
@@ -34,25 +40,44 @@ export function registerInfoTool(server: McpServer): void {
       }),
     },
     async ({ package: packageName }) => {
-      const data = await registryFetch<SkillInfoResponse>(`/skills/${packageName}`)
+      if (!SAFE_PACKAGE_NAME.test(packageName)) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Invalid package name "${packageName}". Must be in org/name format.`,
+            },
+          ],
+        }
+      }
+
+      const [org, name] = packageName.split('/') as [string, string]
+      const encodedOrg = encodeURIComponent(org)
+      const encodedName = encodeURIComponent(name)
+
+      const data = await registryFetch<PackageInfoResponse>(`/skills/${encodedOrg}/${encodedName}`)
+
+      const latestVersion = data.versions[0]?.version ?? 'none'
+      const authorName = data.author?.name ?? data.organisation.name
+      const downloads = data._count.installationReports
 
       const versionList = data.versions.map((v) => `  ${v.version} (${v.createdAt})`).join('\n')
 
       const lines = [
-        `${data.slug} — ${data.description}`,
+        `${data.organisation.slug}/${data.name} — ${data.description ?? 'No description'}`,
         '',
         `Type: ${data.type}`,
-        `Latest: ${data.latestVersion}`,
-        `Author: ${data.author}`,
-        `Downloads: ${data.downloads}`,
+        `Latest: ${latestVersion}`,
+        `Author: ${authorName}`,
+        `Downloads: ${downloads}`,
+        `Forks: ${data._count.forks}`,
         `Visibility: ${data.visibility}`,
         `Tags: ${data.tags.length > 0 ? data.tags.join(', ') : 'none'}`,
-        `Compatible agents: ${data.agents.length > 0 ? data.agents.join(', ') : 'all'}`,
         '',
         'Versions:',
-        versionList,
+        versionList || '  (none)',
         '',
-        `Install: agentver install ${data.slug}`,
+        `Install: agentver install ${data.organisation.slug}/${data.name}`,
       ]
 
       return {
