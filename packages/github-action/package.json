@@ -13,7 +13,7 @@
   "bugs": {
     "url": "https://github.com/agentver/agentver/issues"
   },
-  "type": "module",
+  "type": "commonjs",
   "engines": {
     "node": ">=20"
   },

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
   type AgentId,
   detectInstalledAgents,
@@ -12,11 +12,66 @@ import { getWorkingDirectory } from '../shared/context'
 import { isAuthenticated, registryFetch } from '../shared/registry'
 import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
 
-type VersionResponse = {
+type DownloadResponse = {
   version: string
-  downloadUrl: string
-  sha256: string
-  fileManifest: Array<{ path: string; content: string }>
+  content: string | null
+  fileManifest: Record<string, unknown>
+  sha256: string | null
+  size: number | null
+  gitRef: string | null
+  gitCommitSha: string | null
+  gitUri: string | null
+  gitPath: string | null
+  createdAt: string
+}
+
+type VersionListResponse = {
+  versions: Array<{
+    version: string
+    status: string
+  }>
+}
+
+function splitPackageName(name: string): { org: string; pkg: string } {
+  const parts = name.split('/')
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new AgentverError(
+      'VALIDATION_ERROR',
+      `Invalid package name "${name}": expected "org/name" format`
+    )
+  }
+  return { org: parts[0], pkg: parts[1] }
+}
+
+function extractFilesFromManifest(
+  fileManifest: Record<string, unknown>
+): Array<{ path: string; content: string }> {
+  if (Array.isArray(fileManifest)) {
+    return fileManifest.filter(
+      (entry): entry is { path: string; content: string } =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof entry.path === 'string' &&
+        typeof entry.content === 'string'
+    )
+  }
+
+  return Object.entries(fileManifest)
+    .filter(([, value]) => typeof value === 'string')
+    .map(([path, content]) => ({ path, content: content as string }))
+}
+
+async function resolveLatestVersion(org: string, name: string): Promise<string> {
+  const data = await registryFetch<VersionListResponse>(
+    `/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/versions`
+  )
+
+  const available = data.versions.filter((v) => v.status !== 'YANKED')
+  if (available.length === 0) {
+    throw new AgentverError('NOT_FOUND', `No published versions found for ${org}/${name}`)
+  }
+
+  return available[0]!.version
 }
 
 export function registerInstallTool(server: McpServer): void {
@@ -58,12 +113,27 @@ export function registerInstallTool(server: McpServer): void {
         )
       }
 
-      const versionSpec = version ?? 'latest'
+      const { org, pkg } = splitPackageName(packageName)
       const projectRoot = getWorkingDirectory()
 
-      const data = await registryFetch<VersionResponse>(
-        `/skills/${packageName}/versions?version=${versionSpec}`
+      const resolvedVersion = version ?? (await resolveLatestVersion(org, pkg))
+
+      const data = await registryFetch<DownloadResponse>(
+        `/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(resolvedVersion)}/download`
       )
+
+      const files = extractFilesFromManifest(data.fileManifest)
+
+      if (files.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Package ${packageName}@${data.version} has no files in its file manifest.`,
+            },
+          ],
+        }
+      }
 
       const detectedAgents = targetAgents ?? detectInstalledAgents(projectRoot).map((a) => a.id)
 
@@ -71,7 +141,7 @@ export function registerInstallTool(server: McpServer): void {
         return {
           content: [
             {
-              type: 'text',
+              type: 'text' as const,
               text: 'No AI agents detected in this project. Specify target agents explicitly or ensure agent config directories exist.',
             },
           ],
@@ -97,9 +167,15 @@ export function registerInstallTool(server: McpServer): void {
           mkdirSync(fullPath, { recursive: true })
         }
 
-        for (const file of data.fileManifest) {
-          const filePath = join(fullPath, file.path)
-          const dir = join(fullPath, file.path, '..')
+        const resolvedBase = resolve(fullPath)
+
+        for (const file of files) {
+          if (file.path.includes('..')) continue
+
+          const filePath = resolve(fullPath, file.path)
+          if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) continue
+
+          const dir = dirname(filePath)
           if (!existsSync(dir)) {
             mkdirSync(dir, { recursive: true })
           }
@@ -123,8 +199,8 @@ export function registerInstallTool(server: McpServer): void {
       const lockfile = readLockfile(projectRoot)
       lockfile.packages[packageName] = {
         version: data.version,
-        resolved: data.downloadUrl,
-        integrity: `sha256-${data.sha256}`,
+        resolved: `/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(data.version)}/download`,
+        integrity: '',
         agents: installedTo,
       }
       writeLockfile(projectRoot, lockfile)
@@ -132,12 +208,12 @@ export function registerInstallTool(server: McpServer): void {
       const summary = [
         `Installed ${packageName}@${data.version}`,
         `Target agents: ${installedTo.join(', ')}`,
-        `Files: ${data.fileManifest.length} file(s) placed`,
+        `Files: ${files.length} file(s) placed`,
         `Scope: ${isGlobal ? 'global' : 'project'}`,
       ]
 
       return {
-        content: [{ type: 'text', text: summary.join('\n') }],
+        content: [{ type: 'text' as const, text: summary.join('\n') }],
       }
     }
   )

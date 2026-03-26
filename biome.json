@@ -78,7 +78,8 @@
       "**/*.jsx",
       "**/*.json",
       "**/*.md",
-      "!**/next-env.d.ts"
+      "!**/next-env.d.ts",
+      "!packages/github-action/dist"
     ]
   }
 }

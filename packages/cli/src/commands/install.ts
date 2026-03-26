@@ -184,51 +184,37 @@ async function installFromWellKnown(
       const found = index.skills.find((s) => s.name === skillName)
       if (!found) {
         const available = index.skills.map((s) => s.name).join(', ')
-        if (jsonMode) {
-          outputError(
-            'NOT_FOUND',
-            `Skill "${skillName}" not found at ${hostname}. Available: ${available}`
-          )
-          process.exit(1)
-        }
-        spinner.fail(`Skill "${skillName}" not found at ${hostname}. Available: ${available}`)
-        process.exit(1)
+        const msg = `Skill "${skillName}" not found at ${hostname}. Available: ${available}`
+        if (!jsonMode) spinner.fail(msg)
+        throw new AgentverError('NOT_FOUND', msg)
       }
       selectedEntry = found
     } else if (index.skills.length > 1) {
-      if (jsonMode) {
-        outputError(
-          'AMBIGUOUS_SKILL',
-          `Multiple skills available at ${hostname}: ${index.skills.map((s) => s.name).join(', ')}. Specify a skill name.`
-        )
-        process.exit(1)
-      }
-      spinner.stop()
-      process.stdout.write(chalk.bold(`\nMultiple skills available at ${hostname}:\n\n`))
-      for (const skill of index.skills) {
+      if (!jsonMode) {
+        spinner.stop()
+        process.stdout.write(chalk.bold(`\nMultiple skills available at ${hostname}:\n\n`))
+        for (const skill of index.skills) {
+          process.stdout.write(
+            `  ${chalk.green(skill.name)} ${chalk.dim(`— ${skill.description}`)}\n`
+          )
+        }
         process.stdout.write(
-          `  ${chalk.green(skill.name)} ${chalk.dim(`— ${skill.description}`)}\n`
+          `\n${chalk.dim('Specify a skill:')} ${chalk.white(`agentver install ${hostname}/<skill-name>`)}\n`
         )
       }
-      process.stdout.write(
-        `\n${chalk.dim('Specify a skill:')} ${chalk.white(`agentver install ${hostname}/<skill-name>`)}\n`
+      throw new AgentverError(
+        'AMBIGUOUS_SKILL',
+        `Multiple skills available at ${hostname}: ${index.skills.map((s) => s.name).join(', ')}. Specify a skill name.`
       )
-      process.exit(1)
     }
 
     spinner.text = `Fetching files for ${selectedEntry.name} from ${hostname}...`
     const fetchResult = await fetchWellKnownSkill(baseUrl, selectedEntry)
 
     if (fetchResult.files.length === 0) {
-      if (jsonMode) {
-        outputError(
-          'NO_FILES',
-          `No files fetched for skill "${selectedEntry.name}" from ${hostname}`
-        )
-        process.exit(1)
-      }
-      spinner.fail(`No files fetched for skill "${selectedEntry.name}" from ${hostname}`)
-      process.exit(1)
+      const msg = `No files fetched for skill "${selectedEntry.name}" from ${hostname}`
+      if (!jsonMode) spinner.fail(msg)
+      throw new AgentverError('NO_FILES', msg)
     }
 
     const integrity = computeSha256FromFiles(fetchResult.files)
@@ -242,15 +228,9 @@ async function installFromWellKnown(
       agents = options.agent ? [options.agent] : []
     } else {
       if (options.detect === false && !options.agent) {
-        if (jsonMode) {
-          outputError(
-            'VALIDATION_ERROR',
-            'Use --agent to specify a target agent when --no-detect is enabled'
-          )
-          process.exit(1)
-        }
-        spinner.fail('Use --agent to specify a target agent when --no-detect is enabled')
-        process.exit(1)
+        const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
+        if (!jsonMode) spinner.fail(msg)
+        throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
       agents = options.agent
@@ -357,13 +337,10 @@ async function installFromWellKnown(
 
     return { name: selectedEntry.name, ref: 'well-known', commitSha: '', agents }
   } catch (error) {
+    if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
-    if (jsonMode) {
-      outputError(code, message)
-      process.exit(1)
-    }
-    spinner.fail(`Failed to install: ${message}`)
-    process.exit(1)
+    if (!jsonMode) spinner.fail(`Failed to install: ${message}`)
+    throw new AgentverError(code, message)
   }
 }
 
@@ -422,12 +399,9 @@ async function installFromPlatform(
     }))
 
     if (files.length === 0) {
-      if (jsonMode) {
-        outputError('NO_FILES', `No files found for ${displayName}`)
-        process.exit(1)
-      }
-      spinner.fail(`No files found for ${displayName}`)
-      process.exit(1)
+      const msg = `No files found for ${displayName}`
+      if (!jsonMode) spinner.fail(msg)
+      throw new AgentverError('NO_FILES', msg)
     }
 
     const shortName = deriveSkillName({
@@ -452,15 +426,11 @@ async function installFromPlatform(
       })
 
       if (securityScanResult.verdict === 'BLOCK') {
-        if (jsonMode) {
-          outputError(
-            'SECURITY_BLOCK',
-            `Security scan blocked installation: ${securityScanResult.findings.length} finding(s)`
-          )
-          process.exit(1)
-        }
-        renderScanResult(securityScanResult, spinner as ReturnType<typeof ora>)
-        process.exit(1)
+        if (!jsonMode) renderScanResult(securityScanResult, spinner as ReturnType<typeof ora>)
+        throw new AgentverError(
+          'SECURITY_BLOCK',
+          `Security scan blocked installation: ${securityScanResult.findings.length} finding(s)`
+        )
       }
 
       if (securityScanResult.verdict === 'WARN') {
@@ -477,7 +447,7 @@ async function installFromPlatform(
 
           if (!proceed) {
             console.log(chalk.dim('Installation cancelled.'))
-            process.exit(0)
+            throw new AgentverError('CANCELLED', 'Installation cancelled by user')
           }
 
           spinner.start('Continuing installation...')
@@ -501,15 +471,9 @@ async function installFromPlatform(
       agents = options.agent ? [options.agent] : []
     } else {
       if (options.detect === false && !options.agent) {
-        if (jsonMode) {
-          outputError(
-            'VALIDATION_ERROR',
-            'Use --agent to specify a target agent when --no-detect is enabled'
-          )
-          process.exit(1)
-        }
-        spinner.fail('Use --agent to specify a target agent when --no-detect is enabled')
-        process.exit(1)
+        const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
+        if (!jsonMode) spinner.fail(msg)
+        throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
       agents = options.agent
@@ -619,13 +583,10 @@ async function installFromPlatform(
 
     return { name: shortName, ref, commitSha: '', agents }
   } catch (error) {
+    if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
-    if (jsonMode) {
-      outputError(code, message)
-      process.exit(1)
-    }
-    spinner.fail(`Failed to install: ${message}`)
-    process.exit(1)
+    if (!jsonMode) spinner.fail(`Failed to install: ${message}`)
+    throw new AgentverError(code, message)
   }
 }
 
@@ -650,13 +611,11 @@ export async function installPackage(
 
     if (!config.platformUrl) {
       const message = `"${source}" doesn't look like a Git URL. Connect to a platform to resolve short names:\n  agentver login`
-      if (jsonMode) {
-        outputError('VALIDATION_ERROR', message)
-      } else {
+      if (!jsonMode) {
         const spinner = createSpinner('Resolving').start()
         spinner.fail(message)
       }
-      process.exit(1)
+      throw new AgentverError('VALIDATION_ERROR', message)
     }
 
     const [namePart, ref] = source.split('@')
@@ -664,13 +623,11 @@ export async function installPackage(
 
     if (segments.length < 2) {
       const message = `Invalid package name "${source}" — expected format: org/package-name`
-      if (jsonMode) {
-        outputError('VALIDATION_ERROR', message)
-      } else {
+      if (!jsonMode) {
         const spinner = createSpinner('Resolving').start()
         spinner.fail(message)
       }
-      process.exit(1)
+      throw new AgentverError('VALIDATION_ERROR', message)
     }
 
     return installFromPlatform(
@@ -707,12 +664,9 @@ export async function installPackage(
     }
 
     if (result.files.length === 0) {
-      if (jsonMode) {
-        outputError('NO_FILES', `No files found at ${formatSource(gitSource)}`)
-        process.exit(1)
-      }
-      spinner.fail(`No files found at ${formatSource(gitSource)}`)
-      process.exit(1)
+      const msg = `No files found at ${formatSource(gitSource)}`
+      if (!jsonMode) spinner.fail(msg)
+      throw new AgentverError('NO_FILES', msg)
     }
 
     let securityScanResult: SecurityScanResult | undefined
@@ -725,15 +679,11 @@ export async function installPackage(
       securityScanResult = scanResult
 
       if (scanResult.verdict === 'BLOCK') {
-        if (jsonMode) {
-          outputError(
-            'SECURITY_BLOCK',
-            `Security scan blocked installation: ${scanResult.findings.length} finding(s)`
-          )
-          process.exit(1)
-        }
-        renderScanResult(scanResult, spinner as ReturnType<typeof ora>)
-        process.exit(1)
+        if (!jsonMode) renderScanResult(scanResult, spinner as ReturnType<typeof ora>)
+        throw new AgentverError(
+          'SECURITY_BLOCK',
+          `Security scan blocked installation: ${scanResult.findings.length} finding(s)`
+        )
       }
 
       if (scanResult.verdict === 'WARN') {
@@ -750,7 +700,7 @@ export async function installPackage(
 
           if (!proceed) {
             console.log(chalk.dim('Installation cancelled.'))
-            process.exit(0)
+            throw new AgentverError('CANCELLED', 'Installation cancelled by user')
           }
 
           spinner.start('Continuing installation...')
@@ -775,15 +725,9 @@ export async function installPackage(
       agents = options.agent ? [options.agent] : []
     } else {
       if (options.detect === false && !options.agent) {
-        if (jsonMode) {
-          outputError(
-            'VALIDATION_ERROR',
-            'Use --agent to specify a target agent when --no-detect is enabled'
-          )
-          process.exit(1)
-        }
-        spinner.fail('Use --agent to specify a target agent when --no-detect is enabled')
-        process.exit(1)
+        const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
+        if (!jsonMode) spinner.fail(msg)
+        throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
       agents = options.agent
@@ -895,13 +839,10 @@ export async function installPackage(
 
     return { name: shortName, ref: gitSource.ref, commitSha: resolved.commitSha, agents }
   } catch (error) {
+    if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
-    if (jsonMode) {
-      outputError(code, message)
-      process.exit(1)
-    }
-    spinner.fail(`Failed to install: ${message}`)
-    process.exit(1)
+    if (!jsonMode) spinner.fail(`Failed to install: ${message}`)
+    throw new AgentverError(code, message)
   }
 }
 
@@ -956,7 +897,7 @@ async function installAgentConfig(
 
   if (!contentFile) {
     spinner.fail('No config content file found in package')
-    process.exit(1)
+    throw new AgentverError('NO_FILES', 'No config content file found in package')
   }
 
   const configContent = contentFile.content
@@ -1111,6 +1052,19 @@ Source formats:
   agentver://org/skills/name@ref     Platform-hosted skill`
     )
     .action(async (source: string, options: InstallOptions) => {
-      await installPackage(source, options)
+      try {
+        await installPackage(source, options)
+      } catch (error) {
+        const jsonMode = isJSONMode()
+        const { code, message } = extractError(error, 'INSTALL_FAILED')
+        if (jsonMode) {
+          outputError(code, message)
+        } else if (code !== 'CANCELLED') {
+          // spinner.fail() is called before throwing in all install paths,
+          // but write to stderr as a safety net for any path that misses it
+          process.stderr.write(`${message}\n`)
+        }
+        process.exit(code === 'CANCELLED' ? 0 : 1)
+      }
     })
 }

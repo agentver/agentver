@@ -10,11 +10,36 @@ import {
 import type { Lockfile, Manifest } from '@agentver/shared'
 import type { InstallResult } from './reporter'
 
-type VersionResponse = {
+const REQUEST_TIMEOUT_MS = 30_000
+
+/**
+ * Response shape from GET /skills/{org}/{name}/{version}/download
+ * Matches the actual API endpoint in apps/dashboard.
+ */
+type DownloadResponse = {
   version: string
-  downloadUrl: string
-  sha256: string
-  fileManifest: Array<{ path: string; content: string }>
+  content: string | null
+  fileManifest: Record<string, unknown>
+  sha256: string | null
+  size: number | null
+  gitRef: string | null
+  gitCommitSha: string | null
+  gitUri: string | null
+  gitPath: string | null
+  createdAt: string
+}
+
+type VersionListResponse = {
+  versions: Array<{
+    version: string
+    changelog: string | null
+    status: string
+    sha256: string | null
+    size: number | null
+    gitRef: string | null
+    gitCommitSha: string | null
+    createdAt: string
+  }>
 }
 
 type InstallerConfig = {
@@ -25,7 +50,7 @@ type InstallerConfig = {
   agents: string[]
 }
 
-export type { InstallerConfig, VersionResponse }
+export type { DownloadResponse, InstallerConfig }
 
 // -- Errors ------------------------------------------------------------------
 
@@ -50,6 +75,13 @@ export class RegistryNetworkError extends Error {
     const message = cause instanceof Error ? cause.message : String(cause)
     super(`Network error fetching ${url}: ${message}`)
     this.name = 'RegistryNetworkError'
+  }
+}
+
+export class RegistryTimeoutError extends Error {
+  constructor(url: string) {
+    super(`Request timed out after ${REQUEST_TIMEOUT_MS}ms: ${url}`)
+    this.name = 'RegistryTimeoutError'
   }
 }
 
@@ -105,6 +137,9 @@ export function writeLockfileFile(lockfilePath: string, lockfile: Lockfile): voi
 async function registryFetch<T>(path: string, registryUrl: string, apiKey: string): Promise<T> {
   const url = `${registryUrl}${path}`
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
   let response: Response
   try {
     response = await fetch(url, {
@@ -113,9 +148,16 @@ async function registryFetch<T>(path: string, registryUrl: string, apiKey: strin
         Accept: 'application/json',
         'X-API-Key': apiKey,
       },
+      signal: controller.signal,
     })
   } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new RegistryTimeoutError(url)
+    }
     throw new RegistryNetworkError(url, error)
+  } finally {
+    clearTimeout(timeoutId)
   }
 
   if (response.status === 401 || response.status === 403) {
@@ -131,18 +173,69 @@ async function registryFetch<T>(path: string, registryUrl: string, apiKey: strin
   return response.json() as Promise<T>
 }
 
-function assertVersionResponse(data: unknown): asserts data is VersionResponse {
+function splitPackageName(name: string): { org: string; pkg: string } {
+  const parts = name.split('/')
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`Invalid package name "${name}": expected "org/name" format`)
+  }
+  return { org: parts[0], pkg: parts[1] }
+}
+
+function assertDownloadResponse(data: unknown): asserts data is DownloadResponse {
   if (
     typeof data !== 'object' ||
     data === null ||
     typeof (data as Record<string, unknown>).version !== 'string' ||
-    typeof (data as Record<string, unknown>).sha256 !== 'string' ||
-    !Array.isArray((data as Record<string, unknown>).fileManifest)
+    typeof (data as Record<string, unknown>).createdAt !== 'string'
   ) {
-    throw new Error(
-      'Invalid response from registry: missing required fields (version, sha256, fileManifest)'
+    throw new Error('Invalid response from registry: missing required fields (version, createdAt)')
+  }
+}
+
+/**
+ * Extract files from the download response's fileManifest.
+ *
+ * The fileManifest is stored as Prisma JSON — it may be:
+ * - A record of { [filename]: content } (flat map)
+ * - An array of { path, content } objects
+ * - An empty object
+ */
+export function extractFilesFromManifest(
+  fileManifest: Record<string, unknown>
+): Array<{ path: string; content: string }> {
+  if (Array.isArray(fileManifest)) {
+    return fileManifest.filter(
+      (entry): entry is { path: string; content: string } =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof entry.path === 'string' &&
+        typeof entry.content === 'string'
     )
   }
+
+  return Object.entries(fileManifest)
+    .filter(([, value]) => typeof value === 'string')
+    .map(([path, content]) => ({ path, content: content as string }))
+}
+
+async function resolveLatestVersion(
+  org: string,
+  name: string,
+  registryUrl: string,
+  apiKey: string
+): Promise<string> {
+  const data = await registryFetch<VersionListResponse>(
+    `/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/versions`,
+    registryUrl,
+    apiKey
+  )
+
+  const available = data.versions.filter((v) => v.status !== 'YANKED')
+  if (available.length === 0) {
+    throw new Error(`No published versions found for ${org}/${name}`)
+  }
+
+  return available[0]!.version
 }
 
 export async function resolvePackage(
@@ -150,31 +243,44 @@ export async function resolvePackage(
   version: string,
   registryUrl: string,
   apiKey: string
-): Promise<VersionResponse> {
+): Promise<DownloadResponse> {
+  const { org, pkg } = splitPackageName(name)
+
+  const resolvedVersion =
+    version === 'latest' ? await resolveLatestVersion(org, pkg, registryUrl, apiKey) : version
+
   const data = await registryFetch<unknown>(
-    `/skills/${encodeURIComponent(name)}/versions?version=${encodeURIComponent(version)}`,
+    `/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(resolvedVersion)}/download`,
     registryUrl,
     apiKey
   )
-  assertVersionResponse(data)
+  assertDownloadResponse(data)
   return data
 }
 
 // -- Integrity ---------------------------------------------------------------
 
+export function computeIntegrity(files: Array<{ path: string; content: string }>): string {
+  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
+  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\0')
+  const hash = createHash('sha256').update(combined).digest('base64')
+  return `sha256-${hash}`
+}
+
 export function verifyIntegrity(
-  fileManifest: Array<{ path: string; content: string }>,
-  expectedHash: string,
+  files: Array<{ path: string; content: string }>,
+  lockfileIntegrity: string | undefined,
   packageName: string
 ): void {
-  const sorted = [...fileManifest].sort((a, b) => a.path.localeCompare(b.path))
-  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\n')
-  const hash = createHash('sha256').update(combined).digest('base64')
-  const actual = `sha256-${hash}`
-  const expected = `sha256-${expectedHash}`
+  if (!lockfileIntegrity) {
+    core.debug(`No lockfile integrity for ${packageName}, skipping verification`)
+    return
+  }
 
-  if (actual !== expected) {
-    throw new IntegrityError(packageName, expected, actual)
+  const actual = computeIntegrity(files)
+
+  if (actual !== lockfileIntegrity) {
+    throw new IntegrityError(packageName, lockfileIntegrity, actual)
   }
 }
 
@@ -192,7 +298,7 @@ export function detectAgents(workingDirectory: string, specifiedAgents: string[]
 // -- File placement ----------------------------------------------------------
 
 export function placeFiles(
-  fileManifest: Array<{ path: string; content: string }>,
+  files: Array<{ path: string; content: string }>,
   packageName: string,
   agents: string[],
   workingDirectory: string
@@ -221,7 +327,7 @@ export function placeFiles(
       mkdirSync(fullPath, { recursive: true })
     }
 
-    for (const file of fileManifest) {
+    for (const file of files) {
       if (file.path.includes('..')) {
         core.warning(`Skipping file with path traversal segment: '${file.path}'`)
         continue
@@ -254,20 +360,27 @@ export function placeFiles(
 export function updateLockfile(
   lockfile: Lockfile,
   results: InstallResult[],
-  resolvedData: Map<string, VersionResponse>
+  resolvedData: Map<
+    string,
+    { response: DownloadResponse; files: Array<{ path: string; content: string }> }
+  >,
+  registryUrl: string
 ): Lockfile {
   const updated: Lockfile = { ...lockfile, packages: { ...lockfile.packages } }
 
   for (const result of results) {
     if (!result.success) continue
 
-    const data = resolvedData.get(result.name)
-    if (!data) continue
+    const entry = resolvedData.get(result.name)
+    if (!entry) continue
+
+    const { org, pkg } = splitPackageName(result.name)
+    const resolved = `${registryUrl}/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(entry.response.version)}/download`
 
     updated.packages[result.name] = {
       version: result.version,
-      resolved: data.downloadUrl,
-      integrity: `sha256-${data.sha256}`,
+      resolved,
+      integrity: computeIntegrity(entry.files),
       agents: result.agents,
     }
   }
@@ -279,12 +392,14 @@ export function updateLockfile(
 
 async function installPackageWithData(
   packageName: string,
-  data: VersionResponse,
-  config: InstallerConfig
+  response: DownloadResponse,
+  files: Array<{ path: string; content: string }>,
+  config: InstallerConfig,
+  lockfileIntegrity: string | undefined
 ): Promise<InstallResult> {
   try {
     if (config.verifyIntegrity) {
-      verifyIntegrity(data.fileManifest, data.sha256, packageName)
+      verifyIntegrity(files, lockfileIntegrity, packageName)
     }
 
     const agents = detectAgents(config.workingDirectory, config.agents)
@@ -292,7 +407,7 @@ async function installPackageWithData(
     if (agents.length === 0) {
       return {
         name: packageName,
-        version: data.version,
+        version: response.version,
         agents: [],
         fileCount: 0,
         success: false,
@@ -300,11 +415,11 @@ async function installPackageWithData(
       }
     }
 
-    const fileCount = placeFiles(data.fileManifest, packageName, agents, config.workingDirectory)
+    const fileCount = placeFiles(files, packageName, agents, config.workingDirectory)
 
     return {
       name: packageName,
-      version: data.version,
+      version: response.version,
       agents,
       fileCount,
       success: true,
@@ -313,7 +428,7 @@ async function installPackageWithData(
     const message = error instanceof Error ? error.message : String(error)
     return {
       name: packageName,
-      version: data.version,
+      version: response.version,
       agents: [],
       fileCount: 0,
       success: false,
@@ -324,27 +439,50 @@ async function installPackageWithData(
 
 export async function installAllPackages(
   manifest: Manifest,
-  config: InstallerConfig
+  config: InstallerConfig,
+  existingLockfile: Lockfile | null
 ): Promise<{
   results: InstallResult[]
-  resolvedData: Map<string, VersionResponse>
+  resolvedData: Map<
+    string,
+    { response: DownloadResponse; files: Array<{ path: string; content: string }> }
+  >
 }> {
   const results: InstallResult[] = []
-  const resolvedData = new Map<string, VersionResponse>()
+  const resolvedData = new Map<
+    string,
+    { response: DownloadResponse; files: Array<{ path: string; content: string }> }
+  >()
   const packageEntries = Object.entries(manifest.packages)
 
   for (const [packageName, packageInfo] of packageEntries) {
     core.info(`Resolving ${packageName}@${packageInfo.version}...`)
 
-    let data: VersionResponse | null = null
+    let response: DownloadResponse
+    let files: Array<{ path: string; content: string }>
     try {
-      data = await resolvePackage(
+      response = await resolvePackage(
         packageName,
         packageInfo.version,
         config.registryUrl,
         config.apiKey
       )
-      resolvedData.set(packageName, data)
+      files = extractFilesFromManifest(response.fileManifest)
+
+      if (files.length === 0) {
+        core.warning(`Package ${packageName}@${response.version} has no files in its manifest`)
+        results.push({
+          name: packageName,
+          version: response.version,
+          agents: [],
+          fileCount: 0,
+          success: false,
+          error: 'Package has no files in its file manifest',
+        })
+        continue
+      }
+
+      resolvedData.set(packageName, { response, files })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       core.warning(`Failed to resolve ${packageName}@${packageInfo.version}: ${message}`)
@@ -359,8 +497,15 @@ export async function installAllPackages(
       continue
     }
 
-    core.info(`Installing ${packageName}@${data.version}...`)
-    const result = await installPackageWithData(packageName, data, config)
+    core.info(`Installing ${packageName}@${response.version}...`)
+    const lockfileIntegrity = existingLockfile?.packages[packageName]?.integrity
+    const result = await installPackageWithData(
+      packageName,
+      response,
+      files,
+      config,
+      lockfileIntegrity
+    )
     results.push(result)
 
     if (result.success) {
