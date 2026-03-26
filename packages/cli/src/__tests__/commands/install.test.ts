@@ -98,7 +98,8 @@ vi.mock('prompts', () => ({ default: vi.fn() }))
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
 
-import { installPackage, parseAgentverUri } from '../../commands/install'
+import { Command } from 'commander'
+import { installPackage, parseAgentverUri, registerInstallCommand } from '../../commands/install'
 
 // ---------------------------------------------------------------------------
 // Mock module imports (typed references)
@@ -1892,9 +1893,56 @@ describe('commands/install', () => {
         json: () => Promise.resolve({}),
       })
 
-      await expect(
-        installPackage('agentver://nonexistent/package@main', { agent: 'claude-code' })
-      ).rejects.toThrow(AgentverError)
+      try {
+        await installPackage('agentver://nonexistent/package@main', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('NOT_FOUND')
+      }
+
+      expect(process.exit).not.toHaveBeenCalled()
+    })
+
+    it('throws with SECURITY_BLOCK when platform-hosted scan returns BLOCK', async () => {
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'gsc',
+        gitRef: 'main',
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: '# Skill content' }],
+      })
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
+
+      try {
+        await installPackage('agentver://lleverage/gsc@main', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('SECURITY_BLOCK')
+      }
+
+      expect(process.exit).not.toHaveBeenCalled()
+    })
+
+    it('throws with CANCELLED when user declines platform-hosted security warning', async () => {
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'gsc',
+        gitRef: 'main',
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: '# Skill content' }],
+      })
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('WARN'))
+      vi.mocked(promptsDefault).mockResolvedValue({ proceed: false })
+
+      try {
+        await installPackage('agentver://lleverage/gsc@main', { agent: 'claude-code' })
+        expect.unreachable('Should have thrown')
+      } catch (error) {
+        expect(error).toBeInstanceOf(AgentverError)
+        expect((error as AgentverError).code).toBe('CANCELLED')
+      }
 
       expect(process.exit).not.toHaveBeenCalled()
     })
@@ -1977,6 +2025,77 @@ describe('commands/install', () => {
       for (const call of vi.mocked(lockfileModule.writeLockfile).mock.calls) {
         expect(call[2]).toBe('global')
       }
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // registerInstallCommand — top-level catch
+  // -------------------------------------------------------------------------
+
+  describe('registerInstallCommand top-level catch', () => {
+    function createProgram(): Command {
+      const program = new Command()
+      program.exitOverride()
+      registerInstallCommand(program)
+      return program
+    }
+
+    it('calls process.exit(1) when installPackage throws an error', async () => {
+      // Set up mocks that cause installPackage to fail (no git source parse)
+      vi.mocked(gitIndex.parseGitSource).mockImplementation(() => {
+        throw new Error('invalid source')
+      })
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue(null)
+      vi.mocked(wellknownModule.looksLikeWellKnownUrl).mockReturnValue(false)
+
+      // process.exit throws ExitError in our test setup, so catch it
+      const program = createProgram()
+      try {
+        await program.parseAsync(['node', 'agentver', 'install', 'bad-source.com/foo'])
+        expect.unreachable('Should have called process.exit')
+      } catch {
+        // ExitError from process.exit mock
+      }
+
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
+    it('calls process.exit(0) when installPackage throws CANCELLED', async () => {
+      setupHappyPathMocks()
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('WARN'))
+      vi.mocked(promptsDefault).mockResolvedValue({ proceed: false })
+
+      const program = createProgram()
+      try {
+        await program.parseAsync(['node', 'agentver', 'install', TEST_SOURCE])
+        expect.unreachable('Should have called process.exit')
+      } catch {
+        // ExitError from process.exit mock
+      }
+
+      expect(process.exit).toHaveBeenCalledWith(0)
+    })
+
+    it('outputs JSON error when in JSON mode and installPackage throws', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(gitIndex.parseGitSource).mockImplementation(() => {
+        throw new AgentverError('VALIDATION_ERROR', 'test error')
+      })
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue(null)
+      vi.mocked(wellknownModule.looksLikeWellKnownUrl).mockReturnValue(false)
+
+      const program = createProgram()
+      try {
+        await program.parseAsync(['node', 'agentver', 'install', 'github.com/org/repo'])
+        expect.unreachable('Should have called process.exit')
+      } catch {
+        // ExitError from process.exit mock
+      }
+
+      expect(outputModule.outputError).toHaveBeenCalledWith('VALIDATION_ERROR', 'test error')
+      expect(process.exit).toHaveBeenCalledWith(1)
     })
   })
 })

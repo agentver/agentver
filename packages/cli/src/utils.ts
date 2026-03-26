@@ -1,4 +1,4 @@
-import { AgentverError, createLogger } from '@agentver/shared'
+import { AgentverError, type AgentverErrorCode, createLogger } from '@agentver/shared'
 import { getLogLevel } from './output.js'
 
 type CliLogger = ReturnType<typeof createLogger>
@@ -9,10 +9,10 @@ export const SEMVER_REGEX = /^\d+\.\d+\.\d+(-[\w.]+)?$/
  * Extract a structured error code and message from an unknown error.
  * Preserves AgentverError codes instead of discarding them.
  */
-export function extractError(
+export function extractError<T extends string>(
   error: unknown,
-  fallbackCode: string
-): { code: string; message: string } {
+  fallbackCode: T
+): { code: AgentverErrorCode | T; message: string } {
   if (error instanceof AgentverError) {
     return { code: error.code, message: error.message }
   }

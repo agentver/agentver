@@ -12,7 +12,6 @@ import type { InstallResult as InstallResultJSON } from '@agentver/shared'
 import {
   AGENT_CONFIG_FILES,
   AgentverError,
-  type AgentverErrorCode,
   type GitSource,
   PACKAGE_STRUCTURES,
   type WellKnownSource,
@@ -341,7 +340,7 @@ async function installFromWellKnown(
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
     if (!jsonMode) spinner.fail(`Failed to install: ${message}`)
-    throw new AgentverError(code as AgentverErrorCode, message)
+    throw new AgentverError(code, message)
   }
 }
 
@@ -587,7 +586,7 @@ async function installFromPlatform(
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
     if (!jsonMode) spinner.fail(`Failed to install: ${message}`)
-    throw new AgentverError(code as AgentverErrorCode, message)
+    throw new AgentverError(code, message)
   }
 }
 
@@ -843,7 +842,7 @@ export async function installPackage(
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
     if (!jsonMode) spinner.fail(`Failed to install: ${message}`)
-    throw new AgentverError(code as AgentverErrorCode, message)
+    throw new AgentverError(code, message)
   }
 }
 
@@ -1060,8 +1059,12 @@ Source formats:
         const { code, message } = extractError(error, 'INSTALL_FAILED')
         if (jsonMode) {
           outputError(code, message)
+        } else if (code !== 'CANCELLED') {
+          // spinner.fail() is called before throwing in all install paths,
+          // but write to stderr as a safety net for any path that misses it
+          process.stderr.write(`${message}\n`)
         }
-        process.exit(1)
+        process.exit(code === 'CANCELLED' ? 0 : 1)
       }
     })
 }
