@@ -121,6 +121,30 @@ describe('agentSkillsSpecSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('should transform compatibility string to array', () => {
+    const result = agentSkillsSpecSchema.parse({
+      ...VALID_SPEC,
+      compatibility: 'claude-code, cursor',
+    })
+    expect(result.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
+  it('should accept compatibility as array unchanged', () => {
+    const result = agentSkillsSpecSchema.parse({
+      ...VALID_SPEC,
+      compatibility: ['claude-code', 'cursor'],
+    })
+    expect(result.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
+  it('should reject compatibility string longer than 500 characters', () => {
+    const result = agentSkillsSpecSchema.safeParse({
+      ...VALID_SPEC,
+      compatibility: 'x'.repeat(501),
+    })
+    expect(result.success).toBe(false)
+  })
+
   it('should transform allowed-tools string to array', () => {
     const result = agentSkillsSpecSchema.parse({
       ...VALID_SPEC,
@@ -465,5 +489,67 @@ describe('validateSkillName', () => {
     expect(special.error).toBe(
       'Name must contain only lowercase alphanumeric characters and hyphens.'
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-schema consistency (agentSkillsSpecSchema + validateSkillMd agree)
+// ---------------------------------------------------------------------------
+
+describe('cross-schema consistency', () => {
+  it('should accept string compatibility in both validateSkillMd and agentSkillsSpecSchema', () => {
+    const content = makeSkillMd(
+      { ...VALID_SPEC, compatibility: 'claude-code, cursor', license: 'MIT' },
+      'Body content for the agent.'
+    )
+    const mdResult = validateSkillMd(content)
+    expect(mdResult.valid).toBe(true)
+    expect(mdResult.data?.compatibility).toEqual(['claude-code', 'cursor'])
+
+    const specResult = agentSkillsSpecSchema.safeParse({
+      ...VALID_SPEC,
+      compatibility: 'claude-code, cursor',
+    })
+    expect(specResult.success).toBe(true)
+    if (specResult.success) {
+      expect(specResult.data.compatibility).toEqual(['claude-code', 'cursor'])
+    }
+  })
+
+  it('should accept array compatibility in both validateSkillMd and agentSkillsSpecSchema', () => {
+    const content = makeSkillMd(
+      { ...VALID_SPEC, compatibility: ['claude-code', 'cursor'], license: 'MIT' },
+      'Body content for the agent.'
+    )
+    const mdResult = validateSkillMd(content)
+    expect(mdResult.valid).toBe(true)
+    expect(mdResult.data?.compatibility).toEqual(['claude-code', 'cursor'])
+
+    const specResult = agentSkillsSpecSchema.safeParse({
+      ...VALID_SPEC,
+      compatibility: ['claude-code', 'cursor'],
+    })
+    expect(specResult.success).toBe(true)
+    if (specResult.success) {
+      expect(specResult.data.compatibility).toEqual(['claude-code', 'cursor'])
+    }
+  })
+
+  it('should accept string allowed-tools in both validators', () => {
+    const content = makeSkillMd(
+      { ...VALID_SPEC, 'allowed-tools': 'Read Write Bash', license: 'MIT' },
+      'Body content for the agent.'
+    )
+    const mdResult = validateSkillMd(content)
+    expect(mdResult.valid).toBe(true)
+
+    const specResult = agentSkillsSpecSchema.safeParse({
+      ...VALID_SPEC,
+      'allowed-tools': 'Read Write Bash',
+    })
+    expect(specResult.success).toBe(true)
+    if (specResult.success) {
+      expect(specResult.data['allowed-tools']).toEqual(['Read', 'Write', 'Bash'])
+    }
   })
 })

@@ -217,9 +217,25 @@ export const skillFrontmatterSchema = z.object({
     .regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/)
     .optional(),
   license: z.string().optional(),
-  compatibility: z.array(z.string()).optional(),
+  compatibility: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((val) => {
+      if (typeof val === 'string')
+        return val
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      return val
+    }),
   metadata: z.record(z.string(), z.string()).optional(),
-  'allowed-tools': z.array(z.string()).optional(),
+  'allowed-tools': z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((val) => {
+      if (typeof val === 'string') return val.split(/\s+/).filter(Boolean)
+      return val
+    }),
 })
 
 export type SkillFrontmatter = z.infer<typeof skillFrontmatterSchema>

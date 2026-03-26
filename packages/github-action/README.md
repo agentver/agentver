@@ -17,7 +17,7 @@ Reads your `.agentver/manifest.json` and installs all listed skills into the app
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `api-key` | Yes | — | Agentver API key for authentication |
-| `registry-url` | No | `https://agentver.com/api/v1` | Agentver registry URL |
+| `registry-url` | No | `https://app.agentver.com/api/v1` | Agentver registry URL |
 | `manifest-path` | No | `.agentver/manifest.json` | Path to manifest file |
 | `lockfile-path` | No | `.agentver/lockfile.json` | Path to lockfile |
 | `agents` | No | Auto-detect | Comma-separated list of target agents |

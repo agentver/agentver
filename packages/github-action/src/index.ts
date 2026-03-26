@@ -79,16 +79,20 @@ async function run(): Promise<void> {
     }
 
     // Install all packages
-    const { results, resolvedData } = await installAllPackages(manifest, {
-      registryUrl,
-      apiKey,
-      workingDirectory: resolvedWorkDir,
-      verifyIntegrity,
-      agents,
-    })
+    const { results, resolvedData } = await installAllPackages(
+      manifest,
+      {
+        registryUrl,
+        apiKey,
+        workingDirectory: resolvedWorkDir,
+        verifyIntegrity,
+        agents,
+      },
+      existingLockfile
+    )
 
     // Update lockfile
-    const updatedLockfile = updateLockfile(existingLockfile, results, resolvedData)
+    const updatedLockfile = updateLockfile(existingLockfile, results, resolvedData, registryUrl)
     writeLockfileFile(resolvedLockfilePath, updatedLockfile)
     core.info(`Lockfile updated at ${resolvedLockfilePath}`)
 

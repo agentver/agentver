@@ -656,6 +656,24 @@ describe('skillFrontmatterSchema', () => {
     skillFrontmatterSchema.parse({ name: 'ok', description: 'ok', version: '0.0.1-rc.1' })
   })
 
+  it('should accept compatibility as string and transform to array', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+      compatibility: 'claude-code, cursor',
+    })
+    expect(result.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
+  it('should accept compatibility as array unchanged', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+      compatibility: ['claude-code', 'cursor'],
+    })
+    expect(result.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
   it('should accept allowed-tools as array of strings', () => {
     const result = skillFrontmatterSchema.parse({
       name: 'ok',
@@ -663,6 +681,24 @@ describe('skillFrontmatterSchema', () => {
       'allowed-tools': ['Bash', 'Read'],
     })
     expect(result['allowed-tools']).toEqual(['Bash', 'Read'])
+  })
+
+  it('should accept allowed-tools as string and transform to array', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+      'allowed-tools': 'Read Write Bash',
+    })
+    expect(result['allowed-tools']).toEqual(['Read', 'Write', 'Bash'])
+  })
+
+  it('should leave compatibility and allowed-tools as undefined when omitted', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+    })
+    expect(result.compatibility).toBeUndefined()
+    expect(result['allowed-tools']).toBeUndefined()
   })
 
   it('should accept metadata as record of strings', () => {
