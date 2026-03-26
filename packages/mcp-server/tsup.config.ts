@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'tsup'
+
+const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string }
 
 export default defineConfig({
   entry: {
@@ -14,4 +17,7 @@ export default defineConfig({
     js: '#!/usr/bin/env node',
   },
   noExternal: ['@agentver/agent-definitions', '@agentver/shared'],
+  define: {
+    __PKG_VERSION__: JSON.stringify(version),
+  },
 })
