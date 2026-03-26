@@ -155,7 +155,9 @@ describe('storage/lockfile', () => {
         },
       }
 
-      expect(() => lockfileModule.writeLockfile('/project', invalidLockfile as never)).toThrow()
+      expect(() => lockfileModule.writeLockfile('/project', invalidLockfile as never)).toThrow(
+        'Refusing to write invalid lockfile'
+      )
 
       expect(fs.writeFileSync).not.toHaveBeenCalled()
     })

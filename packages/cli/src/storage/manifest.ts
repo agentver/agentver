@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ManifestV2 } from '@agentver/shared'
-import { manifestAnySchema, manifestV2Schema } from '@agentver/shared'
+import { AgentverError, manifestAnySchema, manifestV2Schema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
@@ -86,7 +86,11 @@ export function writeManifest(
   manifest: ManifestV2,
   scope: Scope = 'project'
 ): void {
-  manifestV2Schema.parse(manifest)
+  const result = manifestV2Schema.safeParse(manifest)
+  if (!result.success) {
+    const details = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+    throw new AgentverError('VALIDATION_ERROR', `Refusing to write invalid manifest: ${details}`)
+  }
 
   const dir = getManifestRoot(projectRoot, scope)
 

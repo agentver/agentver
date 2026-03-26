@@ -217,7 +217,9 @@ describe('storage/manifest', () => {
         },
       }
 
-      expect(() => manifestModule.writeManifest('/project', invalidManifest as never)).toThrow()
+      expect(() => manifestModule.writeManifest('/project', invalidManifest as never)).toThrow(
+        'Refusing to write invalid manifest'
+      )
 
       expect(fs.writeFileSync).not.toHaveBeenCalled()
     })

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
-import { lockfileAnySchema, lockfileV2Schema } from '@agentver/shared'
+import { AgentverError, lockfileAnySchema, lockfileV2Schema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
@@ -88,7 +88,11 @@ export function writeLockfile(
   lockfile: LockfileV2,
   scope: Scope = 'project'
 ): void {
-  lockfileV2Schema.parse(lockfile)
+  const result = lockfileV2Schema.safeParse(lockfile)
+  if (!result.success) {
+    const details = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+    throw new AgentverError('VALIDATION_ERROR', `Refusing to write invalid lockfile: ${details}`)
+  }
 
   const dir = getLockfileRoot(projectRoot, scope)
 

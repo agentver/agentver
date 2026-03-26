@@ -1605,14 +1605,15 @@ describe('commands/install', () => {
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
 
-      // The commit field must not be empty — it should use the content-hash fallback
+      // The commit field must use a hex content-hash fallback, truncated to 40 chars
       const manifestCall = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
       const manifestData = manifestCall[1]
       const manifestSource = manifestData.packages['google-search-console']!.source
       expect(manifestSource.type).toBe('git')
       if (manifestSource.type === 'git') {
         expect(manifestSource.commit).toBeTruthy()
-        expect(manifestSource.commit.length).toBeGreaterThanOrEqual(7)
+        expect(manifestSource.commit).toHaveLength(40)
+        expect(manifestSource.commit).toMatch(/^[0-9a-f]{40}$/)
       }
 
       const lockfileCall = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
@@ -1621,7 +1622,8 @@ describe('commands/install', () => {
       expect(lockfileSource.type).toBe('git')
       if (lockfileSource.type === 'git') {
         expect(lockfileSource.commit).toBeTruthy()
-        expect(lockfileSource.commit.length).toBeGreaterThanOrEqual(7)
+        expect(lockfileSource.commit).toHaveLength(40)
+        expect(lockfileSource.commit).toMatch(/^[0-9a-f]{40}$/)
       }
     })
 
@@ -1652,6 +1654,12 @@ describe('commands/install', () => {
       const manifestSource = manifestCall[1].packages['google-search-console']!.source
       if (manifestSource.type === 'git') {
         expect(manifestSource.commit).toBe(platformCommitSha)
+      }
+
+      const lockfileCall = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
+      const lockfileSource = lockfileCall[1].packages['google-search-console']!.source
+      if (lockfileSource.type === 'git') {
+        expect(lockfileSource.commit).toBe(platformCommitSha)
       }
     })
 
