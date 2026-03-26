@@ -665,6 +665,42 @@ describe('skillFrontmatterSchema', () => {
     expect(result['allowed-tools']).toEqual(['Bash', 'Read'])
   })
 
+  it('should transform compatibility string to array (comma-separated)', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+      compatibility: 'claude-code, cursor',
+    })
+    expect(result.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
+  it('should keep compatibility array as-is', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+      compatibility: ['claude-code', 'cursor'],
+    })
+    expect(result.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
+  it('should transform allowed-tools string to array (space-separated)', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+      'allowed-tools': 'Read Write Bash',
+    })
+    expect(result['allowed-tools']).toEqual(['Read', 'Write', 'Bash'])
+  })
+
+  it('should leave compatibility and allowed-tools as undefined when omitted', () => {
+    const result = skillFrontmatterSchema.parse({
+      name: 'ok',
+      description: 'ok',
+    })
+    expect(result.compatibility).toBeUndefined()
+    expect(result['allowed-tools']).toBeUndefined()
+  })
+
   it('should accept metadata as record of strings', () => {
     const result = skillFrontmatterSchema.parse({
       name: 'ok',

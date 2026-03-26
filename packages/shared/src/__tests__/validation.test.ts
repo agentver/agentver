@@ -358,6 +358,44 @@ The skill body content goes here.`
     expect(result.data?.description).toBe('A valid skill')
     expect(result.body).toBe('The skill body content goes here.')
   })
+
+  it('should accept compatibility as a comma-separated string', () => {
+    const content = `---
+name: my-skill
+description: A skill with string compatibility
+compatibility: claude-code, cursor
+allowed-tools: [Read]
+license: MIT
+---
+Body`
+
+    const result = validateSkillFrontmatter(content)
+
+    expect(result.valid).toBe(true)
+    expect(result.data?.compatibility).toEqual(['claude-code', 'cursor'])
+    expect(result.warnings).not.toContain(
+      'No compatibility agents listed. Consider adding agents like claude-code, cursor, etc.'
+    )
+  })
+
+  it('should accept allowed-tools as a space-separated string', () => {
+    const content = `---
+name: my-skill
+description: A skill with string allowed-tools
+compatibility: [claude-code]
+allowed-tools: Read Write Bash
+license: MIT
+---
+Body`
+
+    const result = validateSkillFrontmatter(content)
+
+    expect(result.valid).toBe(true)
+    expect(result.data?.['allowed-tools']).toEqual(['Read', 'Write', 'Bash'])
+    expect(result.warnings).not.toContain(
+      'No allowed-tools specified. Consider listing tools this skill requires.'
+    )
+  })
 })
 
 describe('getSpecComplianceLevel', () => {

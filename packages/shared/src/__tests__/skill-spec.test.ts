@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-
+import { skillFrontmatterSchema } from '../schemas'
 import {
   agentSkillsSpecSchema,
   agentverSkillSchema,
@@ -8,6 +8,7 @@ import {
   validateSkillMd,
   validateSkillName,
 } from '../skill-spec'
+import { validateSkillFrontmatter } from '../validation'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -151,6 +152,30 @@ describe('agentSkillsSpecSchema', () => {
       'allowed-tools': '  Read   Write  ',
     })
     expect(result['allowed-tools']).toEqual(['Read', 'Write'])
+  })
+
+  it('should transform compatibility string to array (comma-separated)', () => {
+    const result = agentSkillsSpecSchema.parse({
+      ...VALID_SPEC,
+      compatibility: 'claude, gpt-4',
+    })
+    expect(result.compatibility).toEqual(['claude', 'gpt-4'])
+  })
+
+  it('should keep compatibility array as-is', () => {
+    const result = agentSkillsSpecSchema.parse({
+      ...VALID_SPEC,
+      compatibility: ['claude-code', 'cursor'],
+    })
+    expect(result.compatibility).toEqual(['claude-code', 'cursor'])
+  })
+
+  it('should filter empty strings from compatibility split', () => {
+    const result = agentSkillsSpecSchema.parse({
+      ...VALID_SPEC,
+      compatibility: 'claude,,gpt-4,',
+    })
+    expect(result.compatibility).toEqual(['claude', 'gpt-4'])
   })
 })
 
@@ -465,5 +490,95 @@ describe('validateSkillName', () => {
     expect(special.error).toBe(
       'Name must contain only lowercase alphanumeric characters and hyphens.'
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-schema consistency: skillFrontmatterSchema vs agentSkillsSpecSchema
+// ---------------------------------------------------------------------------
+
+describe('cross-schema consistency', () => {
+  it('should both accept compatibility as a string and produce string[]', () => {
+    const input = {
+      name: 'my-skill',
+      description: 'A useful skill',
+      compatibility: 'claude, gpt-4',
+    }
+    const frontmatter = skillFrontmatterSchema.parse(input)
+    const spec = agentSkillsSpecSchema.parse(input)
+    expect(frontmatter.compatibility).toEqual(['claude', 'gpt-4'])
+    expect(spec.compatibility).toEqual(['claude', 'gpt-4'])
+  })
+
+  it('should both accept compatibility as an array and produce string[]', () => {
+    const input = {
+      name: 'my-skill',
+      description: 'A useful skill',
+      compatibility: ['claude', 'gpt-4'],
+    }
+    const frontmatter = skillFrontmatterSchema.parse(input)
+    const spec = agentSkillsSpecSchema.parse(input)
+    expect(frontmatter.compatibility).toEqual(['claude', 'gpt-4'])
+    expect(spec.compatibility).toEqual(['claude', 'gpt-4'])
+  })
+
+  it('should both accept allowed-tools as a string and produce string[]', () => {
+    const input = {
+      name: 'my-skill',
+      description: 'A useful skill',
+      'allowed-tools': 'Read Write Bash',
+    }
+    const frontmatter = skillFrontmatterSchema.parse(input)
+    const spec = agentSkillsSpecSchema.parse(input)
+    expect(frontmatter['allowed-tools']).toEqual(['Read', 'Write', 'Bash'])
+    expect(spec['allowed-tools']).toEqual(['Read', 'Write', 'Bash'])
+  })
+
+  it('should both accept allowed-tools as an array and produce string[]', () => {
+    const input = {
+      name: 'my-skill',
+      description: 'A useful skill',
+      'allowed-tools': ['Read', 'Write'],
+    }
+    const frontmatter = skillFrontmatterSchema.parse(input)
+    const spec = agentSkillsSpecSchema.parse(input)
+    expect(frontmatter['allowed-tools']).toEqual(['Read', 'Write'])
+    expect(spec['allowed-tools']).toEqual(['Read', 'Write'])
+  })
+
+  it('validateSkillFrontmatter and validateSkillMd should agree on string compatibility', () => {
+    const content = `---
+name: my-skill
+description: A skill that does useful things for agents
+compatibility: claude-code, cursor
+allowed-tools: [Read, Write]
+license: MIT
+---
+Follow these instructions to do the thing.`
+
+    const frontmatterResult = validateSkillFrontmatter(content)
+    const specResult = validateSkillMd(content)
+    expect(frontmatterResult.valid).toBe(true)
+    expect(specResult.valid).toBe(true)
+  })
+
+  it('validateSkillFrontmatter and validateSkillMd should agree on array compatibility', () => {
+    const content = `---
+name: my-skill
+description: A skill that does useful things for agents
+compatibility:
+  - claude-code
+  - cursor
+allowed-tools:
+  - Read
+  - Write
+license: MIT
+---
+Follow these instructions to do the thing.`
+
+    const frontmatterResult = validateSkillFrontmatter(content)
+    const specResult = validateSkillMd(content)
+    expect(frontmatterResult.valid).toBe(true)
+    expect(specResult.valid).toBe(true)
   })
 })
