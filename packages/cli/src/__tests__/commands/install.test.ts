@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { createCLIOutputSchema, installResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FetchedFile, FetchResult, ResolvedRef } from '../../git/types'
@@ -38,9 +40,13 @@ vi.mock('../../storage/canonical', () => ({
   removeCanonicalDirectory: vi.fn(),
 }))
 
-vi.mock('../../storage/integrity', () => ({
-  computeSha256FromFiles: vi.fn(),
-}))
+vi.mock('../../storage/integrity', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../storage/integrity')>()
+  return {
+    computeSha256FromFiles: vi.fn(),
+    computeContentHash: actual.computeContentHash,
+  }
+})
 
 vi.mock('../../security/index.js', () => ({
   scanFiles: vi.fn(),
@@ -1585,6 +1591,12 @@ describe('commands/install', () => {
         { path: 'SKILL.md', content: '# Google Search Console\n\nSkill content.' },
         { path: 'references/api.md', content: '# API Reference\n\nAPI docs.' },
       ]
+
+      // Compute the expected content-hash fallback from the known test files
+      const sorted = [...platformFiles].sort((a, b) => a.path.localeCompare(b.path))
+      const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\0')
+      const expectedCommit = createHash('sha256').update(combined).digest('hex').slice(0, 40)
+
       setupPlatformMocks({
         gitUri: 'github.com/lleverage/skills',
         gitPath: 'google-search-console',
@@ -1605,26 +1617,20 @@ describe('commands/install', () => {
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
 
-      // The commit field must use a hex content-hash fallback, truncated to 40 chars
+      // The commit field must be a deterministic content-hash derived from the files
       const manifestCall = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
       const manifestData = manifestCall[1]
       const manifestSource = manifestData.packages['google-search-console']!.source
       expect(manifestSource.type).toBe('git')
-      if (manifestSource.type === 'git') {
-        expect(manifestSource.commit).toBeTruthy()
-        expect(manifestSource.commit).toHaveLength(40)
-        expect(manifestSource.commit).toMatch(/^[0-9a-f]{40}$/)
-      }
+      assert(manifestSource.type === 'git', 'expected git source in manifest')
+      expect(manifestSource.commit).toBe(expectedCommit)
 
       const lockfileCall = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
       const lockfileData = lockfileCall[1]
       const lockfileSource = lockfileData.packages['google-search-console']!.source
       expect(lockfileSource.type).toBe('git')
-      if (lockfileSource.type === 'git') {
-        expect(lockfileSource.commit).toBeTruthy()
-        expect(lockfileSource.commit).toHaveLength(40)
-        expect(lockfileSource.commit).toMatch(/^[0-9a-f]{40}$/)
-      }
+      assert(lockfileSource.type === 'git', 'expected git source in lockfile')
+      expect(lockfileSource.commit).toBe(expectedCommit)
     })
 
     it('uses commitSha from platform response when available', async () => {
@@ -1652,15 +1658,15 @@ describe('commands/install', () => {
 
       const manifestCall = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
       const manifestSource = manifestCall[1].packages['google-search-console']!.source
-      if (manifestSource.type === 'git') {
-        expect(manifestSource.commit).toBe(platformCommitSha)
-      }
+      expect(manifestSource.type).toBe('git')
+      assert(manifestSource.type === 'git', 'expected git source in manifest')
+      expect(manifestSource.commit).toBe(platformCommitSha)
 
       const lockfileCall = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
       const lockfileSource = lockfileCall[1].packages['google-search-console']!.source
-      if (lockfileSource.type === 'git') {
-        expect(lockfileSource.commit).toBe(platformCommitSha)
-      }
+      expect(lockfileSource.type).toBe('git')
+      assert(lockfileSource.type === 'git', 'expected git source in lockfile')
+      expect(lockfileSource.commit).toBe(platformCommitSha)
     })
 
     it('delegates to git install flow when platform resolves a git-backed package', async () => {

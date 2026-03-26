@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -36,7 +35,7 @@ import { reportInstallation } from '../registry/reporter.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
 import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical'
-import { computeSha256FromFiles } from '../storage/integrity'
+import { computeContentHash, computeSha256FromFiles } from '../storage/integrity'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
 import { extractError } from '../utils.js'
@@ -906,12 +905,6 @@ export async function installPackage(
     spinner.fail(`Failed to install: ${message}`)
     process.exit(1)
   }
-}
-
-function computeContentHash(files: Array<{ path: string; content: string }>): string {
-  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
-  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\0')
-  return createHash('sha256').update(combined).digest('hex').slice(0, 40)
 }
 
 function deriveSkillName(source: { path: string; repo: string }): string {
