@@ -36,7 +36,17 @@ export const agentSkillsSpecSchema = z.object({
   }),
   description: z.string().min(1).max(1024),
   license: z.string().optional(),
-  compatibility: z.string().max(500).optional(),
+  compatibility: z
+    .union([z.string().max(500), z.array(z.string())])
+    .optional()
+    .transform((val) => {
+      if (typeof val === 'string')
+        return val
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      return val
+    }),
   metadata: z.record(z.string(), z.string()).optional(),
   'allowed-tools': z
     .union([z.string(), z.array(z.string())])
