@@ -60,7 +60,8 @@ async function checkLocalModifications(
   packageName: string,
   agents: string[],
   scope: Scope = 'project',
-  packageType?: string
+  packageType?: string,
+  entryFile?: string
 ): Promise<boolean> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[packageName]
@@ -70,7 +71,7 @@ async function checkLocalModifications(
 
   if (packageType === 'AGENT' || packageType === 'COMMAND') {
     const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
-    const fileName = `${shortName}.md`
+    const fileName = entryFile ?? `${shortName}.md`
     for (const agentId of agents) {
       const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
       if (!placementPath) continue
@@ -130,7 +131,8 @@ async function handlePatchUpdate(
   agents: string[],
   spinner: SpinnerLike,
   scope: Scope = 'project',
-  installedPath?: string
+  installedPath?: string,
+  packageType?: string
 ): Promise<{ commitSha: string } | null> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[update.name]
@@ -195,10 +197,15 @@ async function handlePatchUpdate(
     ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
     : `${update.sourceUri}@${update.ref}`
 
+  const patchTypeOption = packageType === 'AGENT' || packageType === 'COMMAND'
+    ? { type: packageType.toLowerCase() as 'agent' | 'command' }
+    : {}
+
   const result = await installPackage(sourceUrl, {
     ...(agents.length > 0 ? { agent: agents } : {}),
     ...(scope === 'global' ? { global: true } : {}),
     ...(installedPath ? { path: installedPath } : {}),
+    ...patchTypeOption,
   })
 
   spinner.text = `Reapplying local patch for ${update.name}...`
@@ -319,7 +326,8 @@ export function registerUpdateCommand(program: Command): void {
                 pkgName,
                 pkg.agents,
                 scope,
-                pkg.packageType
+                pkg.packageType,
+                pkg.entryFile
               )
 
               updates.push({
@@ -427,7 +435,8 @@ export function registerUpdateCommand(program: Command): void {
                   agents,
                   updateSpinner,
                   scope,
-                  installedPath
+                  installedPath,
+                  installedPkg?.packageType
                 )
 
                 if (patchResult) {
@@ -463,27 +472,45 @@ export function registerUpdateCommand(program: Command): void {
           }
 
           const shortName = update.name.split('/').pop()!
-          const placementPath = agents[0]
-            ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
-            : null
-          const fallbackDir = placementPath
-            ? resolvePlacementPath(placementPath, projectRoot, scope)
-            : null
-          const skillDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
+          const pkgType = installedPkg?.packageType
+          const isSingleFileUpdate = pkgType === 'AGENT' || pkgType === 'COMMAND'
+
+          let backupDir: string | null = null
+          if (isSingleFileUpdate) {
+            const getPlacement = pkgType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+            const entryFileName = installedPkg?.entryFile ?? `${shortName}.md`
+            if (agents[0]) {
+              const placement = getPlacement(agents[0] as AgentId, entryFileName, scope)
+              backupDir = placement ? resolvePlacementPath(placement, projectRoot, scope) : null
+            }
+          } else {
+            const placementPath = agents[0]
+              ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
+              : null
+            const fallbackDir = placementPath
+              ? resolvePlacementPath(placementPath, projectRoot, scope)
+              : null
+            backupDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
+          }
 
           let backup: BackupState | null = null
 
           try {
-            backup = createBackup(update.name, projectRoot, skillDir, scope)
+            backup = createBackup(update.name, projectRoot, backupDir, scope)
 
             const sourceUrl = update.sourcePath
               ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
               : `${update.sourceUri}@${update.ref}`
 
+            const typeOption = isSingleFileUpdate
+              ? { type: pkgType.toLowerCase() as 'agent' | 'command' }
+              : {}
+
             const result = await installPackage(sourceUrl, {
               ...(agents.length > 0 ? { agent: agents } : {}),
               ...(scope === 'global' ? { global: true } : {}),
               ...(installedPath ? { path: installedPath } : {}),
+              ...typeOption,
             })
 
             cleanupBackup(backup)

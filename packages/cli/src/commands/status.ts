@@ -73,11 +73,13 @@ async function readLocalFiles(
   packageName: string,
   agents: string[],
   scope: Scope = 'project',
-  packageType?: string
+  packageType?: string,
+  entryFile?: string
 ): Promise<Array<{ path: string; content: string }>> {
   if (packageType === 'AGENT' || packageType === 'COMMAND') {
     const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
-    const fileName = `${packageName}.md`
+    const shortName = packageName.split('/').pop()!
+    const fileName = entryFile ?? `${shortName}.md`
     for (const agentId of agents) {
       const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
       if (!placementPath) continue
@@ -108,14 +110,14 @@ async function checkPackageStatus(
   offline: boolean,
   scope: Scope = 'project'
 ): Promise<PackageStatus> {
-  const { source, agents, pinned, packageType } = manifestEntry
+  const { source, agents, pinned, packageType, entryFile } = manifestEntry
 
   // Well-known sources: only check local modification (no git upstream)
   if (source.type === 'well-known') {
     let locallyModified = false
 
     try {
-      const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType)
+      const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType, entryFile)
       if (lockfileIntegrity && localFiles.length > 0) {
         const localIntegrity = computeSha256FromFiles(localFiles)
         locallyModified = localIntegrity !== lockfileIntegrity
@@ -152,7 +154,7 @@ async function checkPackageStatus(
   let upstreamCommit: string | undefined
 
   try {
-    const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType)
+    const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType, entryFile)
 
     if (lockfileIntegrity && localFiles.length > 0) {
       const localIntegrity = computeSha256FromFiles(localFiles)

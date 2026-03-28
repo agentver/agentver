@@ -62,7 +62,7 @@ export type InstallOptions = {
   path?: string
   detect?: boolean
   skipAudit?: boolean
-  type?: string
+  type?: 'agent' | 'command'
 }
 
 export type InstallResult = {
@@ -232,6 +232,7 @@ async function installFromWellKnown(
     const projectRoot = process.cwd()
     let agents: string[] = []
     let detectedWkType: string | undefined
+    let installedWkEntryFile: string | undefined
     const scope = options.global ? 'global' : 'project'
 
     if (options.path) {
@@ -277,7 +278,7 @@ async function installFromWellKnown(
       if (detectedWkType === 'AGENT_CONFIG') {
         await installAgentConfig(selectedEntry.name, fetchResult.files, agents, options, spinner)
       } else if (detectedWkType === 'AGENT' || detectedWkType === 'COMMAND') {
-        await installSingleFilePackage(selectedEntry.name, fetchResult.files, agents, detectedWkType, options, spinner)
+        installedWkEntryFile = await installSingleFilePackage(selectedEntry.name, fetchResult.files, agents, detectedWkType, options, spinner)
       } else {
         await installStandardPackage(
           selectedEntry.name,
@@ -320,7 +321,7 @@ async function installFromWellKnown(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND' ? { packageType: detectedWkType } : {}),
+      ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND' ? { packageType: detectedWkType, entryFile: installedWkEntryFile } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -484,6 +485,7 @@ async function installFromPlatform(
     const sourceUri = `agentver://${parsed.org}`
     let agents: string[] = []
     let detectedPlatformType: string | undefined
+    let installedPlatformEntryFile: string | undefined
 
     if (options.path) {
       await installToCustomPath(shortName, files, options, spinner)
@@ -528,7 +530,7 @@ async function installFromPlatform(
       if (detectedPlatformType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, files, agents, options, spinner)
       } else if (detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND') {
-        await installSingleFilePackage(shortName, files, agents, detectedPlatformType, options, spinner)
+        installedPlatformEntryFile = await installSingleFilePackage(shortName, files, agents, detectedPlatformType, options, spinner)
       } else {
         await installStandardPackage(shortName, files, agents, options, spinner)
       }
@@ -566,7 +568,7 @@ async function installFromPlatform(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND' ? { packageType: detectedPlatformType } : {}),
+      ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND' ? { packageType: detectedPlatformType, entryFile: installedPlatformEntryFile } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -746,6 +748,7 @@ export async function installPackage(
     const gitUri = `${gitSource.host}/${gitSource.owner}/${gitSource.repo}`
     let agents: string[] = []
     let detectedType: string | undefined
+    let installedEntryFile: string | undefined
 
     if (options.path) {
       await installToCustomPath(shortName, result.files, options, spinner)
@@ -790,7 +793,7 @@ export async function installPackage(
       if (detectedType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, result.files, agents, options, spinner)
       } else if (detectedType === 'AGENT' || detectedType === 'COMMAND') {
-        await installSingleFilePackage(shortName, result.files, agents, detectedType, options, spinner)
+        installedEntryFile = await installSingleFilePackage(shortName, result.files, agents, detectedType, options, spinner)
       } else {
         await installStandardPackage(shortName, result.files, agents, options, spinner)
       }
@@ -828,7 +831,7 @@ export async function installPackage(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedType === 'AGENT' || detectedType === 'COMMAND' ? { packageType: detectedType } : {}),
+      ...(detectedType === 'AGENT' || detectedType === 'COMMAND' ? { packageType: detectedType, entryFile: installedEntryFile } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -893,7 +896,7 @@ function formatSource(source: { host: string; owner: string; repo: string; path:
   return source.path ? `${base}/${source.path}` : base
 }
 
-function detectPackageType(files: FetchedFile[], typeOverride?: string): string {
+function detectPackageType(files: FetchedFile[], typeOverride?: 'agent' | 'command'): string {
   if (typeOverride) {
     const normalised = typeOverride.toUpperCase()
     if (normalised === 'AGENT') return 'AGENT'
@@ -1084,7 +1087,7 @@ async function installSingleFilePackage(
   packageType: 'AGENT' | 'COMMAND',
   options: InstallOptions,
   spinner: ReturnType<typeof ora> | SpinnerLike
-): Promise<void> {
+): Promise<string> {
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
 
@@ -1101,7 +1104,7 @@ async function installSingleFilePackage(
     spinner.info(
       `${chalk.yellow('[dry-run]')} Would install ${typeLabel} ${chalk.green(name)} (${fileName}) to ${agents.join(', ')}`
     )
-    return
+    return fileName
   }
 
   spinner.text = `Installing ${packageType.toLowerCase()} ${name} to ${agents.length} agent(s)...`
@@ -1129,6 +1132,8 @@ async function installSingleFilePackage(
 
     writeFileSync(fullPath, mdFile.content, 'utf-8')
   }
+
+  return fileName
 }
 
 export function registerInstallCommand(program: Command): void {

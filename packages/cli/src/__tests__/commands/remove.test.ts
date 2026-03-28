@@ -46,6 +46,8 @@ vi.mock('../../output.js', () => ({
 
 vi.mock('@agentver/agent-definitions', () => ({
   getSkillPlacementPath: vi.fn(),
+  getAgentPlacementPath: vi.fn(),
+  getCommandPlacementPath: vi.fn(),
   detectInstalledAgents: vi.fn(),
   getConfigFilePath: vi.fn(),
 }))
@@ -818,6 +820,197 @@ describe('commands/remove', () => {
         'NOT_FOUND',
         expect.stringContaining('Found in global scope')
       )
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // AGENT/COMMAND single-file removal
+  // -------------------------------------------------------------------------
+
+  describe('AGENT package type removal', () => {
+    function setupAgentPackage(name: string, agents: string[] = ['claude-code']) {
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/test-repo',
+        path: 'agents/my-agent',
+        ref: 'main',
+        commit: 'abc1234567',
+      })
+
+      const manifest = createManifest({
+        packages: {
+          [name]: createManifestPackage({
+            source,
+            agents,
+            packageType: 'AGENT',
+            entryFile: 'AGENT.md',
+          }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          [name]: createLockfilePackage({ source, agents }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
+
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(
+        '.claude/agents/AGENT.md'
+      )
+
+      return { manifest, lockfile }
+    }
+
+    it('removes the single file using rmSync at the agent placement path', async () => {
+      setupAgentPackage('my-agent')
+
+      await removeAction('my-agent', {})
+
+      expect(fs.rmSync).toHaveBeenCalledWith(
+        '/project/.claude/agents/AGENT.md',
+        { force: true }
+      )
+    })
+
+    it('reads entryFile from the manifest to determine placement path', async () => {
+      setupAgentPackage('my-agent')
+
+      await removeAction('my-agent', {})
+
+      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'AGENT.md',
+        'project'
+      )
+    })
+
+    it('does not call removeAgentSymlinks or removeCanonicalDirectory', async () => {
+      setupAgentPackage('my-agent')
+
+      await removeAction('my-agent', {})
+
+      expect(canonicalModule.removeAgentSymlinks).not.toHaveBeenCalled()
+      expect(canonicalModule.removeCanonicalDirectory).not.toHaveBeenCalled()
+    })
+
+    it('removes the package from manifest and lockfile', async () => {
+      setupAgentPackage('my-agent')
+
+      await removeAction('my-agent', {})
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, updatedManifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(updatedManifest.packages).not.toHaveProperty('my-agent')
+
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+      const [, updatedLockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
+      expect(updatedLockfile.packages).not.toHaveProperty('my-agent')
+    })
+
+    it('falls back to shortName.md when entryFile is undefined', async () => {
+      const source = createSharedGitSource()
+      const manifest = createManifest({
+        packages: {
+          'my-agent': createManifestPackage({
+            source,
+            agents: ['claude-code'],
+            packageType: 'AGENT',
+            // entryFile deliberately omitted
+          }),
+        },
+      })
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile({
+        packages: { 'my-agent': createLockfilePackage({ source }) },
+      }))
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(
+        '.claude/agents/my-agent.md'
+      )
+
+      await removeAction('my-agent', {})
+
+      // Should fall back to 'my-agent.md' (shortName + .md)
+      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'my-agent.md',
+        'project'
+      )
+    })
+  })
+
+  describe('COMMAND package type removal', () => {
+    function setupCommandPackage(name: string, agents: string[] = ['claude-code']) {
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/test-repo',
+        path: 'commands/my-command',
+        ref: 'main',
+        commit: 'abc1234567',
+      })
+
+      const manifest = createManifest({
+        packages: {
+          [name]: createManifestPackage({
+            source,
+            agents,
+            packageType: 'COMMAND',
+            entryFile: 'COMMAND.md',
+          }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          [name]: createLockfilePackage({ source, agents }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
+
+      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue(
+        '.claude/commands/COMMAND.md'
+      )
+
+      return { manifest, lockfile }
+    }
+
+    it('removes the single file using rmSync at the command placement path', async () => {
+      setupCommandPackage('my-command')
+
+      await removeAction('my-command', {})
+
+      expect(fs.rmSync).toHaveBeenCalledWith(
+        '/project/.claude/commands/COMMAND.md',
+        { force: true }
+      )
+    })
+
+    it('calls getCommandPlacementPath (not getAgentPlacementPath)', async () => {
+      setupCommandPackage('my-command')
+
+      await removeAction('my-command', {})
+
+      expect(agentDefs.getCommandPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'COMMAND.md',
+        'project'
+      )
+      expect(agentDefs.getAgentPlacementPath).not.toHaveBeenCalled()
+    })
+
+    it('includes the file path in dry-run output', async () => {
+      setupCommandPackage('my-command')
+
+      await removeAction('my-command', { dryRun: true })
+
+      // Dry run should not actually remove anything
+      expect(fs.rmSync).not.toHaveBeenCalled()
+      expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
   })
 })
