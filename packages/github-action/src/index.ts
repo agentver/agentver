@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import * as core from '@actions/core'
-import type { Lockfile, Manifest } from '@agentver/shared'
+import type { LockfileV2, ManifestV2 } from '@agentver/shared'
 import {
   installAllPackages,
   ManifestNotFoundError,
@@ -46,7 +46,7 @@ async function run(): Promise<void> {
     }
 
     // Read manifest
-    let manifest: Manifest
+    let manifest: ManifestV2
     try {
       manifest = readManifestFile(resolvedManifestPath)
     } catch (error) {
@@ -73,8 +73,8 @@ async function run(): Promise<void> {
     core.info(`Found ${packageCount} package(s) in manifest.`)
 
     // Read existing lockfile
-    const existingLockfile: Lockfile = readLockfileFile(resolvedLockfilePath) ?? {
-      version: 1,
+    const existingLockfile: LockfileV2 = readLockfileFile(resolvedLockfilePath) ?? {
+      version: 2,
       packages: {},
     }
 
@@ -92,7 +92,7 @@ async function run(): Promise<void> {
     )
 
     // Update lockfile
-    const updatedLockfile = updateLockfile(existingLockfile, results, resolvedData, registryUrl)
+    const updatedLockfile = updateLockfile(existingLockfile, results, resolvedData)
     writeLockfileFile(resolvedLockfilePath, updatedLockfile)
     core.info(`Lockfile updated at ${resolvedLockfilePath}`)
 

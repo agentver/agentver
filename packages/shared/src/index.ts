@@ -109,6 +109,8 @@ export {
   manifestSchema,
   manifestV2PackageSchema,
   manifestV2Schema,
+  migrateLockfileV1ToV2,
+  migrateManifestV1ToV2,
   PACKAGE_STRUCTURES,
   type PackageSource,
   type PackageStructure,

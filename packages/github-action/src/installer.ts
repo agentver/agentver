@@ -7,7 +7,13 @@ import {
   getSkillPlacementPath,
   resolveAgentId,
 } from '@agentver/agent-definitions'
-import type { Lockfile, Manifest } from '@agentver/shared'
+import type { LockfileV2, ManifestV2 } from '@agentver/shared'
+import {
+  lockfileAnySchema,
+  manifestAnySchema,
+  migrateLockfileV1ToV2,
+  migrateManifestV1ToV2,
+} from '@agentver/shared'
 import type { InstallResult } from './reporter'
 
 const REQUEST_TIMEOUT_MS = 30_000
@@ -94,35 +100,59 @@ export class IntegrityError extends Error {
 
 // -- File I/O ----------------------------------------------------------------
 
-export function readManifestFile(manifestPath: string): Manifest {
+export function readManifestFile(manifestPath: string): ManifestV2 {
   if (!existsSync(manifestPath)) {
     throw new ManifestNotFoundError(manifestPath)
   }
 
   const raw = readFileSync(manifestPath, 'utf-8')
 
+  let parsed: unknown
   try {
-    return JSON.parse(raw) as Manifest
+    parsed = JSON.parse(raw)
   } catch {
     throw new Error(`Failed to parse manifest at ${manifestPath}: invalid JSON`)
   }
+
+  const result = manifestAnySchema.safeParse(parsed)
+  if (!result.success) {
+    throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`)
+  }
+
+  if (result.data.version === 1) {
+    return migrateManifestV1ToV2(result.data)
+  }
+
+  return result.data
 }
 
-export function readLockfileFile(lockfilePath: string): Lockfile | null {
+export function readLockfileFile(lockfilePath: string): LockfileV2 | null {
   if (!existsSync(lockfilePath)) {
     return null
   }
 
   const raw = readFileSync(lockfilePath, 'utf-8')
 
+  let parsed: unknown
   try {
-    return JSON.parse(raw) as Lockfile
+    parsed = JSON.parse(raw)
   } catch {
     return null
   }
+
+  const result = lockfileAnySchema.safeParse(parsed)
+  if (!result.success) {
+    return null
+  }
+
+  if (result.data.version === 1) {
+    return migrateLockfileV1ToV2(result.data)
+  }
+
+  return result.data
 }
 
-export function writeLockfileFile(lockfilePath: string, lockfile: Lockfile): void {
+export function writeLockfileFile(lockfilePath: string, lockfile: LockfileV2): void {
   const dir = dirname(lockfilePath)
 
   if (!existsSync(dir)) {
@@ -358,15 +388,14 @@ export function placeFiles(
 // -- Lockfile update ---------------------------------------------------------
 
 export function updateLockfile(
-  lockfile: Lockfile,
+  lockfile: LockfileV2,
   results: InstallResult[],
   resolvedData: Map<
     string,
     { response: DownloadResponse; files: Array<{ path: string; content: string }> }
-  >,
-  registryUrl: string
-): Lockfile {
-  const updated: Lockfile = { ...lockfile, packages: { ...lockfile.packages } }
+  >
+): LockfileV2 {
+  const updated: LockfileV2 = { ...lockfile, packages: { ...lockfile.packages } }
 
   for (const result of results) {
     if (!result.success) continue
@@ -374,12 +403,14 @@ export function updateLockfile(
     const entry = resolvedData.get(result.name)
     if (!entry) continue
 
-    const { org, pkg } = splitPackageName(result.name)
-    const resolved = `${registryUrl}/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(entry.response.version)}/download`
-
     updated.packages[result.name] = {
-      version: result.version,
-      resolved,
+      source: {
+        type: 'git',
+        uri: entry.response.gitUri ?? 'unknown',
+        path: entry.response.gitPath ?? '',
+        ref: entry.response.gitRef ?? 'unknown',
+        commit: entry.response.gitCommitSha ?? 'unknown',
+      },
       integrity: computeIntegrity(entry.files),
       agents: result.agents,
     }
@@ -437,10 +468,17 @@ async function installPackageWithData(
   }
 }
 
+function resolveVersionFromSource(pkg: ManifestV2['packages'][string]): string {
+  if (pkg.source.type === 'git') {
+    return pkg.source.ref === 'unknown' ? 'latest' : pkg.source.ref
+  }
+  return 'latest'
+}
+
 export async function installAllPackages(
-  manifest: Manifest,
+  manifest: ManifestV2,
   config: InstallerConfig,
-  existingLockfile: Lockfile | null
+  existingLockfile: LockfileV2 | null
 ): Promise<{
   results: InstallResult[]
   resolvedData: Map<
@@ -456,14 +494,15 @@ export async function installAllPackages(
   const packageEntries = Object.entries(manifest.packages)
 
   for (const [packageName, packageInfo] of packageEntries) {
-    core.info(`Resolving ${packageName}@${packageInfo.version}...`)
+    const version = resolveVersionFromSource(packageInfo)
+    core.info(`Resolving ${packageName}@${version}...`)
 
     let response: DownloadResponse
     let files: Array<{ path: string; content: string }>
     try {
       response = await resolvePackage(
         packageName,
-        packageInfo.version,
+        version,
         config.registryUrl,
         config.apiKey
       )
@@ -485,10 +524,10 @@ export async function installAllPackages(
       resolvedData.set(packageName, { response, files })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      core.warning(`Failed to resolve ${packageName}@${packageInfo.version}: ${message}`)
+      core.warning(`Failed to resolve ${packageName}@${version}: ${message}`)
       results.push({
         name: packageName,
-        version: packageInfo.version,
+        version,
         agents: [],
         fileCount: 0,
         success: false,

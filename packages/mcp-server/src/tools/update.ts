@@ -2,16 +2,8 @@ import { AgentverError } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
-import { isAuthenticated, registryFetch } from '../shared/registry'
+import { isAuthenticated } from '../shared/registry'
 import { readManifest } from '../storage'
-
-type UpdateCheckResponse = {
-  updates: Array<{
-    name: string
-    current: string
-    latest: string
-  }>
-}
 
 export function registerUpdateTool(server: McpServer): void {
   server.registerTool(
@@ -55,35 +47,19 @@ export function registerUpdateTool(server: McpServer): void {
           ? `Package "${packageName}" is not installed.`
           : 'No packages installed.'
         return {
-          content: [{ type: 'text', text: msg }],
+          content: [{ type: 'text' as const, text: msg }],
         }
       }
-
-      const data = await registryFetch<UpdateCheckResponse>('/skills/check-updates', {
-        method: 'POST',
-        body: {
-          packages: packageNames.map((name) => ({
-            name,
-            version: packageEntries[name]!.version,
-          })),
-        },
-      })
-
-      if (data.updates.length === 0) {
-        return {
-          content: [{ type: 'text', text: 'All packages are up to date.' }],
-        }
-      }
-
-      const lines = data.updates.map(
-        (update) => `- ${update.name}: ${update.current} -> ${update.latest}`
-      )
-
-      const header = `Updates available (${data.updates.length}):\n`
-      const footer = '\nRun agentver_install for each package to apply the update.'
 
       return {
-        content: [{ type: 'text', text: header + lines.join('\n') + footer }],
+        content: [
+          {
+            type: 'text' as const,
+            text:
+              'Update checking is not yet supported for v2 manifests. ' +
+              'Use `agentver update` via the CLI to check for and apply updates.',
+          },
+        ],
       }
     }
   )

@@ -10,7 +10,7 @@ import { AgentverError } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
-import { getRegistryUrl, isAuthenticated, registryFetch } from '../shared/registry'
+import { isAuthenticated, registryFetch } from '../shared/registry'
 import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
 
 type DownloadResponse = {
@@ -201,22 +201,32 @@ export function registerInstallTool(server: McpServer): void {
       }
 
       // Update manifest
-      const root = isGlobal ? join(homedir(), '.agentver') : projectRoot
+      const root = isGlobal ? homedir() : projectRoot
       const manifest = readManifest(root)
       manifest.packages[packageName] = {
-        name: packageName,
-        version: data.version,
+        source: {
+          type: 'git',
+          uri: data.gitUri ?? 'unknown',
+          path: data.gitPath ?? '',
+          ref: data.gitRef ?? 'unknown',
+          commit: data.gitCommitSha ?? 'unknown',
+        },
         agents: installedTo,
         installedAt: new Date().toISOString(),
+        modified: false,
       }
       writeManifest(root, manifest)
 
       // Update lockfile
-      const downloadUrl = `${getRegistryUrl()}/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/${encodeURIComponent(data.version)}/download`
       const lockfile = readLockfile(root)
       lockfile.packages[packageName] = {
-        version: data.version,
-        resolved: downloadUrl,
+        source: {
+          type: 'git',
+          uri: data.gitUri ?? 'unknown',
+          path: data.gitPath ?? '',
+          ref: data.gitRef ?? 'unknown',
+          commit: data.gitCommitSha ?? 'unknown',
+        },
         integrity: `sha256-${data.sha256 ?? 'unverified'}`,
         agents: installedTo,
       }
