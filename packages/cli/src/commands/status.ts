@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { type AgentId, getAgentPlacementPath, getCommandPlacementPath } from '@agentver/agent-definitions'
 import type { ManifestV2Package, StatusResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -9,7 +11,7 @@ import { resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
-import type { Scope } from '../utils/paths'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 type StatusCategory = 'up-to-date' | 'modified' | 'upstream' | 'both' | 'unknown'
 
@@ -70,8 +72,25 @@ async function readLocalFiles(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: Scope = 'project'
+  scope: Scope = 'project',
+  packageType?: string
 ): Promise<Array<{ path: string; content: string }>> {
+  if (packageType === 'AGENT' || packageType === 'COMMAND') {
+    const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+    const fileName = `${packageName}.md`
+    for (const agentId of agents) {
+      const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+      if (!placementPath) continue
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath) continue
+      if (existsSync(fullPath)) {
+        const content = readFileSync(fullPath, 'utf-8')
+        return [{ path: fileName, content }]
+      }
+    }
+    return []
+  }
+
   const readPath = resolveReadPath(projectRoot, packageName, agents, scope)
   if (readPath) {
     const files = await readFilesFromDirectory(readPath)
@@ -89,14 +108,14 @@ async function checkPackageStatus(
   offline: boolean,
   scope: Scope = 'project'
 ): Promise<PackageStatus> {
-  const { source, agents, pinned } = manifestEntry
+  const { source, agents, pinned, packageType } = manifestEntry
 
   // Well-known sources: only check local modification (no git upstream)
   if (source.type === 'well-known') {
     let locallyModified = false
 
     try {
-      const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
+      const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType)
       if (lockfileIntegrity && localFiles.length > 0) {
         const localIntegrity = computeSha256FromFiles(localFiles)
         locallyModified = localIntegrity !== lockfileIntegrity
@@ -133,7 +152,7 @@ async function checkPackageStatus(
   let upstreamCommit: string | undefined
 
   try {
-    const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
+    const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType)
 
     if (lockfileIntegrity && localFiles.length > 0) {
       const localIntegrity = computeSha256FromFiles(localFiles)

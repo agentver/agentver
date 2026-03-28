@@ -6,7 +6,7 @@ import { authenticateRequest } from '@/lib/auth/api-auth'
 
 const logger = createLogger('api:skills')
 
-const packageTypeSchema = z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'])
+const packageTypeSchema = z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'])
 
 /**
  * Extract compatibility agents from a package's readme frontmatter.

@@ -1,6 +1,11 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, normalize } from 'node:path'
-import type { AgentId } from '@agentver/agent-definitions'
-import { getSkillPlacementPath } from '@agentver/agent-definitions'
+import {
+  type AgentId,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+  getSkillPlacementPath,
+} from '@agentver/agent-definitions'
 import type { UpdateResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -68,13 +73,35 @@ async function checkLocalModifications(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: Scope = 'project'
+  scope: Scope = 'project',
+  packageType?: string
 ): Promise<boolean> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[packageName]
   if (!lockEntry) return false
 
   const shortName = packageName.split('/').pop()!
+
+  if (packageType === 'AGENT' || packageType === 'COMMAND') {
+    const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+    const fileName = `${shortName}.md`
+    for (const agentId of agents) {
+      const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+      if (!placementPath) continue
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath) continue
+      if (existsSync(fullPath)) {
+        try {
+          const content = readFileSync(fullPath, 'utf-8')
+          const localIntegrity = computeSha256FromFiles([{ path: fileName, content }])
+          return localIntegrity !== lockEntry.integrity
+        } catch {
+          return false
+        }
+      }
+    }
+    return false
+  }
 
   const readPath = resolveReadPath(projectRoot, shortName, agents, scope)
   if (readPath) {
@@ -305,7 +332,8 @@ export function registerUpdateCommand(program: Command): void {
                 projectRoot,
                 pkgName,
                 pkg.agents,
-                scope
+                scope,
+                pkg.packageType
               )
 
               updates.push({

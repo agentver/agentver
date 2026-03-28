@@ -47,7 +47,7 @@ import { PackageManagerTabs } from '@/components/ui/package-manager-tabs'
 import { useOrgContext } from '@/hooks/use-org-context'
 import { trpc } from '@/trpc/client'
 
-const VALID_TYPES = ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'] as const
+const VALID_TYPES = ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'] as const
 
 export default function SkillsPage() {
   return (
@@ -763,7 +763,7 @@ function SkillsPageContent() {
     search: search || undefined,
     type:
       type !== 'all'
-        ? (type as 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT')
+        ? (type as 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT' | 'AGENT' | 'COMMAND')
         : undefined,
   })
 

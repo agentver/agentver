@@ -5,7 +5,7 @@ export const PACKAGE_TYPES = [
   'SCRIPT',
   'PROMPT',
   'BUNDLE',
-  'SUB_AGENT',
+  'AGENT',
   'COMMAND',
 ] as const
 export type PackageType = (typeof PACKAGE_TYPES)[number]
