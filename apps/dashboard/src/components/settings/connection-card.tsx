@@ -96,7 +96,7 @@ export function ConnectionCard({
                   {provider.sourceType === 'git' ? 'Git' : 'Files'}
                 </Badge>
                 {provider.comingSoon && (
-                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                  <Badge variant="outline" className="text-muted-foreground text-xs">
                     Coming soon
                   </Badge>
                 )}
