@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   computeIntegrity,
   extractFilesFromManifest,
-  verifyIntegrity,
   IntegrityError,
+  verifyIntegrity,
 } from '../installer'
 
 describe('installer', () => {
@@ -100,7 +100,7 @@ describe('installer', () => {
     it('filters out non-string values from flat record', () => {
       const manifest: Record<string, unknown> = {
         'valid.md': 'content',
-        'invalid': 42,
+        invalid: 42,
         'also-invalid': null,
       }
       const files = extractFilesFromManifest(manifest)
