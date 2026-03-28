@@ -111,6 +111,10 @@ function setupGitMocks(files: Array<{ path: string; content: string; size: numbe
   })
 }
 
+// NOTE: process.chdir is required because installPackage reads process.cwd()
+// internally and does not accept a cwd parameter. Vitest 4.x uses the forks
+// pool by default, so each test file runs in its own process — no cross-file
+// race condition. Tests within this file run sequentially.
 beforeEach(() => {
   tempDir = createTempDir()
   originalCwd = process.cwd()

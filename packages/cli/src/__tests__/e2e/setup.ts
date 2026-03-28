@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { findCliRoot } from './helpers'
 
+/** Builds the CLI binary if it does not already exist. */
 export function setup(): void {
   const cliRoot = findCliRoot()
   const binPath = resolve(cliRoot, 'dist/agentver.js')
