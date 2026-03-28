@@ -66,7 +66,7 @@ export function runCli(
         resolve({
           stdout: stdout.toString(),
           stderr: stderr.toString(),
-          exitCode: error?.code != null ? (typeof error.code === 'number' ? error.code : 1) : 0,
+          exitCode: typeof error?.code === 'number' ? error.code : error ? 1 : 0,
         })
       }
     )
@@ -148,7 +148,7 @@ export function setupInstalledSkill(dir: string, options: SetupSkillOptions): vo
 
   for (const [relativePath, content] of Object.entries(options.files)) {
     const filePath = join(canonicalPath, relativePath)
-    const parentDir = join(filePath, '..')
+    const parentDir = dirname(filePath)
     mkdirSync(parentDir, { recursive: true })
     writeFileSync(filePath, content)
   }

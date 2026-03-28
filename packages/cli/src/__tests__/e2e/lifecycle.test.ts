@@ -432,23 +432,12 @@ describe('E2E: update', () => {
         agents: ['claude-code'],
       })
 
-      // Update with --offline and --json — no upstream changes available
       // The update command will try network calls, but with a fake HOME
       // and no git remote, it should report the skill as skipped/unchanged
-      const result = await runCli(['update', '--json'], { cwd: dir })
-
-      // Parse whatever JSON output we get — the command should not crash
-      const lines = result.stdout.trim().split('\n')
-      const jsonLine = lines.find((line) => line.startsWith('{'))
-      expect(jsonLine).toBeDefined()
-
-      const parsed = JSON.parse(jsonLine!) as {
-        success: boolean
-        data?: { updated: unknown[]; skipped: unknown[] }
-      }
+      const { success } = await runCliJson(['update', '--json'], { cwd: dir })
 
       // Should succeed but with no updates (network will fail silently)
-      expect(parsed.success).toBe(true)
+      expect(success).toBe(true)
     })
   })
 })
