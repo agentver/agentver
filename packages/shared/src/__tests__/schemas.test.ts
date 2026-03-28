@@ -123,8 +123,8 @@ describe('skillMetadataSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('should accept all 5 package types', () => {
-    for (const type of ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'] as const) {
+  it('should accept all 6 package types', () => {
+    for (const type of ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE'] as const) {
       skillMetadataSchema.parse({ name: 'ok', version: '1.0.0', type })
     }
   })
