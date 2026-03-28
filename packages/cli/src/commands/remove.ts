@@ -17,6 +17,88 @@ import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 
+/**
+ * Find all manifest entries that belong to a given bundle.
+ */
+function findBundleConstituents(
+  manifest: ReturnType<typeof readManifest>,
+  bundleName: string
+): string[] {
+  return Object.entries(manifest.packages)
+    .filter(([, pkg]) => pkg.bundle === bundleName)
+    .map(([name]) => name)
+}
+
+/**
+ * Collect paths that would be removed for a given package.
+ */
+function collectRemovalPaths(
+  projectRoot: string,
+  shortName: string,
+  pkg: { agents: string[] },
+  scope: Scope
+): string[] {
+  const removedPaths: string[] = []
+  const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
+
+  if (hasCanonical) {
+    const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
+    removedPaths.push(canonicalPath)
+    for (const agentId of pkg.agents) {
+      const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
+      if (placementPath) {
+        const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+        if (fullPath) removedPaths.push(fullPath)
+      }
+    }
+  } else {
+    for (const agentId of pkg.agents) {
+      const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
+      if (!placementPath) continue
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath) continue
+      if (existsSync(fullPath)) {
+        removedPaths.push(fullPath)
+      }
+    }
+  }
+
+  return removedPaths
+}
+
+/**
+ * Remove a single package's files from disk, manifest, and lockfile.
+ */
+function removePackageFiles(
+  projectRoot: string,
+  manifestKey: string,
+  shortName: string,
+  pkg: { agents: string[] },
+  scope: Scope,
+  manifest: ReturnType<typeof readManifest>,
+  lockfile: ReturnType<typeof readLockfile>
+): void {
+  const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
+
+  if (hasCanonical) {
+    removeAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
+    removeCanonicalDirectory(projectRoot, shortName, scope)
+  } else {
+    for (const agentId of pkg.agents) {
+      const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
+      if (!placementPath) continue
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath) continue
+      if (existsSync(fullPath) || isSymlink(fullPath)) {
+        rmSync(fullPath, { recursive: true, force: true })
+      }
+    }
+  }
+
+  delete manifest.packages[manifestKey]
+  delete lockfile.packages[manifestKey]
+}
+
 export function registerRemoveCommand(program: Command): void {
   program
     .command('remove <name>')
@@ -77,29 +159,21 @@ export function registerRemoveCommand(program: Command): void {
         }
 
         const pkg = manifest.packages[manifestKey]!
-        const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
+        const isBundle = pkg.packageType === 'BUNDLE'
+        const isConstituent = Boolean(pkg.bundle)
 
-        const removedPaths: string[] = []
+        // Collect constituents if this is a bundle
+        const constituents = isBundle ? findBundleConstituents(manifest, manifestKey) : []
 
-        if (hasCanonical) {
-          const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
-          removedPaths.push(canonicalPath)
-          for (const agentId of pkg.agents) {
-            const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
-            if (placementPath) {
-              const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
-              if (fullPath) removedPaths.push(fullPath)
-            }
-          }
-        } else {
-          for (const agentId of pkg.agents) {
-            const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
-            if (!placementPath) continue
-            const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
-            if (!fullPath) continue
-            if (existsSync(fullPath)) {
-              removedPaths.push(fullPath)
-            }
+        // Collect removal paths
+        const removedPaths = collectRemovalPaths(projectRoot, shortName, pkg, scope)
+
+        // Also collect constituent paths for dry-run display
+        const constituentPaths: Record<string, string[]> = {}
+        for (const cName of constituents) {
+          const cPkg = manifest.packages[cName]
+          if (cPkg) {
+            constituentPaths[cName] = collectRemovalPaths(projectRoot, cName, cPkg, scope)
           }
         }
 
@@ -109,12 +183,23 @@ export function registerRemoveCommand(program: Command): void {
               name,
               removed: false,
               paths: removedPaths,
+              bundleConstituents: constituents.length > 0 ? constituents : undefined,
             })
             return
           }
 
           console.log(`${chalk.yellow('[dry-run]')} Would remove ${chalk.green(name)}`)
 
+          if (isBundle && constituents.length > 0) {
+            console.log(
+              chalk.dim(`  Bundle — would also remove ${constituents.length} constituent(s):`)
+            )
+            for (const cName of constituents) {
+              console.log(chalk.dim(`    • ${cName}`))
+            }
+          }
+
+          const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
           if (hasCanonical) {
             const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
             console.log(chalk.dim('  Canonical path to remove:'))
@@ -141,11 +226,36 @@ export function registerRemoveCommand(program: Command): void {
           return
         }
 
+        // Confirmation prompt
         if (!options.yes && !jsonMode) {
+          let confirmMessage: string
+
+          if (isBundle && constituents.length > 0) {
+            console.log(
+              chalk.yellow(
+                `\nRemoving bundle "${name}" will also remove ${constituents.length} constituent(s):`
+              )
+            )
+            for (const cName of constituents) {
+              console.log(`  ${chalk.dim('•')} ${cName}`)
+            }
+            console.log()
+            confirmMessage = `Remove bundle ${chalk.bold(name)} and all constituents?`
+          } else if (isConstituent) {
+            console.log(
+              chalk.yellow(
+                `\n"${name}" was installed as part of bundle "${pkg.bundle}". Removing it individually.`
+              )
+            )
+            confirmMessage = `Remove ${chalk.bold(name)}?`
+          } else {
+            confirmMessage = `Remove ${chalk.bold(name)} and its agent symlinks?`
+          }
+
           const { confirmed } = await prompts({
             type: 'confirm',
             name: 'confirmed',
-            message: `Remove ${chalk.bold(name)} and its agent symlinks?`,
+            message: confirmMessage,
             initial: false,
           })
 
@@ -161,41 +271,43 @@ export function registerRemoveCommand(program: Command): void {
         }
 
         const spinner = createSpinner(`Removing ${name}...`).start()
+        const lockfile = readLockfile(projectRoot, scope)
 
-        if (hasCanonical) {
-          removeAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
-          removeCanonicalDirectory(projectRoot, shortName, scope)
-        } else {
-          for (const agentId of pkg.agents) {
-            const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
-            if (!placementPath) continue
-
-            const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
-            if (!fullPath) continue
-            if (existsSync(fullPath) || isSymlink(fullPath)) {
-              rmSync(fullPath, { recursive: true, force: true })
+        // Remove constituents first if this is a bundle
+        if (isBundle && constituents.length > 0) {
+          for (const cName of constituents) {
+            const cPkg = manifest.packages[cName]
+            if (cPkg) {
+              removePackageFiles(projectRoot, cName, cName, cPkg, scope, manifest, lockfile)
+              reportRemoval(cName)
             }
           }
         }
 
-        delete manifest.packages[manifestKey]
-        writeManifest(projectRoot, manifest, scope)
+        // Remove the package itself
+        removePackageFiles(projectRoot, manifestKey, shortName, pkg, scope, manifest, lockfile)
 
-        const lockfile = readLockfile(projectRoot, scope)
-        delete lockfile.packages[manifestKey]
+        writeManifest(projectRoot, manifest, scope)
         writeLockfile(projectRoot, lockfile, scope)
 
         reportRemoval(name)
+
+        const allRemovedPaths = [...removedPaths, ...Object.values(constituentPaths).flat()]
 
         if (jsonMode) {
           outputSuccess<RemoveResult>({
             name,
             removed: true,
-            paths: removedPaths,
+            paths: allRemovedPaths,
+            bundleConstituents: constituents.length > 0 ? constituents : undefined,
           })
         } else {
           const scopeLabel = scope === 'global' ? 'user' : 'project'
-          spinner.succeed(`Removed ${chalk.green(name)} ${chalk.dim(`(${scopeLabel})`)}`)
+          let msg = `Removed ${chalk.green(name)} ${chalk.dim(`(${scopeLabel})`)}`
+          if (isBundle && constituents.length > 0) {
+            msg += ` and ${constituents.length} constituent(s)`
+          }
+          spinner.succeed(msg)
         }
       }
     )

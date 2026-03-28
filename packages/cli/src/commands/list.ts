@@ -1,4 +1,4 @@
-import type { ListResult } from '@agentver/shared'
+import type { ListResult, ManifestV2Package } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputSuccess } from '../output.js'
@@ -14,6 +14,21 @@ function resolveScopes(options: { global?: boolean; all?: boolean }): Scope[] {
   if (options.all) return ['project', 'global']
   if (options.global) return ['global']
   return ['project']
+}
+
+function formatPackageLine(name: string, pkg: ManifestV2Package, indent: string): string {
+  const agents = pkg.agents.length > 0 ? chalk.dim(` [${pkg.agents.join(', ')}]`) : ''
+  const pinned = pkg.pinned === true ? chalk.yellow(' [pinned]') : ''
+
+  if (pkg.source.type === 'git') {
+    const ref = pkg.source.ref
+    const commit = pkg.source.commit.slice(0, 7)
+    const commitDisplay = commit ? ` ${chalk.dim(`(${commit})`)}` : ''
+    return `${indent}${chalk.green(name)}@${chalk.cyan(ref)}${commitDisplay}${pinned}${agents}`
+  }
+
+  const hostname = pkg.source.hostname
+  return `${indent}${chalk.green(name)} ${chalk.dim(`(${hostname})`)} ${chalk.dim('[well-known]')}${pinned}${agents}`
 }
 
 export function registerListCommand(program: Command): void {
@@ -56,23 +71,47 @@ export function registerListCommand(program: Command): void {
           console.log(chalk.bold(`\nInstalled packages (${entries.length}):\n`))
         }
 
-        for (const [name, pkg] of entries) {
-          const agents = pkg.agents.length > 0 ? chalk.dim(` [${pkg.agents.join(', ')}]`) : ''
-          const pinned = pkg.pinned === true ? chalk.yellow(' [pinned]') : ''
+        // Separate bundles from standalone packages
+        const bundles = new Map<string, [string, ManifestV2Package][]>()
+        const standalone: [string, ManifestV2Package][] = []
+        const bundleEntries: [string, ManifestV2Package][] = []
 
-          if (pkg.source.type === 'git') {
-            const ref = pkg.source.ref
-            const commit = pkg.source.commit.slice(0, 7)
-            const commitDisplay = commit ? ` ${chalk.dim(`(${commit})`)}` : ''
+        for (const [name, pkg] of entries) {
+          if (pkg.packageType === 'BUNDLE') {
+            bundleEntries.push([name, pkg])
+            if (!bundles.has(name)) {
+              bundles.set(name, [])
+            }
+          } else if (pkg.bundle) {
+            const existing = bundles.get(pkg.bundle) ?? []
+            existing.push([name, pkg])
+            bundles.set(pkg.bundle, existing)
+          } else {
+            standalone.push([name, pkg])
+          }
+        }
+
+        // Print bundle groups
+        for (const [bundleName, constituents] of bundles) {
+          const bundlePkg = bundleEntries.find(([name]) => name === bundleName)?.[1]
+          if (bundlePkg) {
             console.log(
-              `  ${chalk.green(name)}@${chalk.cyan(ref)}${commitDisplay}${pinned}${agents}`
+              `  ${chalk.magenta('▸')} ${formatPackageLine(bundleName, bundlePkg, '')} ${chalk.dim('[bundle]')}`
             )
           } else {
-            const hostname = pkg.source.hostname
             console.log(
-              `  ${chalk.green(name)} ${chalk.dim(`(${hostname})`)} ${chalk.dim('[well-known]')}${pinned}${agents}`
+              `  ${chalk.magenta('▸')} ${chalk.green(bundleName)} ${chalk.dim('[bundle]')}`
             )
           }
+
+          for (const [name, pkg] of constituents) {
+            console.log(`    ${formatPackageLine(name, pkg, '')}`)
+          }
+        }
+
+        // Print standalone packages
+        for (const [name, pkg] of standalone) {
+          console.log(formatPackageLine(name, pkg, '  '))
         }
 
         if (!multiScope && entries.length > 0) {

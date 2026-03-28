@@ -13,14 +13,17 @@ import type { InstallResult as InstallResultJSON } from '@agentver/shared'
 import {
   AGENT_CONFIG_FILES,
   AgentverError,
+  type BundleInstallResult,
   type GitSource,
   PACKAGE_STRUCTURES,
+  type PackageSource,
   type WellKnownSource,
 } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import type ora from 'ora'
 import prompts from 'prompts'
+import { installBundleFromFiles } from '../bundle/index.js'
 import { fetchFiles, parseGitSource, resolveRef } from '../git/index.js'
 import type { FetchedFile, ResolvedRef } from '../git/types.js'
 import {
@@ -267,7 +270,29 @@ async function installFromWellKnown(
 
       const packageType = detectPackageType(fetchResult.files)
 
-      if (packageType === 'AGENT_CONFIG') {
+      if (packageType === 'BUNDLE') {
+        const wellKnownSourceRecord: WellKnownSource = {
+          type: 'well-known',
+          baseUrl,
+          hostname,
+          skillName: selectedEntry.name,
+        }
+        return installBundleFlow(
+          selectedEntry.name,
+          fetchResult.files,
+          agents,
+          options,
+          spinner,
+          wellKnownSourceRecord,
+          integrity,
+          undefined,
+          jsonMode,
+          projectRoot,
+          scope as 'project' | 'global',
+          'well-known',
+          ''
+        )
+      } else if (packageType === 'AGENT_CONFIG') {
         await installAgentConfig(selectedEntry.name, fetchResult.files, agents, options, spinner)
       } else {
         await installStandardPackage(
@@ -514,7 +539,30 @@ async function installFromPlatform(
 
       const packageType = detectPackageType(files)
 
-      if (packageType === 'AGENT_CONFIG') {
+      if (packageType === 'BUNDLE') {
+        const gitSourceRecord: GitSource = {
+          type: 'git',
+          uri: sourceUri,
+          path: resolved.gitPath ?? '',
+          ref,
+          commit: '',
+        }
+        return installBundleFlow(
+          shortName,
+          files,
+          agents,
+          options,
+          spinner,
+          gitSourceRecord,
+          integrity,
+          securityScanResult,
+          jsonMode,
+          projectRoot,
+          scope,
+          ref,
+          ''
+        )
+      } else if (packageType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, files, agents, options, spinner)
       } else {
         await installStandardPackage(shortName, files, agents, options, spinner)
@@ -772,7 +820,30 @@ export async function installPackage(
 
       const packageType = detectPackageType(result.files)
 
-      if (packageType === 'AGENT_CONFIG') {
+      if (packageType === 'BUNDLE') {
+        const gitSourceRecord: GitSource = {
+          type: 'git',
+          uri: gitUri,
+          path: gitSource.path,
+          ref: gitSource.ref,
+          commit: resolved.commitSha,
+        }
+        return installBundleFlow(
+          shortName,
+          result.files,
+          agents,
+          options,
+          spinner,
+          gitSourceRecord,
+          integrity,
+          securityScanResult,
+          jsonMode,
+          projectRoot,
+          scope,
+          gitSource.ref,
+          resolved.commitSha
+        )
+      } else if (packageType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, result.files, agents, options, spinner)
       } else {
         await installStandardPackage(shortName, result.files, agents, options, spinner)
@@ -1053,6 +1124,79 @@ async function installStandardPackage(
   createAgentSymlinks(projectRoot, name, agents, scope)
 }
 
+/**
+ * Shared bundle install flow used by both platform and git install paths.
+ *
+ * Delegates to `installBundleFromFiles` for actual package expansion,
+ * then records the bundle itself in the manifest/lockfile.
+ */
+async function installBundleFlow(
+  bundleName: string,
+  files: FetchedFile[],
+  agents: string[],
+  options: InstallOptions,
+  spinner: ReturnType<typeof ora> | SpinnerLike,
+  sourceRecord: PackageSource,
+  integrity: string,
+  securityScanResult: SecurityScanResult | undefined,
+  jsonMode: boolean,
+  projectRoot: string,
+  scope: 'project' | 'global',
+  ref: string,
+  commitSha: string
+): Promise<InstallResult> {
+  const bundleResult = await installBundleFromFiles(
+    bundleName,
+    files,
+    agents,
+    options,
+    spinner,
+    sourceRecord,
+    installPackage
+  )
+
+  if (!options.dryRun) {
+    // Record the bundle itself in manifest/lockfile
+    const manifest = readManifest(projectRoot, scope)
+    manifest.packages[bundleName] = {
+      source: sourceRecord,
+      agents,
+      installedAt: new Date().toISOString(),
+      modified: false,
+      packageType: 'BUNDLE',
+    }
+    writeManifest(projectRoot, manifest, scope)
+
+    const lockfile = readLockfile(projectRoot, scope)
+    lockfile.packages[bundleName] = {
+      source: sourceRecord,
+      integrity,
+      agents,
+    }
+    writeLockfile(projectRoot, lockfile, scope)
+  }
+
+  const scopeLabel = scope === 'global' ? 'user' : 'project'
+  const warnings: string[] = []
+  if (securityScanResult?.verdict === 'WARN') {
+    warnings.push(`Security scan passed with ${securityScanResult.findings.length} warning(s)`)
+  }
+
+  if (jsonMode) {
+    outputSuccess<BundleInstallResult>(bundleResult, warnings.length > 0 ? warnings : undefined)
+  } else {
+    const installedCount = bundleResult.installed.length
+    const skippedCount = bundleResult.skipped.length
+    let summary = `Installed bundle ${chalk.green(bundleName)} ${chalk.dim(`(${scopeLabel})`)} — ${installedCount} package(s)`
+    if (skippedCount > 0) {
+      summary += `, ${skippedCount} skipped`
+    }
+    spinner.succeed(summary)
+  }
+
+  return { name: bundleName, ref, commitSha, agents }
+}
+
 export function registerInstallCommand(program: Command): void {
   program
     .command('install <source>')
@@ -1072,7 +1216,8 @@ Source formats:
   github.com/owner/repo#sha          Pinned to exact commit
   gitlab.com/owner/repo              GitLab repositories
   example.com/my-skill               Well-known domain (RFC-style discovery)
-  agentver://org/skills/name@ref     Platform-hosted skill`
+  agentver://org/skills/name@ref     Platform-hosted skill
+  org/bundle-name                    Bundle (auto-detected from agentver.bundle.yaml)`
     )
     .action(async (source: string, options: InstallOptions) => {
       try {
