@@ -271,6 +271,9 @@ describe('commands/update', () => {
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
     vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)
+    vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+      '/project/.agents/skills/test-skill'
+    )
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude-code/skills/test-skill')
     vi.mocked(backupModule.createBackup).mockReturnValue({
       packageName: 'test-skill',
@@ -546,6 +549,10 @@ describe('commands/update', () => {
         'test-skill',
         expect.any(String)
       )
+      expect(patchesModule.applyPatch).toHaveBeenCalledWith(
+        '/project/.agents/skills/test-skill',
+        expect.any(String)
+      )
     })
 
     it('removes the patch file after successful reapplication', async () => {
@@ -581,6 +588,10 @@ describe('commands/update', () => {
 
       await updateAction('test-skill', {})
 
+      expect(patchesModule.applyPatch).toHaveBeenCalledWith(
+        '/project/.agents/skills/test-skill',
+        expect.any(String)
+      )
       expect(patchesModule.removePatch).toHaveBeenCalledWith('/project', 'test-skill')
     })
   })
@@ -1096,6 +1107,10 @@ describe('commands/update', () => {
       expect(installPackage).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ global: true, agent: 'claude-code' })
+      )
+      expect(patchesModule.applyPatch).toHaveBeenCalledWith(
+        '/home/testuser/.agents/skills/test-skill',
+        expect.any(String)
       )
     })
   })
