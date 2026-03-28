@@ -34,17 +34,12 @@ vi.mock('chalk', () => {
   return { default: fn }
 })
 
-vi.mock('ora', () => {
-  const spinner = {
-    start: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    text: '',
-  }
-  return { default: () => spinner }
-})
+vi.mock('../../output.js', () => ({
+  isJSONMode: vi.fn().mockReturnValue(false),
+  outputSuccess: vi.fn(),
+  outputError: vi.fn(),
+  createSpinner: vi.fn(),
+}))
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -56,6 +51,7 @@ import { registerVersionCommand } from '../../commands/version.js'
 import { platformFetch } from '../../registry/platform.js'
 import { readLockfile } from '../../storage/lockfile.js'
 import { readManifest } from '../../storage/manifest.js'
+import * as outputModule from '../../output.js'
 import {
   createLockfile,
   createLockfilePackage,
@@ -64,6 +60,7 @@ import {
   createSharedGitSource,
   createSkillMd,
 } from '../helpers/fixtures'
+import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -154,6 +151,7 @@ describe('version command', () => {
       throw new Error('process.exit called')
     }) as never)
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
   })
 
   afterEach(() => {

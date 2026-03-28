@@ -106,17 +106,6 @@ vi.mock('prompts', () => ({
   default: vi.fn().mockResolvedValue({ confirmed: true }),
 }))
 
-vi.mock('ora', () => ({
-  default: vi.fn().mockReturnValue({
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    text: '',
-  }),
-}))
 
 // ---------------------------------------------------------------------------
 // SUT import (after mocks)

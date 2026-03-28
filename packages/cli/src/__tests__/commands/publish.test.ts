@@ -35,16 +35,10 @@ vi.mock('chalk', () => {
 })
 
 vi.mock('../../output.js', () => ({
+  isJSONMode: vi.fn().mockReturnValue(false),
   outputSuccess: vi.fn(),
   outputError: vi.fn(),
-  createSpinner: vi.fn(() => ({
-    start: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    text: '',
-  })),
+  createSpinner: vi.fn(),
 }))
 
 // ---------------------------------------------------------------------------
@@ -59,6 +53,7 @@ import * as outputModule from '../../output.js'
 import { platformFetch } from '../../registry/platform.js'
 import { scanFiles } from '../../security/index.js'
 import { createAuditScanResult, createFetchedFiles, createSkillMd } from '../helpers/fixtures'
+import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -118,6 +113,9 @@ describe('publish command', () => {
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(
+      createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
+    )
   })
 
   afterEach(() => {

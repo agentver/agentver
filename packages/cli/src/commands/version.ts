@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import ora from 'ora'
+import { createSpinner } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
@@ -104,7 +104,7 @@ export function registerVersionCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora(`Creating version ${semver}...`).start()
+      const spinner = createSpinner(`Creating version ${semver}...`).start()
 
       try {
         const result = await platformFetch<VersionCreateResponse>(
@@ -159,7 +159,7 @@ export function registerVersionCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora('Fetching versions...').start()
+      const spinner = createSpinner('Fetching versions...').start()
 
       try {
         const versions = await platformFetch<VersionInfo[]>(
