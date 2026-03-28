@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getConfigFilePath, translateConfig } from '../config-translator'
+import { getConfigFilePath, getGlobalConfigFilePath, translateConfig } from '../config-translator'
 import type { AgentId } from '../types'
 
 describe('translateConfig', () => {
@@ -120,5 +120,38 @@ describe('getConfigFilePath', () => {
   it('should handle dynamic paths (roo, cline)', () => {
     expect(getConfigFilePath('roo', 'my-rules')).toBe('.roo/rules/my-rules.md')
     expect(getConfigFilePath('cline', 'my-rules')).toBe('.clinerules/my-rules.md')
+  })
+})
+
+describe('getGlobalConfigFilePath', () => {
+  it('should prepend ~/<configDir>/ for claude-code', () => {
+    expect(getGlobalConfigFilePath('claude-code', 'my-config')).toBe('~/.claude/CLAUDE.md')
+  })
+
+  it('should prepend ~/<configDir>/ for cursor', () => {
+    expect(getGlobalConfigFilePath('cursor', 'my-config')).toBe('~/.cursor/.cursorrules')
+  })
+
+  it('should prepend ~/<configDir>/ for codex', () => {
+    expect(getGlobalConfigFilePath('codex', 'my-config')).toBe('~/.codex/AGENTS.md')
+  })
+
+  it('should not double-prefix when configPath already starts with configDir (roo)', () => {
+    // roo returns .roo/rules/<name>.md which already contains configDirs[0] (.roo)
+    expect(getGlobalConfigFilePath('roo', 'my-config')).toBe('~/.roo/rules/my-config.md')
+  })
+
+  it('should not double-prefix when configPath already starts with configDir (goose)', () => {
+    // goose returns .goose/config.yaml which already contains configDirs[0] (.goose)
+    expect(getGlobalConfigFilePath('goose', 'my-config')).toBe('~/.goose/config.yaml')
+  })
+
+  it('should handle agents with no configDirs (copilot)', () => {
+    // copilot has configDirs: [] but configPath is .github/copilot-instructions.md
+    expect(getGlobalConfigFilePath('copilot', 'my-config')).toBe('~/.github/copilot-instructions.md')
+  })
+
+  it('should return null for unknown agent', () => {
+    expect(getGlobalConfigFilePath('nonexistent-agent' as AgentId, 'my-config')).toBeNull()
   })
 })

@@ -79,6 +79,7 @@ vi.mock('../../output.js', () => ({
 vi.mock('@agentver/agent-definitions', () => ({
   detectInstalledAgents: vi.fn(),
   getConfigFilePath: vi.fn(),
+  getGlobalConfigFilePath: vi.fn(),
   getSkillPlacementPath: vi.fn(),
   composeConfigs: vi.fn(),
   isComposedConfig: vi.fn(),
@@ -1653,7 +1654,7 @@ describe('commands/install', () => {
       expect(writeCalls[0]![1]).toBe(recomposedOutput)
     })
 
-    it('resolves config path under homedir for global installs', async () => {
+    it('installs AGENT_CONFIG to correct global path for claude-code', async () => {
       setupHappyPathMocks()
       const configFiles = createAgentConfigFiles()
       vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
@@ -1663,18 +1664,66 @@ describe('commands/install', () => {
       })
       vi.mocked(agentDefs.translateConfig).mockReturnValue([
         {
-          agentId: 'goose',
-          filePath: '.goose/config.yaml',
-          content: 'instructions: "rules"\n',
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: '# My Config\n\nRules for the agent.\n',
         },
       ])
+      vi.mocked(agentDefs.getGlobalConfigFilePath).mockReturnValue('~/.claude/CLAUDE.md')
 
-      await installPackage(TEST_SOURCE, { agent: 'goose', global: true })
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', global: true })
 
+      expect(nodeFs.writeFileSync).toHaveBeenCalled()
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
-      expect(writeCalls).toHaveLength(1)
-      // Global path should be resolved under homedir, not project root
-      expect(String(writeCalls[0]![0])).toBe('/mock-home/.goose/config.yaml')
+      const writtenPaths = writeCalls.map((c) => String(c[0]))
+      expect(writtenPaths.some((p) => p.endsWith('/.claude/CLAUDE.md'))).toBe(true)
+    })
+
+    it('installs AGENT_CONFIG to correct global path for cursor', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'cursor',
+          filePath: '.cursorrules',
+          content: '# My Config\n\nRules for the agent.\n',
+        },
+      ])
+      vi.mocked(agentDefs.getGlobalConfigFilePath).mockReturnValue('~/.cursor/.cursorrules')
+
+      await installPackage(TEST_SOURCE, { agent: 'cursor', global: true })
+
+      expect(nodeFs.writeFileSync).toHaveBeenCalled()
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      const writtenPaths = writeCalls.map((c) => String(c[0]))
+      expect(writtenPaths.some((p) => p.endsWith('/.cursor/.cursorrules'))).toBe(true)
+    })
+
+    it('skips agents where getGlobalConfigFilePath returns null for global install', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: '# My Config\n\nRules for the agent.\n',
+        },
+      ])
+      vi.mocked(agentDefs.getGlobalConfigFilePath).mockReturnValue(null)
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', global: true })
+
+      expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
     })
 
     it('rejects path traversal in translateConfig filePath', async () => {

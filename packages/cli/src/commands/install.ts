@@ -5,6 +5,7 @@ import type { AgentId } from '@agentver/agent-definitions'
 import {
   composeConfigs,
   detectInstalledAgents,
+  getGlobalConfigFilePath,
   isComposedConfig,
   parseComposedSections,
   translateConfig,
@@ -976,8 +977,12 @@ async function installAgentConfig(
   const translations = translateConfig(configContent, name, agents as AgentId[])
 
   for (const translation of translations) {
+    const fullConfigPath = options.global
+      ? (getGlobalConfigFilePath(translation.agentId, name)?.replace(/^~/, homedir()) ?? null)
+      : resolve(projectRoot, translation.filePath)
+    if (!fullConfigPath) continue
+
     const baseRoot = options.global ? homedir() : projectRoot
-    const fullConfigPath = resolve(baseRoot, translation.filePath)
     const rel = relative(baseRoot, fullConfigPath)
 
     if (rel.startsWith('..') || isAbsolute(rel)) {
