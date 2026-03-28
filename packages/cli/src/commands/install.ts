@@ -910,7 +910,7 @@ async function installAgentConfig(
       ? translation.filePath.replace('~', homedir())
       : join(projectRoot, translation.filePath)
 
-    const configDir = join(fullConfigPath, '..')
+    const configDir = dirname(fullConfigPath)
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true })
     }
