@@ -98,6 +98,8 @@ vi.mock('../../output.js', () => ({
 
 vi.mock('@agentver/agent-definitions', () => ({
   getSkillPlacementPath: vi.fn(),
+  getAgentPlacementPath: vi.fn(),
+  getCommandPlacementPath: vi.fn(),
   detectInstalledAgents: vi.fn(),
   getConfigFilePath: vi.fn(),
 }))
@@ -1279,6 +1281,90 @@ describe('commands/update', () => {
       expect(patchesModule.applyPatch).toHaveBeenCalledWith(
         '/home/testuser/.agents/skills/test-skill',
         expect.any(String)
+      )
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // AGENT/COMMAND single-file packages
+  // ---------------------------------------------------------------------------
+
+  describe('AGENT/COMMAND single-file packages', () => {
+    function setupAgentPackage(name: string) {
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/test-repo',
+        path: '',
+        ref: 'main',
+        commit: OLD_SHA,
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            [name]: createManifestPackage({
+              source,
+              packageType: 'AGENT',
+              entryFile: `${name}.md`,
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            [name]: createLockfilePackage({
+              source,
+              integrity: INTEGRITY_HASH,
+            }),
+          },
+        })
+      )
+
+      setupResolveToNewSha()
+
+      vi.mocked(installPackage).mockResolvedValue({
+        name,
+        ref: 'main',
+        commitSha: NEW_SHA,
+        agents: ['claude-code'],
+      })
+
+      vi.mocked(backupModule.createBackup).mockReturnValue({
+        packageName: name,
+        projectRoot: '/project',
+        tempDir: '/tmp/backup',
+        skillDir: null,
+        manifestEntry: null,
+        lockfileEntry: null,
+        scope: 'project',
+      })
+
+      // Use JSON mode to skip interactive prompts
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+    }
+
+    it('passes type: agent to installPackage for AGENT packages during update', async () => {
+      setupAgentPackage('deep-research')
+
+      await updateAction('deep-research', {})
+
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ type: 'agent' })
+      )
+    })
+
+    it('skips file backup for AGENT packages (passes null skillDir)', async () => {
+      setupAgentPackage('my-agent')
+
+      await updateAction('my-agent', {})
+
+      expect(backupModule.createBackup).toHaveBeenCalledWith(
+        'my-agent',
+        '/project',
+        null,
+        'project'
       )
     })
   })
