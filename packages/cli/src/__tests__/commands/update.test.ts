@@ -310,6 +310,27 @@ describe('commands/update', () => {
       )
     })
 
+    it('passes all agents to installPackage for multi-agent installations', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        agents: ['claude-code', 'cursor', 'windsurf'],
+      })
+      setupResolveToNewSha()
+      vi.mocked(installPackage).mockResolvedValue({
+        name: 'test-skill',
+        ref: 'main',
+        commitSha: NEW_SHA,
+        agents: ['claude-code', 'cursor', 'windsurf'],
+      })
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.stringContaining('github.com/test-org/test-repo'),
+        expect.objectContaining({ agent: ['claude-code', 'cursor', 'windsurf'] })
+      )
+    })
+
     it('creates a backup before performing the update', async () => {
       setupSinglePackage('test-skill')
       setupResolveToNewSha()

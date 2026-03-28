@@ -46,6 +46,9 @@ import {
   parseWellKnownSource,
 } from '../wellknown/index.js'
 
+const toAgentList = (agent?: string | string[]): string[] =>
+  agent ? (Array.isArray(agent) ? agent : [agent]) : []
+
 export type InstallOptions = {
   agent?: string | string[]
   global?: boolean
@@ -225,7 +228,7 @@ async function installFromWellKnown(
 
     if (options.path) {
       await installToCustomPath(selectedEntry.name, fetchResult.files, options, spinner)
-      agents = options.agent ? (Array.isArray(options.agent) ? options.agent : [options.agent]) : []
+      agents = toAgentList(options.agent)
     } else {
       if (options.detect === false && !options.agent) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
@@ -234,9 +237,7 @@ async function installFromWellKnown(
       }
 
       agents = options.agent
-        ? Array.isArray(options.agent)
-          ? options.agent
-          : [options.agent]
+        ? toAgentList(options.agent)
         : options.detect === false
           ? []
           : detectInstalledAgents(projectRoot).map((a) => a.id)
@@ -470,7 +471,7 @@ async function installFromPlatform(
 
     if (options.path) {
       await installToCustomPath(shortName, files, options, spinner)
-      agents = options.agent ? (Array.isArray(options.agent) ? options.agent : [options.agent]) : []
+      agents = toAgentList(options.agent)
     } else {
       if (options.detect === false && !options.agent) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
@@ -479,9 +480,7 @@ async function installFromPlatform(
       }
 
       agents = options.agent
-        ? Array.isArray(options.agent)
-          ? options.agent
-          : [options.agent]
+        ? toAgentList(options.agent)
         : options.detect === false
           ? []
           : detectInstalledAgents(projectRoot).map((a) => a.id)
@@ -726,7 +725,7 @@ export async function installPackage(
 
     if (options.path) {
       await installToCustomPath(shortName, result.files, options, spinner)
-      agents = options.agent ? (Array.isArray(options.agent) ? options.agent : [options.agent]) : []
+      agents = toAgentList(options.agent)
     } else {
       if (options.detect === false && !options.agent) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
@@ -735,9 +734,7 @@ export async function installPackage(
       }
 
       agents = options.agent
-        ? Array.isArray(options.agent)
-          ? options.agent
-          : [options.agent]
+        ? toAgentList(options.agent)
         : options.detect === false
           ? []
           : detectInstalledAgents(projectRoot).map((a) => a.id)
