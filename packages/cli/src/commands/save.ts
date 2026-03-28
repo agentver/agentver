@@ -2,8 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import ora from 'ora'
 import { readFilesFromDirectory } from '../git/fetcher.js'
+import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile, writeLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
@@ -105,7 +105,7 @@ export function registerSaveCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora('Reading local files...').start()
+      const spinner = createSpinner('Reading local files...').start()
 
       try {
         const localFiles = await readFilesFromDirectory(skillDir)
@@ -126,18 +126,12 @@ export function registerSaveCommand(program: Command): void {
           spinner.stop()
 
           if (options.json) {
-            console.log(
-              JSON.stringify(
-                {
-                  dryRun: true,
-                  skill: `@${namespace.org}/${namespace.name}`,
-                  message: commitMessage,
-                  files: filesToSave.map((f) => f.path),
-                },
-                null,
-                2
-              )
-            )
+            outputSuccess({
+              dryRun: true,
+              skill: `@${namespace.org}/${namespace.name}`,
+              message: commitMessage,
+              files: filesToSave.map((f) => f.path),
+            })
           } else {
             process.stdout.write(
               chalk.yellow('[dry-run]') +
@@ -173,17 +167,11 @@ export function registerSaveCommand(program: Command): void {
         }
 
         if (options.json) {
-          console.log(
-            JSON.stringify(
-              {
-                skill: `@${namespace.org}/${namespace.name}`,
-                commitSha: result.commitSha,
-                files: filesToSave.map((f) => f.path),
-              },
-              null,
-              2
-            )
-          )
+          outputSuccess({
+            skill: `@${namespace.org}/${namespace.name}`,
+            commitSha: result.commitSha,
+            files: filesToSave.map((f) => f.path),
+          })
         } else {
           spinner.succeed(
             `Saved ${chalk.green(skillName)} ${chalk.dim(`(${result.commitSha.slice(0, 7)})`)}`

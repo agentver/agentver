@@ -35,17 +35,18 @@ vi.mock('chalk', () => {
   return { default: fn }
 })
 
-vi.mock('ora', () => {
-  const spinner = {
+vi.mock('../../output.js', () => ({
+  outputSuccess: vi.fn(),
+  outputError: vi.fn(),
+  createSpinner: vi.fn(() => ({
     start: vi.fn().mockReturnThis(),
     stop: vi.fn().mockReturnThis(),
     succeed: vi.fn().mockReturnThis(),
     fail: vi.fn().mockReturnThis(),
     warn: vi.fn().mockReturnThis(),
     text: '',
-  }
-  return { default: () => spinner }
-})
+  })),
+}))
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -54,6 +55,7 @@ vi.mock('ora', () => {
 import { existsSync, readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import { registerDraftCommand } from '../../commands/draft.js'
+import * as outputModule from '../../output.js'
 import { platformFetch } from '../../registry/platform.js'
 import { readLockfile, writeLockfile } from '../../storage/lockfile.js'
 import { readManifest } from '../../storage/manifest.js'
@@ -151,14 +153,12 @@ function setupLockfileOnDraft(draftName = 'my-feature'): void {
 
 describe('draft command', () => {
   let processExitSpy: ReturnType<typeof vi.spyOn>
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     vi.clearAllMocks()
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -199,13 +199,11 @@ describe('draft command', () => {
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'draft', 'create', 'my-feature', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output).toHaveProperty('name', 'my-feature')
-      expect(output).toHaveProperty('branchName')
+      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+      const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+      expect(data).toHaveProperty('name', 'my-feature')
+      expect(data).toHaveProperty('branchName')
     })
 
     it('exits with error when skill identity cannot be determined', async () => {
@@ -294,13 +292,11 @@ describe('draft command', () => {
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'draft', 'list', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output).toHaveProperty('drafts')
-      expect(Array.isArray(output.drafts)).toBe(true)
+      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+      const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+      expect(data).toHaveProperty('drafts')
+      expect(Array.isArray(data.drafts)).toBe(true)
     })
 
     it('exits with error when skill identity cannot be determined', async () => {
@@ -372,14 +368,12 @@ describe('draft command', () => {
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'draft', 'switch', 'my-feature', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output.skill).toEqual(expect.stringContaining('test-skill'))
-      expect(output).toHaveProperty('draft', 'my-feature')
-      expect(output).toHaveProperty('ref', 'draft/test-skill/my-feature')
+      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+      const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+      expect(data.skill).toEqual(expect.stringContaining('test-skill'))
+      expect(data).toHaveProperty('draft', 'my-feature')
+      expect(data).toHaveProperty('ref', 'draft/test-skill/my-feature')
     })
 
     it('exits with error when skill is not in the lockfile', async () => {
@@ -470,14 +464,12 @@ describe('draft command', () => {
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'draft', 'publish', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output).toHaveProperty('merged', true)
-      expect(output).toHaveProperty('commitSha', 'merged123abc')
-      expect(output).toHaveProperty('ref', 'main')
+      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+      const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+      expect(data).toHaveProperty('merged', true)
+      expect(data).toHaveProperty('commitSha', 'merged123abc')
+      expect(data).toHaveProperty('ref', 'main')
     })
 
     it('exits with error when skill identity cannot be determined', async () => {
@@ -576,14 +568,12 @@ describe('draft command', () => {
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'draft', 'discard', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output).toHaveProperty('discarded', true)
-      expect(output).toHaveProperty('previousRef', 'draft/test-skill/my-feature')
-      expect(output).toHaveProperty('ref', 'main')
+      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+      const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+      expect(data).toHaveProperty('discarded', true)
+      expect(data).toHaveProperty('previousRef', 'draft/test-skill/my-feature')
+      expect(data).toHaveProperty('ref', 'main')
     })
 
     it('exits with error when skill identity cannot be determined', async () => {

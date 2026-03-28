@@ -3,9 +3,9 @@ import { basename, join, resolve } from 'node:path'
 import { type AgentverSkill, parseSkillFrontmatter } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import ora from 'ora'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import type { GitSource } from '../git/types.js'
+import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { scanFiles } from '../security/index.js'
 import { extractError, SEMVER_REGEX } from '../utils.js'
@@ -62,7 +62,7 @@ export function registerPublishCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora('Reading skill metadata...').start()
+      const spinner = createSpinner('Reading skill metadata...').start()
 
       try {
         // Parse frontmatter using shared validator
@@ -151,19 +151,13 @@ export function registerPublishCommand(program: Command): void {
           spinner.stop()
 
           if (options.json) {
-            console.log(
-              JSON.stringify(
-                {
-                  dryRun: true,
-                  skill: `@${namespace.org}/${namespace.name}`,
-                  version,
-                  files: filesToPublish.map((f) => f.path),
-                  frontmatter,
-                },
-                null,
-                2
-              )
-            )
+            outputSuccess({
+              dryRun: true,
+              skill: `@${namespace.org}/${namespace.name}`,
+              version,
+              files: filesToPublish.map((f) => f.path),
+              frontmatter,
+            })
           } else {
             process.stdout.write(
               chalk.yellow('[dry-run]') +
@@ -194,17 +188,11 @@ export function registerPublishCommand(program: Command): void {
         )
 
         if (options.json) {
-          console.log(
-            JSON.stringify(
-              {
-                skill: `@${namespace.org}/${namespace.name}`,
-                version: result.version,
-                commitSha: result.commitSha,
-              },
-              null,
-              2
-            )
-          )
+          outputSuccess({
+            skill: `@${namespace.org}/${namespace.name}`,
+            version: result.version,
+            commitSha: result.commitSha,
+          })
         } else {
           spinner.succeed(
             `Published ${chalk.green(frontmatter.name)}@${chalk.cyan(result.version)} ${chalk.dim(`(${result.commitSha.slice(0, 7)})`)}`
