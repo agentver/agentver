@@ -44,7 +44,7 @@ describe('tools/list', () => {
     )
 
     const result = (await handler({ global: false })) as { content: Array<{ text: string }> }
-    const text = result.content[0].text
+    const text = result.content[0]!.text
 
     expect(text).toContain('test-org/test-skill@1.0.0')
     expect(text).toContain('claude-code')
@@ -55,7 +55,7 @@ describe('tools/list', () => {
     vi.mocked(storageMod.readManifest).mockReturnValue(createManifest())
 
     const result = (await handler({ global: false })) as { content: Array<{ text: string }> }
-    expect(result.content[0].text).toContain('No packages installed')
+    expect(result.content[0]!.text).toContain('No packages installed')
   })
 
   it('uses project root from getWorkingDirectory for project scope', async () => {
@@ -82,9 +82,9 @@ describe('tools/list', () => {
     )
 
     const projectResult = (await handler({ global: false })) as { content: Array<{ text: string }> }
-    expect(projectResult.content[0].text).toContain('Project')
+    expect(projectResult.content[0]!.text).toContain('Project')
 
     const globalResult = (await handler({ global: true })) as { content: Array<{ text: string }> }
-    expect(globalResult.content[0].text).toContain('Global')
+    expect(globalResult.content[0]!.text).toContain('Global')
   })
 })

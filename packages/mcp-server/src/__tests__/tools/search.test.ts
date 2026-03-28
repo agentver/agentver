@@ -37,15 +37,15 @@ describe('tools/search', () => {
     })
 
     const result = (await handler({ query: 'test' })) as { content: Array<{ text: string }> }
-    expect(result.content[0].text).toContain('org/skill-a@1.0.0')
-    expect(result.content[0].text).toContain('100 downloads')
+    expect(result.content[0]!.text).toContain('org/skill-a@1.0.0')
+    expect(result.content[0]!.text).toContain('100 downloads')
   })
 
   it('returns "No results found" when results empty', async () => {
     vi.mocked(registryMod.registryFetch).mockResolvedValue({ results: [], total: 0 })
 
     const result = (await handler({ query: 'nonexistent' })) as { content: Array<{ text: string }> }
-    expect(result.content[0].text).toContain('No results found')
+    expect(result.content[0]!.text).toContain('No results found')
   })
 
   it('passes query parameter to registry', async () => {

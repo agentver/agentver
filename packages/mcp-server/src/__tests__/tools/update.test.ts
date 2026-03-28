@@ -61,7 +61,7 @@ describe('tools/update', () => {
     vi.mocked(storageMod.readManifest).mockReturnValue(createManifest())
 
     const result = (await handler({ package: undefined })) as { content: Array<{ text: string }> }
-    expect(result.content[0].text).toContain('No packages installed')
+    expect(result.content[0]!.text).toContain('No packages installed')
   })
 
   it('returns "Package not installed" when specified package not in manifest', async () => {
@@ -72,7 +72,7 @@ describe('tools/update', () => {
     const result = (await handler({ package: 'org/nonexistent' })) as {
       content: Array<{ text: string }>
     }
-    expect(result.content[0].text).toContain('not installed')
+    expect(result.content[0]!.text).toContain('not installed')
   })
 
   it('sends correct payload to check-updates endpoint', async () => {
@@ -106,7 +106,7 @@ describe('tools/update', () => {
     vi.mocked(registryMod.registryFetch).mockResolvedValue({ updates: [] })
 
     const result = (await handler({ package: undefined })) as { content: Array<{ text: string }> }
-    expect(result.content[0].text).toContain('All packages are up to date')
+    expect(result.content[0]!.text).toContain('All packages are up to date')
   })
 
   it('returns formatted update list when updates exist', async () => {
@@ -122,7 +122,7 @@ describe('tools/update', () => {
     })
 
     const result = (await handler({ package: undefined })) as { content: Array<{ text: string }> }
-    const text = result.content[0].text
+    const text = result.content[0]!.text
     expect(text).toContain('test-org/test-skill')
     expect(text).toContain('1.0.0 -> 2.0.0')
   })

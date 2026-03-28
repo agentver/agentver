@@ -107,7 +107,7 @@ describe('tools/install', () => {
       .mockResolvedValueOnce(createVersionListResponse())
       .mockResolvedValueOnce(createDownloadResponse())
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -125,7 +125,7 @@ describe('tools/install', () => {
     setupAuthenticated()
     vi.mocked(registryMod.registryFetch).mockResolvedValue(createDownloadResponse())
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -156,7 +156,7 @@ describe('tools/install', () => {
       global: false,
     })) as { content: Array<{ text: string }> }
 
-    expect(result.content[0].text).toContain('no files')
+    expect(result.content[0]!.text).toContain('no files')
   })
 
   it('returns "no agents detected" when no agents found and none specified', async () => {
@@ -171,7 +171,7 @@ describe('tools/install', () => {
       global: false,
     })) as { content: Array<{ text: string }> }
 
-    expect(result.content[0].text).toContain('No AI agents detected')
+    expect(result.content[0]!.text).toContain('No AI agents detected')
   })
 
   it('uses explicitly provided agent IDs instead of auto-detection', async () => {
@@ -198,7 +198,7 @@ describe('tools/install', () => {
       })
     )
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -227,7 +227,7 @@ describe('tools/install', () => {
       })
     )
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -248,7 +248,7 @@ describe('tools/install', () => {
     setupAuthenticated()
     vi.mocked(registryMod.registryFetch).mockResolvedValue(createDownloadResponse())
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -278,7 +278,7 @@ describe('tools/install', () => {
       createDownloadResponse({ sha256: 'deadbeef' })
     )
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -306,7 +306,7 @@ describe('tools/install', () => {
     setupAuthenticated()
     vi.mocked(registryMod.registryFetch).mockResolvedValue(createDownloadResponse())
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -317,7 +317,7 @@ describe('tools/install', () => {
       global: false,
     })) as { content: Array<{ text: string }> }
 
-    const text = result.content[0].text
+    const text = result.content[0]!.text
     expect(text).toContain('test-org/test-skill@1.0.0')
     expect(text).toContain('claude-code')
     expect(text).toContain('1 file(s)')
@@ -337,7 +337,7 @@ describe('tools/install', () => {
       )
       .mockResolvedValueOnce(createDownloadResponse({ version: '1.0.0' }))
     vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-      { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+      { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
     ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
     vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test-skill')
 
@@ -348,7 +348,7 @@ describe('tools/install', () => {
       global: false,
     })) as { content: Array<{ text: string }> }
 
-    expect(result.content[0].text).toContain('1.0.0')
+    expect(result.content[0]!.text).toContain('1.0.0')
     expect(registryMod.registryFetch).toHaveBeenLastCalledWith(
       expect.stringContaining('/1.0.0/download')
     )

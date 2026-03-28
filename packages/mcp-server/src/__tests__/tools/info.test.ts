@@ -48,7 +48,7 @@ describe('tools/info', () => {
     const result = (await handler({ package: 'test-org/test-skill' })) as {
       content: Array<{ text: string }>
     }
-    const text = result.content[0].text
+    const text = result.content[0]!.text
 
     expect(text).toContain('test-org/test-skill')
     expect(text).toContain('Type: SKILL')
@@ -64,7 +64,7 @@ describe('tools/info', () => {
     const result = (await handler({ package: 'invalid-name' })) as {
       content: Array<{ text: string }>
     }
-    expect(result.content[0].text).toContain('Invalid package name')
+    expect(result.content[0]!.text).toContain('Invalid package name')
   })
 
   it('encodes org and name in URL', async () => {
@@ -81,7 +81,7 @@ describe('tools/info', () => {
     const result = (await handler({ package: 'test-org/test-skill' })) as {
       content: Array<{ text: string }>
     }
-    const text = result.content[0].text
+    const text = result.content[0]!.text
 
     expect(text).toContain('Visibility: PUBLIC')
     expect(text).toContain('Tags: typescript, testing')
@@ -95,8 +95,8 @@ describe('tools/info', () => {
     const result = (await handler({ package: 'test-org/test-skill' })) as {
       content: Array<{ text: string }>
     }
-    expect(result.content[0].text).toContain('Latest: none')
-    expect(result.content[0].text).toContain('(none)')
+    expect(result.content[0]!.text).toContain('Latest: none')
+    expect(result.content[0]!.text).toContain('(none)')
   })
 
   it('handles null description and null author', async () => {
@@ -107,7 +107,7 @@ describe('tools/info', () => {
     const result = (await handler({ package: 'test-org/test-skill' })) as {
       content: Array<{ text: string }>
     }
-    const text = result.content[0].text
+    const text = result.content[0]!.text
     expect(text).toContain('No description')
     expect(text).toContain('Author: Test Org')
   })

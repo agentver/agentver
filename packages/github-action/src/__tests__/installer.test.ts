@@ -250,7 +250,7 @@ describe('installer', () => {
 
     it('calls detectInstalledAgents and returns IDs when no agents specified', () => {
       vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
-        { id: 'claude-code', name: 'Claude Code', configDir: '.claude' },
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
       ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
 
       expect(installer.detectAgents('/dir', [])).toEqual(['claude-code'])

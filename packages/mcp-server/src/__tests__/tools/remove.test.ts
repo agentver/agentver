@@ -163,8 +163,8 @@ describe('tools/remove', () => {
     const result = (await handler({ package: 'test-org/test-skill', global: false })) as {
       content: Array<{ text: string }>
     }
-    expect(result.content[0].text).toContain('Removed test-org/test-skill')
-    expect(result.content[0].text).toContain('claude-code')
+    expect(result.content[0]!.text).toContain('Removed test-org/test-skill')
+    expect(result.content[0]!.text).toContain('claude-code')
   })
 
   it('handles agents with no placement path', async () => {
@@ -180,7 +180,7 @@ describe('tools/remove', () => {
     const result = (await handler({ package: 'test-org/test-skill', global: false })) as {
       content: Array<{ text: string }>
     }
-    expect(result.content[0].text).toContain('No agent directories required cleanup')
+    expect(result.content[0]!.text).toContain('No agent directories required cleanup')
   })
 
   it('handles directories that do not exist on disk', async () => {
@@ -198,6 +198,6 @@ describe('tools/remove', () => {
       content: Array<{ text: string }>
     }
     expect(fs.rmSync).not.toHaveBeenCalled()
-    expect(result.content[0].text).toContain('No agent directories required cleanup')
+    expect(result.content[0]!.text).toContain('No agent directories required cleanup')
   })
 })

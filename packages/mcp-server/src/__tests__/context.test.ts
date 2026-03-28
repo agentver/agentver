@@ -69,7 +69,7 @@ describe('context', () => {
 
   describe('detectAgents', () => {
     it('delegates to detectInstalledAgents and returns result', () => {
-      const agents = [{ id: 'claude-code', name: 'Claude Code', configDir: '.claude' }]
+      const agents = [{ id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' }]
       vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue(
         agents as ReturnType<typeof agentDefs.detectInstalledAgents>
       )
