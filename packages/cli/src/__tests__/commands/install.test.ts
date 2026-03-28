@@ -2389,9 +2389,7 @@ describe('commands/install', () => {
       })
 
       // Mock getAgentPlacementPath to return a project-relative path
-      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(
-        '.claude/agents/AGENT.md'
-      )
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/AGENT.md')
 
       return { ...mocks, files }
     }
@@ -2446,10 +2444,7 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
 
-      expect(nodeFs.mkdirSync).toHaveBeenCalledWith(
-        '/project/.claude/agents',
-        { recursive: true }
-      )
+      expect(nodeFs.mkdirSync).toHaveBeenCalledWith('/project/.claude/agents', { recursive: true })
     })
 
     it('does not write files in dry-run mode', async () => {
@@ -2480,9 +2475,7 @@ describe('commands/install', () => {
         source: mocks.gitSource,
       })
 
-      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue(
-        '.claude/commands/COMMAND.md'
-      )
+      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue('.claude/commands/COMMAND.md')
 
       return { ...mocks, files }
     }
@@ -2537,28 +2530,42 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('detectPackageType type override behaviour', () => {
-    it('overrides to AGENT even when files contain SKILL.md', async () => {
-      // Files contain SKILL.md (which would normally detect as SKILL type)
-      // but with type: 'agent' override, it should use AGENT path
+    it('overrides to AGENT when type flag is set', async () => {
       setupHappyPathMocks()
 
       const agentContent = '# My Agent\n\nAgent content.\n'
       const gitSource = createGitSource()
       vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: [{ path: 'deep-research.md', content: agentContent, size: agentContent.length }],
+        commitSha: RESOLVED_SHA,
+        source: gitSource,
+      })
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(
+        '.claude/agents/deep-research.md'
+      )
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(manifest.packages[DERIVED_NAME]!.packageType).toBe('AGENT')
+    })
+
+    it('rejects multi-markdown packages for AGENT type', async () => {
+      setupHappyPathMocks()
+
+      const gitSource = createGitSource()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
         files: [
-          { path: 'SKILL.md', content: createSkillMd(), size: 100 },
-          { path: 'extra.md', content: agentContent, size: agentContent.length },
+          { path: 'README.md', content: '# Readme', size: 10 },
+          { path: 'agent.md', content: '# Agent', size: 10 },
         ],
         commitSha: RESOLVED_SHA,
         source: gitSource,
       })
-      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/SKILL.md')
 
-      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
-
-      // Should store packageType: 'AGENT' in manifest, not 'SKILL'
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(manifest.packages[DERIVED_NAME]!.packageType).toBe('AGENT')
+      await expect(
+        installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+      ).rejects.toThrow('Expected exactly one markdown file')
     })
 
     it('falls through to SKILL when AGENT.md is present but no type override', async () => {

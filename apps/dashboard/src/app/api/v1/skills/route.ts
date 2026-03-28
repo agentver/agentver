@@ -6,7 +6,15 @@ import { authenticateRequest } from '@/lib/auth/api-auth'
 
 const logger = createLogger('api:skills')
 
-const packageTypeSchema = z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'])
+const packageTypeSchema = z.enum([
+  'SKILL',
+  'AGENT_CONFIG',
+  'PLUGIN',
+  'SCRIPT',
+  'PROMPT',
+  'AGENT',
+  'COMMAND',
+])
 
 /**
  * Extract compatibility agents from a package's readme frontmatter.
@@ -101,6 +109,8 @@ export async function GET(request: Request) {
   })
 }
 
+const createPackageTypeSchema = z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'])
+
 const createSkillSchema = z.object({
   name: z
     .string()
@@ -108,7 +118,7 @@ const createSkillSchema = z.object({
     .max(100)
     .regex(/^[a-z0-9-]+$/, 'Name must be lowercase alphanumeric with hyphens'),
   description: z.string().max(500).optional(),
-  type: packageTypeSchema.default('SKILL'),
+  type: createPackageTypeSchema.default('SKILL'),
   visibility: z.enum(['PUBLIC', 'PRIVATE', 'TEAM']).default('PRIVATE'),
   tags: z.array(z.string().max(50)).max(20).default([]),
   content: z.string().min(1, 'Content is required').max(5_242_880, 'Content must be under 5MB'),

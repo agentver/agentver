@@ -88,7 +88,8 @@ export function registerRemoveCommand(program: Command): void {
         const removedPaths: string[] = []
 
         if (isSingleFile) {
-          const getPlacementPath = pkg.packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+          const getPlacementPath =
+            pkg.packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
           const fileName = pkg.entryFile ?? `${shortName}.md`
           for (const agentId of pkg.agents) {
             const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)

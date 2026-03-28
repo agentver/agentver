@@ -748,7 +748,9 @@ describe('status command', () => {
       )
 
       vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/deep-research.md')
-      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue('/tmp/project/.claude/agents/deep-research.md')
+      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue(
+        '/tmp/project/.claude/agents/deep-research.md'
+      )
       vi.mocked(nodeFs.existsSync).mockReturnValue(true)
       vi.mocked(nodeFs.readFileSync).mockReturnValue('# Deep Research Agent')
       vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-agent-hash')
@@ -756,7 +758,11 @@ describe('status command', () => {
 
       await runStatus('--offline')
 
-      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith('claude-code', 'deep-research.md', 'project')
+      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'deep-research.md',
+        'project'
+      )
       expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
       const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
         packages: Array<{ name: string; status: string; modified: boolean }>
@@ -796,8 +802,12 @@ describe('status command', () => {
         })
       )
 
-      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue('.claude/commands/pr-commenter.md')
-      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue('/tmp/project/.claude/commands/pr-commenter.md')
+      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue(
+        '.claude/commands/pr-commenter.md'
+      )
+      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue(
+        '/tmp/project/.claude/commands/pr-commenter.md'
+      )
       vi.mocked(nodeFs.existsSync).mockReturnValue(true)
       vi.mocked(nodeFs.readFileSync).mockReturnValue('# Modified command')
       vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different-hash')
@@ -805,7 +815,11 @@ describe('status command', () => {
 
       await runStatus('--offline')
 
-      expect(agentDefs.getCommandPlacementPath).toHaveBeenCalledWith('claude-code', 'pr-commenter.md', 'project')
+      expect(agentDefs.getCommandPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'pr-commenter.md',
+        'project'
+      )
       expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
       const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
         packages: Array<{ name: string; status: string; modified: boolean }>
@@ -845,7 +859,9 @@ describe('status command', () => {
       )
 
       vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/my-agent.md')
-      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue('/tmp/project/.claude/agents/my-agent.md')
+      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue(
+        '/tmp/project/.claude/agents/my-agent.md'
+      )
       vi.mocked(nodeFs.existsSync).mockReturnValue(true)
       vi.mocked(nodeFs.readFileSync).mockReturnValue('# Agent content')
       vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-hash')
@@ -853,7 +869,11 @@ describe('status command', () => {
 
       await runStatus('--offline')
 
-      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith('claude-code', 'my-agent.md', 'project')
+      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'my-agent.md',
+        'project'
+      )
     })
   })
 })

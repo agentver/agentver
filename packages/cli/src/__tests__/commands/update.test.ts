@@ -1277,6 +1277,9 @@ describe('commands/update', () => {
 
       setupResolveToNewSha()
 
+      // Mock placement path for backup directory resolution
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(`.claude/agents/${name}.md`)
+
       vi.mocked(installPackage).mockResolvedValue({
         name,
         ref: 'main',
@@ -1309,7 +1312,7 @@ describe('commands/update', () => {
       )
     })
 
-    it('skips file backup for AGENT packages (passes null skillDir)', async () => {
+    it('backs up parent directory for AGENT packages', async () => {
       setupAgentPackage('my-agent')
 
       await updateAction('my-agent', {})
@@ -1317,8 +1320,69 @@ describe('commands/update', () => {
       expect(backupModule.createBackup).toHaveBeenCalledWith(
         'my-agent',
         '/project',
-        null,
+        expect.any(String),
         'project'
+      )
+    })
+
+    it('passes type: command to installPackage for COMMAND packages during update', async () => {
+      const name = 'pr-commenter'
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/test-repo',
+        path: '',
+        ref: 'main',
+        commit: OLD_SHA,
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            [name]: createManifestPackage({
+              source,
+              packageType: 'COMMAND',
+              entryFile: `${name}.md`,
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            [name]: createLockfilePackage({
+              source,
+              integrity: INTEGRITY_HASH,
+            }),
+          },
+        })
+      )
+
+      setupResolveToNewSha()
+
+      vi.mocked(installPackage).mockResolvedValue({
+        name,
+        ref: 'main',
+        commitSha: NEW_SHA,
+        agents: ['claude-code'],
+      })
+
+      vi.mocked(backupModule.createBackup).mockReturnValue({
+        packageName: name,
+        projectRoot: '/project',
+        tempDir: '/tmp/backup',
+        skillDir: null,
+        manifestEntry: null,
+        lockfileEntry: null,
+        scope: 'project',
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await updateAction(name, {})
+
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ type: 'command' })
       )
     })
   })

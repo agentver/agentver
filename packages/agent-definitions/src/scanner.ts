@@ -3,7 +3,14 @@ import { join } from 'node:path'
 import { AGENT_DEFINITIONS } from './agents/definitions'
 import type { AgentId } from './types'
 
-export type DetectedFileType = 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT' | 'AGENT' | 'COMMAND'
+export type DetectedFileType =
+  | 'SKILL'
+  | 'AGENT_CONFIG'
+  | 'PLUGIN'
+  | 'SCRIPT'
+  | 'PROMPT'
+  | 'AGENT'
+  | 'COMMAND'
 
 export type DetectedAgent = {
   id: AgentId

@@ -857,9 +857,7 @@ describe('commands/remove', () => {
       vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
       vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
 
-      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(
-        '.claude/agents/AGENT.md'
-      )
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/AGENT.md')
 
       return { manifest, lockfile }
     }
@@ -869,10 +867,7 @@ describe('commands/remove', () => {
 
       await removeAction('my-agent', {})
 
-      expect(fs.rmSync).toHaveBeenCalledWith(
-        '/project/.claude/agents/AGENT.md',
-        { force: true }
-      )
+      expect(fs.rmSync).toHaveBeenCalledWith('/project/.claude/agents/AGENT.md', { force: true })
     })
 
     it('reads entryFile from the manifest to determine placement path', async () => {
@@ -923,13 +918,13 @@ describe('commands/remove', () => {
         },
       })
       vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
-      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile({
-        packages: { 'my-agent': createLockfilePackage({ source }) },
-      }))
-      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
-      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(
-        '.claude/agents/my-agent.md'
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: { 'my-agent': createLockfilePackage({ source }) },
+        })
       )
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/my-agent.md')
 
       await removeAction('my-agent', {})
 
@@ -972,9 +967,7 @@ describe('commands/remove', () => {
       vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
       vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(false)
 
-      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue(
-        '.claude/commands/COMMAND.md'
-      )
+      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue('.claude/commands/COMMAND.md')
 
       return { manifest, lockfile }
     }
@@ -984,10 +977,9 @@ describe('commands/remove', () => {
 
       await removeAction('my-command', {})
 
-      expect(fs.rmSync).toHaveBeenCalledWith(
-        '/project/.claude/commands/COMMAND.md',
-        { force: true }
-      )
+      expect(fs.rmSync).toHaveBeenCalledWith('/project/.claude/commands/COMMAND.md', {
+        force: true,
+      })
     })
 
     it('calls getCommandPlacementPath (not getAgentPlacementPath)', async () => {

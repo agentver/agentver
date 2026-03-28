@@ -6,7 +6,9 @@ export const exploreRouter = router({
   browse: publicProcedure
     .input(
       z.object({
-        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']).optional(),
+        type: z
+          .enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'])
+          .optional(),
         category: z.string().optional(),
         compatibility: z.string().optional(),
         sort: z.enum(['trending', 'stars', 'installs', 'updated']).default('trending'),
