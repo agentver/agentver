@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_DEFINITIONS, AGENT_MAP } from '../agents/definitions'
+import { AGENT_DEFINITIONS, AGENT_MAP, getMcpCapableAgents } from '../agents/definitions'
 import { AGENT_IDS } from '../types'
 
 describe('AGENT_DEFINITIONS', () => {
@@ -49,6 +49,35 @@ describe('AGENT_DEFINITIONS', () => {
     const definitionIds = AGENT_DEFINITIONS.map((d) => d.id).sort()
     const sortedAgentIds = [...AGENT_IDS].sort()
     expect(definitionIds).toEqual(sortedAgentIds)
+  })
+})
+
+describe('getMcpCapableAgents', () => {
+  it('should return only agents with at least one MCP config path', () => {
+    const mcpAgents = getMcpCapableAgents()
+    for (const agent of mcpAgents) {
+      expect(agent.mcpConfigPath !== null || agent.globalMcpConfigPath !== null).toBe(true)
+    }
+  })
+
+  it('should include agents with project-level MCP config', () => {
+    const mcpAgents = getMcpCapableAgents()
+    const ids = mcpAgents.map((a) => a.id)
+    expect(ids).toContain('claude-code')
+    expect(ids).toContain('roo')
+    expect(ids).toContain('cline')
+    expect(ids).toContain('zencoder')
+    expect(ids).toContain('kiro-cli')
+    expect(ids).toContain('continue')
+  })
+
+  it('should ensure all returned agents with mcpConfigFormat also have mcpConfigPath', () => {
+    const mcpAgents = getMcpCapableAgents()
+    for (const agent of mcpAgents) {
+      if (agent.mcpConfigFormat !== null) {
+        expect(agent.mcpConfigPath).not.toBeNull()
+      }
+    }
   })
 })
 
