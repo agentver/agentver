@@ -1,4 +1,10 @@
-export { AGENT_DEFINITIONS, AGENT_MAP, getMcpCapableAgents } from './agents/definitions'
+export {
+  AGENT_DEFINITIONS,
+  AGENT_MAP,
+  getAgentCapableAgents,
+  getCommandCapableAgents,
+  getMcpCapableAgents,
+} from './agents/definitions'
 export {
   type ComposableConfig,
   type ComposedResult,

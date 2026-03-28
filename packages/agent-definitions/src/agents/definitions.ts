@@ -13,6 +13,10 @@ export const AGENT_DEFINITIONS: AgentDefinition[] = [
     mcpConfigPath: '.claude/mcp.json',
     globalMcpConfigPath: '~/.claude/mcp.json',
     mcpConfigFormat: 'mcp-servers',
+    agentsPath: '.claude/agents',
+    globalAgentsPath: '~/.claude/agents',
+    commandsPath: '.claude/commands',
+    globalCommandsPath: '~/.claude/commands',
   },
   {
     id: 'claude-cowork',
@@ -25,6 +29,10 @@ export const AGENT_DEFINITIONS: AgentDefinition[] = [
     mcpConfigPath: '.claude/mcp.json',
     globalMcpConfigPath: '~/.claude/mcp.json',
     mcpConfigFormat: 'mcp-servers',
+    agentsPath: '.claude/agents',
+    globalAgentsPath: '~/.claude/agents',
+    commandsPath: '.claude/commands',
+    globalCommandsPath: '~/.claude/commands',
   },
   {
     id: 'cursor',
@@ -534,4 +542,18 @@ export const AGENT_MAP = new Map(AGENT_DEFINITIONS.map((a) => [a.id, a]))
 /** Get agents that support MCP server configuration */
 export function getMcpCapableAgents(): AgentDefinition[] {
   return AGENT_DEFINITIONS.filter((a) => a.mcpConfigPath !== null || a.globalMcpConfigPath !== null)
+}
+
+/** Get agents that support sub-agent distribution */
+export function getAgentCapableAgents(): AgentDefinition[] {
+  return AGENT_DEFINITIONS.filter(
+    (a) => a.agentsPath !== undefined || a.globalAgentsPath !== undefined
+  )
+}
+
+/** Get agents that support command distribution */
+export function getCommandCapableAgents(): AgentDefinition[] {
+  return AGENT_DEFINITIONS.filter(
+    (a) => a.commandsPath !== undefined || a.globalCommandsPath !== undefined
+  )
 }

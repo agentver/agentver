@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_DEFINITIONS, AGENT_MAP, getMcpCapableAgents } from '../agents/definitions'
+import {
+  AGENT_DEFINITIONS,
+  AGENT_MAP,
+  getAgentCapableAgents,
+  getCommandCapableAgents,
+  getMcpCapableAgents,
+} from '../agents/definitions'
 import { AGENT_IDS } from '../types'
 
 describe('AGENT_DEFINITIONS', () => {
@@ -49,6 +55,66 @@ describe('AGENT_DEFINITIONS', () => {
     const definitionIds = AGENT_DEFINITIONS.map((d) => d.id).sort()
     const sortedAgentIds = [...AGENT_IDS].sort()
     expect(definitionIds).toEqual(sortedAgentIds)
+  })
+
+  it('should have agents and commands paths on claude-code', () => {
+    const claudeCode = AGENT_MAP.get('claude-code')!
+    expect(claudeCode.agentsPath).toBe('.claude/agents')
+    expect(claudeCode.globalAgentsPath).toBe('~/.claude/agents')
+    expect(claudeCode.commandsPath).toBe('.claude/commands')
+    expect(claudeCode.globalCommandsPath).toBe('~/.claude/commands')
+  })
+
+  it('should have agents and commands paths on claude-cowork', () => {
+    const claudeCowork = AGENT_MAP.get('claude-cowork')!
+    expect(claudeCowork.agentsPath).toBe('.claude/agents')
+    expect(claudeCowork.globalAgentsPath).toBe('~/.claude/agents')
+    expect(claudeCowork.commandsPath).toBe('.claude/commands')
+    expect(claudeCowork.globalCommandsPath).toBe('~/.claude/commands')
+  })
+
+  it('should have no agents/commands paths on other agents', () => {
+    const others = AGENT_DEFINITIONS.filter(
+      (d) => d.id !== 'claude-code' && d.id !== 'claude-cowork'
+    )
+    for (const def of others) {
+      expect(def.agentsPath).toBeUndefined()
+      expect(def.globalAgentsPath).toBeUndefined()
+      expect(def.commandsPath).toBeUndefined()
+      expect(def.globalCommandsPath).toBeUndefined()
+    }
+  })
+})
+
+describe('getAgentCapableAgents', () => {
+  it('should return only claude-code and claude-cowork', () => {
+    const agents = getAgentCapableAgents()
+    const ids = agents.map((a) => a.id).sort()
+    expect(ids).toEqual(['claude-code', 'claude-cowork'])
+  })
+
+  it('should have both agentsPath and globalAgentsPath defined', () => {
+    const agents = getAgentCapableAgents()
+    for (const agent of agents) {
+      expect(agent.agentsPath).toBeDefined()
+      expect(agent.globalAgentsPath).toBeDefined()
+    }
+  })
+})
+
+describe('getCommandCapableAgents', () => {
+  it('should return only claude-code and claude-cowork', () => {
+    const agents = getCommandCapableAgents()
+    const ids = agents.map((a) => a.id).sort()
+    expect(ids).toEqual(['claude-code', 'claude-cowork'])
+  })
+
+  it('should have both commandsPath and globalCommandsPath defined', () => {
+    const agents = getCommandCapableAgents()
+    for (const agent of agents) {
+      expect(agent.commandsPath).toBeDefined()
+      expect(agent.globalCommandsPath).toBeDefined()
+    }
   })
 })
 
