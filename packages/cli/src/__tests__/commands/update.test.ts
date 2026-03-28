@@ -306,7 +306,7 @@ describe('commands/update', () => {
       expect(installPackage).toHaveBeenCalledTimes(1)
       expect(installPackage).toHaveBeenCalledWith(
         expect.stringContaining('github.com/test-org/test-repo'),
-        expect.objectContaining({ agent: 'claude-code' })
+        expect.objectContaining({ agent: ['claude-code'] })
       )
     })
 
@@ -999,7 +999,7 @@ describe('commands/update', () => {
 
       expect(installPackage).toHaveBeenCalledWith(
         expect.any(String),
-        expect.objectContaining({ global: true, agent: 'claude-code' })
+        expect.objectContaining({ global: true, agent: ['claude-code'] })
       )
     })
 
@@ -1095,7 +1095,7 @@ describe('commands/update', () => {
       expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
       expect(installPackage).toHaveBeenCalledWith(
         expect.any(String),
-        expect.objectContaining({ global: true, agent: 'claude-code' })
+        expect.objectContaining({ global: true, agent: ['claude-code'] })
       )
     })
   })
