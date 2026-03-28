@@ -1,4 +1,4 @@
-export type DetectedFileType = 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT'
+export type DetectedFileType = 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT' | 'AGENT' | 'COMMAND'
 
 export type ScannedFile = {
   path: string

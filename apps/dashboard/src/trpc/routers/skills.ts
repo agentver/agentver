@@ -573,7 +573,7 @@ export const skillsRouter = router({
     .input(
       z.object({
         organisationId: z.string().optional(),
-        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']).optional(),
+        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']).optional(),
         status: z.enum(['ACTIVE', 'ARCHIVED', 'DEPRECATED']).optional(),
         search: z.string().optional(),
         compatibility: z.string().optional(),
@@ -740,9 +740,9 @@ export const skillsRouter = router({
       const description = typeof rawData.description === 'string' ? rawData.description : undefined
 
       const rawType = typeof rawData.type === 'string' ? rawData.type.toUpperCase() : 'SKILL'
-      const VALID_TYPES = new Set(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'])
+      const VALID_TYPES = new Set(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'])
       const type = VALID_TYPES.has(rawType)
-        ? (rawType as 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT')
+        ? (rawType as 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT' | 'AGENT' | 'COMMAND')
         : 'SKILL'
 
       const tags = Array.isArray(rawData.tags)
@@ -1332,7 +1332,7 @@ export const skillsRouter = router({
           .max(100)
           .regex(/^[a-z0-9-]+$/, 'Name must be lowercase alphanumeric with hyphens'),
         description: z.string().max(500).optional(),
-        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']).default('SKILL'),
+        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']).default('SKILL'),
         visibility: z.enum(['PUBLIC', 'PRIVATE', 'TEAM']).default('PRIVATE'),
         tags: z.array(z.string()).max(20).default([]),
         organisationId: z.string(),
@@ -1520,7 +1520,7 @@ export const skillsRouter = router({
           .max(100)
           .regex(/^[a-z0-9-]+$/),
         description: z.string().max(500).optional(),
-        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']).default('SKILL'),
+        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']).default('SKILL'),
         visibility: z.enum(['PUBLIC', 'PRIVATE', 'TEAM']).default('PRIVATE'),
         tags: z.array(z.string()).max(20).default([]),
         organisationId: z.string(),

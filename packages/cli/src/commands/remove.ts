@@ -1,5 +1,10 @@
 import { existsSync, rmSync } from 'node:fs'
-import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
+import {
+  type AgentId,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+  getSkillPlacementPath,
+} from '@agentver/agent-definitions'
 import type { RemoveResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -77,11 +82,24 @@ export function registerRemoveCommand(program: Command): void {
         }
 
         const pkg = manifest.packages[manifestKey]!
-        const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
+        const isSingleFile = pkg.packageType === 'AGENT' || pkg.packageType === 'COMMAND'
+        const hasCanonical = !isSingleFile && isSymlinkedInstall(projectRoot, shortName, scope)
 
         const removedPaths: string[] = []
 
-        if (hasCanonical) {
+        if (isSingleFile) {
+          const getPlacementPath = pkg.packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+          const fileName = `${shortName}.md`
+          for (const agentId of pkg.agents) {
+            const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+            if (!placementPath) continue
+            const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+            if (!fullPath) continue
+            if (existsSync(fullPath)) {
+              removedPaths.push(fullPath)
+            }
+          }
+        } else if (hasCanonical) {
           const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
           removedPaths.push(canonicalPath)
           for (const agentId of pkg.agents) {
@@ -162,7 +180,13 @@ export function registerRemoveCommand(program: Command): void {
 
         const spinner = createSpinner(`Removing ${name}...`).start()
 
-        if (hasCanonical) {
+        if (isSingleFile) {
+          for (const filePath of removedPaths) {
+            if (existsSync(filePath)) {
+              rmSync(filePath, { force: true })
+            }
+          }
+        } else if (hasCanonical) {
           removeAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
           removeCanonicalDirectory(projectRoot, shortName, scope)
         } else {

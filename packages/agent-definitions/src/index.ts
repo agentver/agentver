@@ -17,6 +17,8 @@ export type { DetectedAgent, DetectedFileType, ScannedFile } from './scanner'
 export {
   detectGlobalAgents,
   detectInstalledAgents,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
   getSkillPlacementPath,
   inferDetectedType,
   scanForSkillFiles,

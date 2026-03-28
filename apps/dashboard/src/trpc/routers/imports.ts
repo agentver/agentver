@@ -826,6 +826,8 @@ export const importsRouter = router({
       PROMPT: 2,
       PLUGIN: 3,
       SCRIPT: 4,
+      AGENT: 5,
+      COMMAND: 6,
     }
 
     const files: ScannedFile[] = await Promise.all(
@@ -876,7 +878,7 @@ export const importsRouter = router({
             path: z.string(),
             name: z.string(),
             type: z.enum(['skill', 'config', 'rules']),
-            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']),
+            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']),
             agentId: z.string(),
             downloadUrl: z.string(),
           })
@@ -1095,6 +1097,8 @@ export const importsRouter = router({
         PROMPT: 2,
         PLUGIN: 3,
         SCRIPT: 4,
+        AGENT: 5,
+        COMMAND: 6,
       }
 
       let resolvedProjectId: number
@@ -1214,7 +1218,7 @@ export const importsRouter = router({
             path: z.string(),
             name: z.string(),
             type: z.enum(['skill', 'config', 'rules']),
-            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']),
+            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']),
             agentId: z.string(),
             projectId: z.number(),
             ref: z.string(),
@@ -1350,6 +1354,8 @@ export const importsRouter = router({
         PROMPT: 2,
         PLUGIN: 3,
         SCRIPT: 4,
+        AGENT: 5,
+        COMMAND: 6,
       }
 
       const files: ScannedBitbucketFile[] = await Promise.all(
@@ -1410,7 +1416,7 @@ export const importsRouter = router({
             path: z.string(),
             name: z.string(),
             type: z.enum(['skill', 'config', 'rules']),
-            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']),
+            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']),
             agentId: z.string(),
             downloadUrl: z.string(),
           })
@@ -1697,6 +1703,8 @@ export const importsRouter = router({
         PROMPT: 2,
         PLUGIN: 3,
         SCRIPT: 4,
+        AGENT: 5,
+        COMMAND: 6,
       }
 
       const files: ScannedGoogleDriveFile[] = await Promise.all(
@@ -1746,7 +1754,7 @@ export const importsRouter = router({
             path: z.string(),
             name: z.string(),
             type: z.enum(['skill', 'config', 'rules']),
-            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']),
+            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']),
             agentId: z.string(),
             fileId: z.string(),
           })
@@ -1861,6 +1869,8 @@ export const importsRouter = router({
         PROMPT: 2,
         PLUGIN: 3,
         SCRIPT: 4,
+        AGENT: 5,
+        COMMAND: 6,
       }
 
       const files: ScannedOneDriveFileWithPreview[] = await Promise.all(
@@ -1910,7 +1920,7 @@ export const importsRouter = router({
             path: z.string(),
             name: z.string(),
             type: z.enum(['skill', 'config', 'rules']),
-            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']),
+            detectedType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND']),
             agentId: z.string(),
             itemId: z.string(),
           })

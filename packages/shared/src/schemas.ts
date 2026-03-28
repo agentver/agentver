@@ -62,7 +62,7 @@ export const skillMetadataSchema = z.object({
     'SCRIPT',
     'PROMPT',
     'BUNDLE',
-    'SUB_AGENT',
+    'AGENT',
     'COMMAND',
   ]),
   tags: z.array(z.string().max(50)).max(20).default([]),
@@ -134,6 +134,7 @@ export const manifestV2PackageSchema = z.object({
   modified: z.boolean().default(false),
   pinned: z.boolean().optional(),
   path: z.string().optional(),
+  packageType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE', 'AGENT', 'COMMAND']).optional(),
 })
 
 export type ManifestV2Package = z.infer<typeof manifestV2PackageSchema>
@@ -221,7 +222,7 @@ export const packageStructureSchema = z.object({
     'SCRIPT',
     'PROMPT',
     'BUNDLE',
-    'SUB_AGENT',
+    'AGENT',
     'COMMAND',
   ]),
   entryFile: z.string(),
@@ -268,8 +269,8 @@ export const PACKAGE_STRUCTURES: Record<string, PackageStructure> = {
     requiredFiles: ['agentver.bundle.yaml'],
     optionalDirs: ['skills', 'mcp-servers', 'prompts', 'rules', 'scripts'],
   },
-  SUB_AGENT: {
-    type: 'SUB_AGENT',
+  AGENT: {
+    type: 'AGENT',
     entryFile: 'AGENT.md',
     requiredFiles: ['AGENT.md'],
     optionalDirs: [],
@@ -415,7 +416,7 @@ export const fileManifestSchema = z.object({
     'SCRIPT',
     'PROMPT',
     'BUNDLE',
-    'SUB_AGENT',
+    'AGENT',
     'COMMAND',
   ]),
 })

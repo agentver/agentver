@@ -167,6 +167,8 @@ enum PackageType {
   SCRIPT
   PROMPT
   BUNDLE
+  AGENT
+  COMMAND
 }
 
 enum VersionStatus {

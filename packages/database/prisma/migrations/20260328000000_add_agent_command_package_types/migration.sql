@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "PackageType" ADD VALUE 'AGENT';
+ALTER TYPE "PackageType" ADD VALUE 'COMMAND';

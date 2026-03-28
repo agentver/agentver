@@ -3,8 +3,12 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { AgentId } from '@agentver/agent-definitions'
 import {
+  type AgentId,
   composeConfigs,
   detectInstalledAgents,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+  getConfigFilePath,
   isComposedConfig,
   parseComposedSections,
   translateConfig,
@@ -39,6 +43,7 @@ import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical
 import { computeSha256FromFiles } from '../storage/integrity'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
+import { resolvePlacementPath } from '../utils/paths'
 import { extractError } from '../utils.js'
 import {
   fetchWellKnownIndex,
@@ -57,6 +62,7 @@ export type InstallOptions = {
   path?: string
   detect?: boolean
   skipAudit?: boolean
+  type?: string
 }
 
 export type InstallResult = {
@@ -225,6 +231,7 @@ async function installFromWellKnown(
 
     const projectRoot = process.cwd()
     let agents: string[] = []
+    let detectedWkType: string | undefined
     const scope = options.global ? 'global' : 'project'
 
     if (options.path) {
@@ -265,10 +272,12 @@ async function installFromWellKnown(
         return { name: selectedEntry.name, ref: 'well-known', commitSha: '', agents: [] }
       }
 
-      const packageType = detectPackageType(fetchResult.files)
+      detectedWkType = detectPackageType(fetchResult.files, options.type)
 
-      if (packageType === 'AGENT_CONFIG') {
+      if (detectedWkType === 'AGENT_CONFIG') {
         await installAgentConfig(selectedEntry.name, fetchResult.files, agents, options, spinner)
+      } else if (detectedWkType === 'AGENT' || detectedWkType === 'COMMAND') {
+        await installSingleFilePackage(selectedEntry.name, fetchResult.files, agents, detectedWkType, options, spinner)
       } else {
         await installStandardPackage(
           selectedEntry.name,
@@ -311,6 +320,7 @@ async function installFromWellKnown(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
+      ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND' ? { packageType: detectedWkType } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -473,6 +483,7 @@ async function installFromPlatform(
     const scope = options.global ? 'global' : 'project'
     const sourceUri = `agentver://${parsed.org}`
     let agents: string[] = []
+    let detectedPlatformType: string | undefined
 
     if (options.path) {
       await installToCustomPath(shortName, files, options, spinner)
@@ -512,10 +523,12 @@ async function installFromPlatform(
         return { name: shortName, ref, commitSha: '', agents: [] }
       }
 
-      const packageType = detectPackageType(files)
+      detectedPlatformType = detectPackageType(files, options.type)
 
-      if (packageType === 'AGENT_CONFIG') {
+      if (detectedPlatformType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, files, agents, options, spinner)
+      } else if (detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND') {
+        await installSingleFilePackage(shortName, files, agents, detectedPlatformType, options, spinner)
       } else {
         await installStandardPackage(shortName, files, agents, options, spinner)
       }
@@ -553,6 +566,7 @@ async function installFromPlatform(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
+      ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND' ? { packageType: detectedPlatformType } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -731,6 +745,7 @@ export async function installPackage(
     const scope = options.global ? 'global' : 'project'
     const gitUri = `${gitSource.host}/${gitSource.owner}/${gitSource.repo}`
     let agents: string[] = []
+    let detectedType: string | undefined
 
     if (options.path) {
       await installToCustomPath(shortName, result.files, options, spinner)
@@ -770,10 +785,12 @@ export async function installPackage(
         return { name: shortName, ref: gitSource.ref, commitSha: resolved.commitSha, agents: [] }
       }
 
-      const packageType = detectPackageType(result.files)
+      detectedType = detectPackageType(result.files, options.type)
 
-      if (packageType === 'AGENT_CONFIG') {
+      if (detectedType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, result.files, agents, options, spinner)
+      } else if (detectedType === 'AGENT' || detectedType === 'COMMAND') {
+        await installSingleFilePackage(shortName, result.files, agents, detectedType, options, spinner)
       } else {
         await installStandardPackage(shortName, result.files, agents, options, spinner)
       }
@@ -811,6 +828,7 @@ export async function installPackage(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
+      ...(detectedType === 'AGENT' || detectedType === 'COMMAND' ? { packageType: detectedType } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -875,11 +893,17 @@ function formatSource(source: { host: string; owner: string; repo: string; path:
   return source.path ? `${base}/${source.path}` : base
 }
 
-function detectPackageType(files: FetchedFile[]): string {
+function detectPackageType(files: FetchedFile[], typeOverride?: string): string {
+  if (typeOverride) {
+    const normalised = typeOverride.toUpperCase()
+    if (normalised === 'AGENT') return 'AGENT'
+    if (normalised === 'COMMAND') return 'COMMAND'
+  }
+
   const filenames = new Set(files.map((f) => f.path))
 
   for (const [type, structure] of Object.entries(PACKAGE_STRUCTURES)) {
-    if (type === 'AGENT_CONFIG') continue
+    if (type === 'AGENT_CONFIG' || type === 'AGENT' || type === 'COMMAND') continue
     if (filenames.has(structure.entryFile)) return type
   }
 
@@ -1053,6 +1077,60 @@ async function installStandardPackage(
   createAgentSymlinks(projectRoot, name, agents, scope)
 }
 
+async function installSingleFilePackage(
+  name: string,
+  files: FetchedFile[],
+  agents: string[],
+  packageType: 'AGENT' | 'COMMAND',
+  options: InstallOptions,
+  spinner: ReturnType<typeof ora> | SpinnerLike
+): Promise<void> {
+  const projectRoot = process.cwd()
+  const scope = options.global ? 'global' : 'project'
+
+  const mdFile = files.find((f) => f.path.endsWith('.md'))
+  if (!mdFile) {
+    spinner.fail('No .md file found in package')
+    throw new AgentverError('NO_FILES', 'No .md file found in package')
+  }
+
+  const fileName = mdFile.path.split('/').pop() ?? mdFile.path
+
+  if (options.dryRun) {
+    const typeLabel = packageType === 'AGENT' ? 'agent' : 'command'
+    spinner.info(
+      `${chalk.yellow('[dry-run]')} Would install ${typeLabel} ${chalk.green(name)} (${fileName}) to ${agents.join(', ')}`
+    )
+    return
+  }
+
+  spinner.text = `Installing ${packageType.toLowerCase()} ${name} to ${agents.length} agent(s)...`
+
+  const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+
+  for (const agentId of agents) {
+    const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+    if (!placementPath) {
+      const typeLabel = packageType === 'AGENT' ? 'agent' : 'command'
+      console.log(
+        chalk.yellow('  Warning:') +
+          ` ${agentId} does not support ${typeLabel}-type packages. Skipping.`
+      )
+      continue
+    }
+
+    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!fullPath) continue
+
+    const parentDir = dirname(fullPath)
+    if (!existsSync(parentDir)) {
+      mkdirSync(parentDir, { recursive: true })
+    }
+
+    writeFileSync(fullPath, mdFile.content, 'utf-8')
+  }
+}
+
 export function registerInstallCommand(program: Command): void {
   program
     .command('install <source>')
@@ -1063,6 +1141,7 @@ export function registerInstallCommand(program: Command): void {
     .option('--path <path>', 'Override placement path (relative to cwd or absolute)')
     .option('--no-detect', 'Skip agent auto-detection (requires --agent)')
     .option('--skip-audit', 'Skip the security scan')
+    .option('--type <type>', 'Package type override (agent, command)')
     .addHelpText(
       'after',
       `
