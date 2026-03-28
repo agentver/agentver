@@ -35020,13 +35020,19 @@ function updateLockfile(lockfile, results, resolvedData) {
     if (!result.success) continue;
     const entry = resolvedData.get(result.name);
     if (!entry) continue;
+    if (!entry.response.gitUri || !entry.response.gitRef || !entry.response.gitCommitSha) {
+      core.warning(
+        `Skipping lockfile entry for ${result.name}: registry response missing git provenance.`
+      );
+      continue;
+    }
     updated.packages[result.name] = {
       source: {
         type: "git",
-        uri: entry.response.gitUri ?? "unknown",
+        uri: entry.response.gitUri,
         path: entry.response.gitPath ?? "",
-        ref: entry.response.gitRef ?? "unknown",
-        commit: entry.response.gitCommitSha ?? "unknown"
+        ref: entry.response.gitRef,
+        commit: entry.response.gitCommitSha
       },
       integrity: computeIntegrity(entry.files),
       agents: result.agents
@@ -35086,12 +35092,7 @@ async function installAllPackages(manifest, config2, existingLockfile) {
     let response;
     let files;
     try {
-      response = await resolvePackage(
-        packageName,
-        version2,
-        config2.registryUrl,
-        config2.apiKey
-      );
+      response = await resolvePackage(packageName, version2, config2.registryUrl, config2.apiKey);
       files = extractFilesFromManifest(response.fileManifest);
       if (files.length === 0) {
         core.warning(`Package ${packageName}@${response.version} has no files in its manifest`);

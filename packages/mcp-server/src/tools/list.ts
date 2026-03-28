@@ -36,9 +36,7 @@ export function registerListTool(server: McpServer): void {
       const lines = entries.map(([name, pkg]) => {
         const agents = pkg.agents.length > 0 ? ` [${pkg.agents.join(', ')}]` : ''
         const sourceInfo =
-          pkg.source.type === 'git'
-            ? `${pkg.source.uri}@${pkg.source.ref}`
-            : pkg.source.skillName
+          pkg.source.type === 'git' ? `${pkg.source.uri}@${pkg.source.ref}` : pkg.source.skillName
         return `- ${name} (${sourceInfo})${agents}`
       })
 

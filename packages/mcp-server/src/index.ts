@@ -6,7 +6,6 @@ import { registerInstallTool } from './tools/install'
 import { registerListTool } from './tools/list'
 import { registerRemoveTool } from './tools/remove'
 import { registerSearchTool } from './tools/search'
-import { registerUpdateTool } from './tools/update'
 
 declare const __PKG_VERSION__: string
 
@@ -32,8 +31,6 @@ async function main(): Promise<void> {
   registerListTool(server)
   registerRemoveTool(server)
   registerInfoTool(server)
-  registerUpdateTool(server)
-
   // Connect via stdio transport (standard for MCP)
   const transport = new StdioServerTransport()
   await server.connect(transport)

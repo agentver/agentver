@@ -200,16 +200,24 @@ export function registerInstallTool(server: McpServer): void {
         installedTo.push(agentId)
       }
 
+      // Validate git provenance before persisting v2 source
+      if (!data.gitUri || !data.gitRef || !data.gitCommitSha) {
+        throw new AgentverError(
+          'VALIDATION_ERROR',
+          `Registry response for ${packageName}@${data.version} is missing git provenance required by manifest v2.`
+        )
+      }
+
       // Update manifest
       const root = isGlobal ? homedir() : projectRoot
       const manifest = readManifest(root)
       manifest.packages[packageName] = {
         source: {
           type: 'git',
-          uri: data.gitUri ?? 'unknown',
+          uri: data.gitUri,
           path: data.gitPath ?? '',
-          ref: data.gitRef ?? 'unknown',
-          commit: data.gitCommitSha ?? 'unknown',
+          ref: data.gitRef,
+          commit: data.gitCommitSha,
         },
         agents: installedTo,
         installedAt: new Date().toISOString(),
@@ -222,10 +230,10 @@ export function registerInstallTool(server: McpServer): void {
       lockfile.packages[packageName] = {
         source: {
           type: 'git',
-          uri: data.gitUri ?? 'unknown',
+          uri: data.gitUri,
           path: data.gitPath ?? '',
-          ref: data.gitRef ?? 'unknown',
-          commit: data.gitCommitSha ?? 'unknown',
+          ref: data.gitRef,
+          commit: data.gitCommitSha,
         },
         integrity: `sha256-${data.sha256 ?? 'unverified'}`,
         agents: installedTo,

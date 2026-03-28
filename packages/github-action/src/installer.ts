@@ -403,13 +403,20 @@ export function updateLockfile(
     const entry = resolvedData.get(result.name)
     if (!entry) continue
 
+    if (!entry.response.gitUri || !entry.response.gitRef || !entry.response.gitCommitSha) {
+      core.warning(
+        `Skipping lockfile entry for ${result.name}: registry response missing git provenance.`
+      )
+      continue
+    }
+
     updated.packages[result.name] = {
       source: {
         type: 'git',
-        uri: entry.response.gitUri ?? 'unknown',
+        uri: entry.response.gitUri,
         path: entry.response.gitPath ?? '',
-        ref: entry.response.gitRef ?? 'unknown',
-        commit: entry.response.gitCommitSha ?? 'unknown',
+        ref: entry.response.gitRef,
+        commit: entry.response.gitCommitSha,
       },
       integrity: computeIntegrity(entry.files),
       agents: result.agents,
@@ -500,12 +507,7 @@ export async function installAllPackages(
     let response: DownloadResponse
     let files: Array<{ path: string; content: string }>
     try {
-      response = await resolvePackage(
-        packageName,
-        version,
-        config.registryUrl,
-        config.apiKey
-      )
+      response = await resolvePackage(packageName, version, config.registryUrl, config.apiKey)
       files = extractFilesFromManifest(response.fileManifest)
 
       if (files.length === 0) {
