@@ -57,11 +57,11 @@ function extractFilesFromManifest(
 ): Array<{ path: string; content: string }> {
   if (Array.isArray(fileManifest)) {
     return fileManifest.filter(
-      (entry): entry is { path: string; content: string } =>
-        typeof entry === 'object' &&
-        entry !== null &&
-        typeof entry.path === 'string' &&
-        typeof entry.content === 'string'
+      (entry): entry is { path: string; content: string } => {
+        if (typeof entry !== 'object' || entry === null) return false
+        const record = entry as Record<string, unknown>
+        return typeof record.path === 'string' && typeof record.content === 'string'
+      }
     )
   }
 
