@@ -32,7 +32,7 @@ describe('AGENT_DEFINITIONS', () => {
     }
   })
 
-  it('should have 38 agent-specific and 5 universal agents', () => {
+  it('should have 39 agent-specific and 4 universal agents', () => {
     const agentSpecific = AGENT_DEFINITIONS.filter((d) => d.category === 'agent-specific')
     const universal = AGENT_DEFINITIONS.filter((d) => d.category === 'universal')
     expect(agentSpecific).toHaveLength(39)
