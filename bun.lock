@@ -214,6 +214,7 @@
       "name": "@agentver/shared",
       "version": "0.1.0",
       "dependencies": {
+        "@agentver/agent-definitions": "workspace:*",
         "nanoid": "^5.1.5",
         "tslog": "^4.10.2",
         "zod": "^4.3.6",

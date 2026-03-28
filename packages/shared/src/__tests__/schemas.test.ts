@@ -1,7 +1,9 @@
+import { AGENT_IDS } from '@agentver/agent-definitions/types'
 import { describe, expect, it } from 'vitest'
 
 import {
   agentConfigSchema,
+  agentIdEnum,
   fileManifestEntrySchema,
   fileManifestSchema,
   gitSourceSchema,
@@ -42,6 +44,16 @@ const validWellKnownSource = {
 }
 
 const now = new Date().toISOString()
+
+// ---------------------------------------------------------------------------
+// AGENT_IDS sync
+// ---------------------------------------------------------------------------
+
+describe('AGENT_IDS sync', () => {
+  it('schemas.ts agentIdEnum should derive from the canonical AGENT_IDS', () => {
+    expect([...agentIdEnum.options]).toEqual([...AGENT_IDS])
+  })
+})
 
 // ---------------------------------------------------------------------------
 // skillMetadataSchema
