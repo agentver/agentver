@@ -1,3 +1,4 @@
+import chalk from 'chalk'
 import type ora from 'ora'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderScanResult } from '../../security/reporter.js'
@@ -78,8 +79,8 @@ describe('renderScanResult', () => {
 
     expect(spinner.succeed).toHaveBeenCalledOnce()
     const succeedArg = spinner.succeed.mock.calls[0]![0] as string
-    expect(succeedArg).toContain('Security scan passed')
-    expect(succeedArg).toContain('42ms')
+    expect(succeedArg).toContain(chalk.green('Security scan passed'))
+    expect(succeedArg).toContain(chalk.dim('(42ms)'))
     expect(spinner.stop).not.toHaveBeenCalled()
     expect(console.log).not.toHaveBeenCalled()
   })
@@ -103,14 +104,18 @@ describe('renderScanResult', () => {
 
     expect(spinner.stop).toHaveBeenCalledOnce()
     const output = allOutput()
-    expect(output).toContain('CRITICAL')
-    expect(output).toContain('install.sh')
+    // Verify chalk colour formatting for CRITICAL severity
+    expect(output).toContain(chalk.red.bold('  CRITICAL'))
+    expect(output).toContain(chalk.dim('    install.sh'))
+    // Verify the ✖ finding symbol is rendered with severity colour
+    expect(output).toContain(chalk.red.bold('\u2716'))
     expect(output).toContain('Dangerous rm -rf command')
-    expect(output).toContain(':5')
-    expect(output).toContain('rm -rf /')
-    expect(output).toContain('BLOCK')
-    expect(output).toContain('install aborted')
-    expect(output).toContain('--skip-audit')
+    expect(output).toContain(chalk.dim(':5'))
+    expect(output).toContain(chalk.dim('        rm -rf /'))
+    // Verify BLOCK verdict styling
+    expect(output).toContain(chalk.red.bold('  Scan verdict: BLOCK'))
+    expect(output).toContain(chalk.red(' — install aborted due to security findings'))
+    expect(output).toContain(chalk.dim('  Use --skip-audit to bypass the security scan'))
   })
 
   it('renders WARN verdict with multiple warnings', () => {
@@ -128,8 +133,11 @@ describe('renderScanResult', () => {
 
     expect(spinner.stop).toHaveBeenCalledOnce()
     const output = allOutput()
-    expect(output).toContain('WARN')
-    expect(output).toContain('potential security concerns')
+    // Verify chalk colour formatting for MEDIUM severity and WARN verdict
+    expect(output).toContain(chalk.yellow('  MEDIUM'))
+    expect(output).toContain(chalk.yellow('\u2716'))
+    expect(output).toContain(chalk.yellow.bold('  Scan verdict: WARN'))
+    expect(output).toContain(chalk.yellow(' — potential security concerns detected'))
     expect(output).toContain('First warning')
     expect(output).toContain('Second warning')
     expect(output).toContain('Third warning')
@@ -150,6 +158,12 @@ describe('renderScanResult', () => {
     renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
 
     const output = allOutput()
+    // Verify each severity label uses correct chalk colour
+    expect(output).toContain(chalk.red.bold('  CRITICAL'))
+    expect(output).toContain(chalk.red('  HIGH'))
+    expect(output).toContain(chalk.yellow('  MEDIUM'))
+    expect(output).toContain(chalk.dim('  LOW'))
+
     const critIdx = output.indexOf('Critical issue')
     const highIdx = output.indexOf('High issue')
     const medIdx = output.indexOf('Medium issue')
@@ -196,8 +210,9 @@ describe('renderScanResult', () => {
 
     expect(spinner.stop).toHaveBeenCalledOnce()
     const output = allOutput()
-    expect(output).toContain('0 findings')
-    expect(output).toContain('WARN')
+    expect(output).toContain(chalk.bold('Security scan results'))
+    expect(output).toContain(chalk.dim(' (0 findings, '))
+    expect(output).toContain(chalk.yellow.bold('  Scan verdict: WARN'))
   })
 
   it('uses singular "finding" for exactly one finding', () => {
@@ -247,6 +262,8 @@ describe('renderScanResult', () => {
     renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
 
     const output = allOutput()
+    // Verify the ✖ symbol is present on the finding line
+    expect(output).toContain(chalk.yellow('\u2716'))
     expect(output).toContain('No line ref')
     expect(output).not.toContain(':undefined')
     // The message line should not contain a colon after the message
