@@ -6,6 +6,7 @@ import {
   readlinkSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -17,6 +18,14 @@ import { createCliLogger } from '../utils.js'
 const logger = createCliLogger('canonical')
 
 const CANONICAL_DIR = '.agents/skills'
+
+export type CanonicalCategory = 'skills' | 'agents' | 'commands'
+
+const CANONICAL_CATEGORY_DIRS: Record<CanonicalCategory, string> = {
+  skills: '.agents/skills',
+  agents: '.agents/agents',
+  commands: '.agents/commands',
+}
 
 /**
  * Returns the canonical path where skill files are stored once.
@@ -36,16 +45,71 @@ export function getCanonicalSkillPath(projectRoot: string, name: string, scope: 
 }
 
 /**
+ * Returns the canonical path for a single file (agent or command).
+ * For project scope: `<projectRoot>/.agents/<category>/<name>.md`
+ * For global scope: `~/.agents/<category>/<name>.md`
+ */
+export function getCanonicalFilePath(
+  projectRoot: string,
+  name: string,
+  category: CanonicalCategory,
+  scope: Scope
+): string {
+  if (name.includes('..') || name.startsWith('/')) {
+    throw new Error(`Invalid name: path traversal detected in "${name}"`)
+  }
+
+  const root = scope === 'global' ? homedir() : projectRoot
+  return join(root, CANONICAL_CATEGORY_DIRS[category], `${name}.md`)
+}
+
+/**
+ * Derives a file-level placement path for a given agent by replacing the
+ * trailing `skills` segment in its skill path with the target category.
+ * Returns null if the agent is unknown or its skill path doesn't end with `skills`.
+ */
+export function getFilePlacementPath(
+  agentId: AgentId,
+  name: string,
+  category: CanonicalCategory,
+  scope: Scope
+): string | null {
+  const baseSkillPath = getSkillPlacementPath(agentId, '', scope)
+  if (!baseSkillPath) return null
+
+  // Strip trailing slash from the base path if present
+  const normalised = baseSkillPath.replace(/\/+$/, '')
+
+  // The base path must end with /skills or be exactly 'skills'
+  if (!normalised.endsWith('/skills') && normalised !== 'skills') {
+    logger.warn(
+      `Agent ${agentId} skill path "${baseSkillPath}" does not end with /skills — cannot derive ${category} path`
+    )
+    return null
+  }
+
+  const categoryPath = normalised.replace(/skills$/, category)
+  return join(categoryPath, `${name}.md`)
+}
+
+/**
  * Checks whether a package is using the canonical symlinked install pattern.
- * Returns true if the canonical directory exists for this skill.
+ * Returns true if the canonical directory exists for this skill,
+ * or the canonical file exists for agents/commands.
  */
 export function isSymlinkedInstall(
   projectRoot: string,
   name: string,
-  scope: Scope = 'project'
+  scope: Scope = 'project',
+  category: CanonicalCategory = 'skills'
 ): boolean {
-  const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
-  return existsSync(canonicalPath) && lstatSync(canonicalPath).isDirectory()
+  if (category === 'skills') {
+    const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
+    return existsSync(canonicalPath) && lstatSync(canonicalPath).isDirectory()
+  }
+
+  const canonicalPath = getCanonicalFilePath(projectRoot, name, category, scope)
+  return existsSync(canonicalPath) && lstatSync(canonicalPath).isFile()
 }
 
 /**
@@ -99,6 +163,53 @@ export function createAgentSymlinks(
 }
 
 /**
+ * Creates file-level symlinks from each agent's placement directory to the canonical file.
+ * Uses relative symlinks so the project remains portable.
+ */
+export function createFileSymlinks(
+  projectRoot: string,
+  name: string,
+  category: CanonicalCategory,
+  agents: string[],
+  scope: Scope
+): void {
+  const canonicalPath = getCanonicalFilePath(projectRoot, name, category, scope)
+
+  for (const agentId of agents) {
+    const placementPath = getFilePlacementPath(agentId as AgentId, name, category, scope)
+    if (!placementPath) continue
+
+    const agentFilePath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!agentFilePath) continue
+
+    // If this path already exists (file or symlink), remove it first
+    if (existsSync(agentFilePath) || isSymlink(agentFilePath)) {
+      rmSync(agentFilePath, { force: true })
+    }
+
+    // Ensure the parent directory exists
+    const parentDir = dirname(agentFilePath)
+    if (!existsSync(parentDir)) {
+      mkdirSync(parentDir, { recursive: true })
+    }
+
+    // Compute relative symlink target
+    const relativeTarget = relative(parentDir, canonicalPath)
+
+    try {
+      symlinkSync(relativeTarget, agentFilePath)
+    } catch (error) {
+      logger.warn(`Could not create symlink at ${agentFilePath}: ${String(error)}`)
+      console.log(
+        chalk.yellow('  Warning:') +
+          ` Could not create file symlink for ${agentId}. ` +
+          chalk.dim('File is available at the canonical path.')
+      )
+    }
+  }
+}
+
+/**
  * Removes symlinks from each agent's skill directory for a given package.
  * Also cleans up empty parent directories.
  */
@@ -126,6 +237,54 @@ export function removeAgentSymlinks(
 }
 
 /**
+ * Removes file-level symlinks from each agent's placement directory for a given package.
+ * Also cleans up empty parent directories.
+ */
+export function removeFileSymlinks(
+  projectRoot: string,
+  name: string,
+  category: CanonicalCategory,
+  agents: string[],
+  scope: Scope
+): void {
+  for (const agentId of agents) {
+    const placementPath = getFilePlacementPath(agentId as AgentId, name, category, scope)
+    if (!placementPath) continue
+
+    const agentFilePath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!agentFilePath) continue
+
+    if (existsSync(agentFilePath) || isSymlink(agentFilePath)) {
+      rmSync(agentFilePath, { force: true })
+    }
+
+    // Clean up empty parent directories
+    const stopAt = scope === 'global' ? homedir() : projectRoot
+    cleanupEmptyParents(dirname(agentFilePath), stopAt)
+  }
+}
+
+/**
+ * Removes the canonical file for an agent or command package.
+ */
+export function removeCanonicalFile(
+  projectRoot: string,
+  name: string,
+  category: CanonicalCategory,
+  scope: Scope
+): void {
+  const canonicalPath = getCanonicalFilePath(projectRoot, name, category, scope)
+
+  if (existsSync(canonicalPath)) {
+    unlinkSync(canonicalPath)
+  }
+
+  // Clean up empty parent directories
+  const stopAt = scope === 'global' ? homedir() : projectRoot
+  cleanupEmptyParents(dirname(canonicalPath), stopAt)
+}
+
+/**
  * Removes the canonical skill directory.
  */
 export function removeCanonicalDirectory(projectRoot: string, name: string, scope: Scope): void {
@@ -149,42 +308,72 @@ export function resolveReadPath(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: Scope = 'project'
+  scope: Scope = 'project',
+  category: CanonicalCategory = 'skills'
 ): string | null {
   if (packageName.includes('..') || packageName.startsWith('/')) {
     throw new Error(`Invalid package name: path traversal detected in "${packageName}"`)
   }
 
   const root = scope === 'global' ? homedir() : projectRoot
-  const resolvedPath = resolve(root, CANONICAL_DIR, packageName)
+  const categoryDir = CANONICAL_CATEGORY_DIRS[category]
+  const resolvedPath = resolve(root, categoryDir, packageName)
   if (!resolvedPath.startsWith(resolve(root) + '/') && resolvedPath !== resolve(root)) {
     throw new Error(`Invalid package name: resolved path escapes project root`)
   }
 
-  // Try canonical path first
-  const canonicalPath = getCanonicalSkillPath(projectRoot, packageName, scope)
-  if (existsSync(canonicalPath) && lstatSync(canonicalPath).isDirectory()) {
-    return canonicalPath
-  }
+  if (category === 'skills') {
+    // Try canonical directory path first
+    const canonicalPath = getCanonicalSkillPath(projectRoot, packageName, scope)
+    if (existsSync(canonicalPath) && lstatSync(canonicalPath).isDirectory()) {
+      return canonicalPath
+    }
 
-  // Fall back to agent-specific paths (pre-canonical installs)
-  for (const agentId of agents) {
-    const placementPath = getSkillPlacementPath(agentId as AgentId, packageName, scope)
-    if (!placementPath) continue
+    // Fall back to agent-specific paths (pre-canonical installs)
+    for (const agentId of agents) {
+      const placementPath = getSkillPlacementPath(agentId as AgentId, packageName, scope)
+      if (!placementPath) continue
 
-    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
-    if (!fullPath) continue
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath) continue
 
-    if (existsSync(fullPath)) {
-      // If it's a symlink, resolve to the canonical directory
-      if (isSymlink(fullPath)) {
-        const target = readlinkSync(fullPath)
-        const resolvedTarget = join(dirname(fullPath), target)
-        if (existsSync(resolvedTarget)) {
-          return resolvedTarget
+      if (existsSync(fullPath)) {
+        // If it's a symlink, resolve to the canonical directory
+        if (isSymlink(fullPath)) {
+          const target = readlinkSync(fullPath)
+          const resolvedTarget = join(dirname(fullPath), target)
+          if (existsSync(resolvedTarget)) {
+            return resolvedTarget
+          }
         }
+        return fullPath
       }
-      return fullPath
+    }
+  } else {
+    // Try canonical file path first
+    const canonicalPath = getCanonicalFilePath(projectRoot, packageName, category, scope)
+    if (existsSync(canonicalPath) && lstatSync(canonicalPath).isFile()) {
+      return canonicalPath
+    }
+
+    // Fall back to agent-specific file paths
+    for (const agentId of agents) {
+      const placementPath = getFilePlacementPath(agentId as AgentId, packageName, category, scope)
+      if (!placementPath) continue
+
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath) continue
+
+      if (existsSync(fullPath)) {
+        if (isSymlink(fullPath)) {
+          const target = readlinkSync(fullPath)
+          const resolvedTarget = join(dirname(fullPath), target)
+          if (existsSync(resolvedTarget)) {
+            return resolvedTarget
+          }
+        }
+        return fullPath
+      }
     }
   }
 
