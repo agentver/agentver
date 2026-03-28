@@ -171,7 +171,7 @@ describe('skillMetadataSchema', () => {
     expect(result.agents).toEqual([])
   })
 
-  it('should accept valid agent IDs from AGENT_IDS_FOR_SCHEMA', () => {
+  it('should accept valid agent IDs from AGENT_IDS', () => {
     skillMetadataSchema.parse({
       name: 'ok',
       version: '1.0.0',

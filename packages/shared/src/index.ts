@@ -87,6 +87,7 @@ export {
   type AgentConfig,
   type AgentConfigFile,
   agentConfigSchema,
+  agentIdEnum,
   type FileManifest,
   type FileManifestEntry,
   fileManifestEntrySchema,
