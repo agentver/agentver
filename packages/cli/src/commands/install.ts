@@ -230,17 +230,20 @@ async function installFromWellKnown(
       await installToCustomPath(selectedEntry.name, fetchResult.files, options, spinner)
       agents = toAgentList(options.agent)
     } else {
-      if (options.detect === false && !options.agent) {
+      const requestedAgents = toAgentList(options.agent)
+
+      if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
         throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
-      agents = options.agent
-        ? toAgentList(options.agent)
-        : options.detect === false
-          ? []
-          : detectInstalledAgents(projectRoot).map((a) => a.id)
+      agents =
+        requestedAgents.length > 0
+          ? requestedAgents
+          : options.detect === false
+            ? []
+            : detectInstalledAgents(projectRoot).map((a) => a.id)
 
       if (agents.length === 0) {
         if (jsonMode) {
@@ -473,17 +476,20 @@ async function installFromPlatform(
       await installToCustomPath(shortName, files, options, spinner)
       agents = toAgentList(options.agent)
     } else {
-      if (options.detect === false && !options.agent) {
+      const requestedAgents = toAgentList(options.agent)
+
+      if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
         throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
-      agents = options.agent
-        ? toAgentList(options.agent)
-        : options.detect === false
-          ? []
-          : detectInstalledAgents(projectRoot).map((a) => a.id)
+      agents =
+        requestedAgents.length > 0
+          ? requestedAgents
+          : options.detect === false
+            ? []
+            : detectInstalledAgents(projectRoot).map((a) => a.id)
 
       if (agents.length === 0) {
         if (jsonMode) {
@@ -727,17 +733,20 @@ export async function installPackage(
       await installToCustomPath(shortName, result.files, options, spinner)
       agents = toAgentList(options.agent)
     } else {
-      if (options.detect === false && !options.agent) {
+      const requestedAgents = toAgentList(options.agent)
+
+      if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
         throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
-      agents = options.agent
-        ? toAgentList(options.agent)
-        : options.detect === false
-          ? []
-          : detectInstalledAgents(projectRoot).map((a) => a.id)
+      agents =
+        requestedAgents.length > 0
+          ? requestedAgents
+          : options.detect === false
+            ? []
+            : detectInstalledAgents(projectRoot).map((a) => a.id)
 
       if (agents.length === 0) {
         if (jsonMode) {
