@@ -168,7 +168,7 @@ async function handlePatchUpdate(
     : `${update.sourceUri}@${update.ref}`
 
   const result = await installPackage(sourceUrl, {
-    ...(agents[0] ? { agent: agents[0] } : {}),
+    ...(agents.length > 0 ? { agent: agents } : {}),
     ...(scope === 'global' ? { global: true } : {}),
   })
 
@@ -444,7 +444,7 @@ export function registerUpdateCommand(program: Command): void {
               : `${update.sourceUri}@${update.ref}`
 
             const result = await installPackage(sourceUrl, {
-              ...(agents[0] ? { agent: agents[0] } : {}),
+              ...(agents.length > 0 ? { agent: agents } : {}),
               ...(scope === 'global' ? { global: true } : {}),
             })
 
