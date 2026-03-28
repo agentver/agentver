@@ -48,10 +48,10 @@ vi.mock('../../output.js', () => ({
 import { existsSync, readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import { registerVersionCommand } from '../../commands/version.js'
+import * as outputModule from '../../output.js'
 import { platformFetch } from '../../registry/platform.js'
 import { readLockfile } from '../../storage/lockfile.js'
 import { readManifest } from '../../storage/manifest.js'
-import * as outputModule from '../../output.js'
 import {
   createLockfile,
   createLockfilePackage,
