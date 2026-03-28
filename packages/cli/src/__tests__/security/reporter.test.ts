@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type ora from 'ora'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderScanResult } from '../../security/reporter.js'
 import type { ScanFinding, ScanResult } from '../../security/types.js'
 
 type MockSpinner = {
-  [K in keyof ReturnType<typeof ora>]: ReturnType<typeof ora>[K] extends (...args: infer A) => infer R
+  [K in keyof ReturnType<typeof ora>]: ReturnType<typeof ora>[K] extends (
+    ...args: infer A
+  ) => infer R
     ? ReturnType<typeof vi.fn<(...args: A) => R>>
     : ReturnType<typeof ora>[K]
 }
@@ -228,11 +230,11 @@ describe('renderScanResult', () => {
 
     const output = allOutput()
     // Long evidence should be truncated with ellipsis
-    expect(output).toContain('x'.repeat(120) + '...')
+    expect(output).toContain(`${'x'.repeat(120)}...`)
     expect(output).not.toContain('x'.repeat(121))
     // Exact 120-char evidence should appear without ellipsis
     expect(output).toContain('y'.repeat(120))
-    expect(output).not.toContain('y'.repeat(120) + '...')
+    expect(output).not.toContain(`${'y'.repeat(120)}...`)
   })
 
   it('omits line reference when line is undefined', () => {
