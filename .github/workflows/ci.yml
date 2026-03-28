@@ -78,6 +78,9 @@ jobs:
       - name: Test packages
         run: bun run test
 
+      - name: Test CLI integration
+        run: bun run turbo test:integration --filter=@agentver/cli
+
       - name: Test desktop
         run: bun run --filter @agentver/desktop test
 

@@ -21,9 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const CLI_PATH = resolve(__dirname, '../../dist/bin/agentver.js')
-const CLI_AVAILABLE = existsSync(CLI_PATH)
-
+const CLI_PATH = resolve(__dirname, '../../dist/agentver.js')
 /**
  * Run the CLI with --json and return the parsed JSON output.
  * Uses a clean temp directory as cwd to avoid interference from the
@@ -62,10 +60,10 @@ function runCLI(
 }
 
 // ---------------------------------------------------------------------------
-// Integration tests — skip entirely if CLI has not been built
+// Integration tests — run via `test:integration` (requires built CLI binary)
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!CLI_AVAILABLE)('CLI --json output integration', () => {
+describe('CLI --json output integration', () => {
   let tempDir: string
 
   beforeAll(() => {
