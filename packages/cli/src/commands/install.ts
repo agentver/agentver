@@ -277,21 +277,15 @@ async function installFromWellKnown(
           hostname,
           skillName: selectedEntry.name,
         }
-        return installBundleFlow(
-          selectedEntry.name,
-          fetchResult.files,
-          agents,
-          options,
-          spinner,
-          wellKnownSourceRecord,
+        return installBundleFlow(selectedEntry.name, fetchResult.files, agents, options, spinner, {
+          sourceRecord: wellKnownSourceRecord,
           integrity,
-          undefined,
           jsonMode,
           projectRoot,
-          scope as 'project' | 'global',
-          'well-known',
-          ''
-        )
+          scope: scope as 'project' | 'global',
+          ref: 'well-known',
+          commitSha: '',
+        })
       } else if (packageType === 'AGENT_CONFIG') {
         await installAgentConfig(selectedEntry.name, fetchResult.files, agents, options, spinner)
       } else {
@@ -547,21 +541,16 @@ async function installFromPlatform(
           ref,
           commit: '',
         }
-        return installBundleFlow(
-          shortName,
-          files,
-          agents,
-          options,
-          spinner,
-          gitSourceRecord,
+        return installBundleFlow(shortName, files, agents, options, spinner, {
+          sourceRecord: gitSourceRecord,
           integrity,
           securityScanResult,
           jsonMode,
           projectRoot,
           scope,
           ref,
-          ''
-        )
+          commitSha: '',
+        })
       } else if (packageType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, files, agents, options, spinner)
       } else {
@@ -828,21 +817,16 @@ export async function installPackage(
           ref: gitSource.ref,
           commit: resolved.commitSha,
         }
-        return installBundleFlow(
-          shortName,
-          result.files,
-          agents,
-          options,
-          spinner,
-          gitSourceRecord,
+        return installBundleFlow(shortName, result.files, agents, options, spinner, {
+          sourceRecord: gitSourceRecord,
           integrity,
           securityScanResult,
           jsonMode,
           projectRoot,
           scope,
-          gitSource.ref,
-          resolved.commitSha
-        )
+          ref: gitSource.ref,
+          commitSha: resolved.commitSha,
+        })
       } else if (packageType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, result.files, agents, options, spinner)
       } else {
@@ -1124,6 +1108,17 @@ async function installStandardPackage(
   createAgentSymlinks(projectRoot, name, agents, scope)
 }
 
+type BundleFlowContext = {
+  sourceRecord: PackageSource
+  integrity: string
+  securityScanResult?: SecurityScanResult
+  jsonMode: boolean
+  projectRoot: string
+  scope: 'project' | 'global'
+  ref: string
+  commitSha: string
+}
+
 /**
  * Shared bundle install flow used by both platform and git install paths.
  *
@@ -1136,15 +1131,18 @@ async function installBundleFlow(
   agents: string[],
   options: InstallOptions,
   spinner: ReturnType<typeof ora> | SpinnerLike,
-  sourceRecord: PackageSource,
-  integrity: string,
-  securityScanResult: SecurityScanResult | undefined,
-  jsonMode: boolean,
-  projectRoot: string,
-  scope: 'project' | 'global',
-  ref: string,
-  commitSha: string
+  ctx: BundleFlowContext
 ): Promise<InstallResult> {
+  const {
+    sourceRecord,
+    integrity,
+    securityScanResult,
+    jsonMode,
+    projectRoot,
+    scope,
+    ref,
+    commitSha,
+  } = ctx
   const bundleResult = await installBundleFromFiles(
     bundleName,
     files,

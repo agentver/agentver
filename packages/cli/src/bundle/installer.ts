@@ -26,8 +26,11 @@ const TYPE_DIRECTORY_MAP: Record<ResolvedPackageRef['type'], string> = {
   script: 'scripts',
 }
 
-// Map from resolver type to PACKAGE_STRUCTURES key
-const TYPE_STRUCTURE_MAP: Record<ResolvedPackageRef['type'], string> = {
+// Map from resolver type to the package type enum value stored in the manifest
+const TYPE_PACKAGE_TYPE_MAP: Record<
+  ResolvedPackageRef['type'],
+  'SKILL' | 'PROMPT' | 'PLUGIN' | 'SCRIPT'
+> = {
   skill: 'SKILL',
   prompt: 'PROMPT',
   rule: 'SKILL', // rules use SKILL structure
@@ -79,7 +82,7 @@ function extractLocalPackageFiles(
  * Check if a set of files has the required entry file for the given package type.
  */
 function hasEntryFile(files: FetchedFile[], packageType: ResolvedPackageRef['type']): boolean {
-  const structureKey = TYPE_STRUCTURE_MAP[packageType]
+  const structureKey = TYPE_PACKAGE_TYPE_MAP[packageType]
   const structure = PACKAGE_STRUCTURES[structureKey]
   if (!structure) return files.length > 0
 
@@ -150,6 +153,10 @@ export async function installBundleFromFiles(
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
 
+  // Read manifest and lockfile once; accumulate changes in memory, write once after the loop
+  const manifestData = options.dryRun ? undefined : readManifest(projectRoot, scope)
+  const lockfileData = options.dryRun ? undefined : readLockfile(projectRoot, scope)
+
   // Install each constituent package
   for (const pkgRef of resolved.packages) {
     const localFiles = extractLocalPackageFiles(files, pkgRef.name, pkgRef.type)
@@ -160,37 +167,23 @@ export async function installBundleFromFiles(
 
       try {
         if (!options.dryRun) {
-          // Import installStandardPackage dynamically to avoid circular dependencies
-          // We use the same install flow but write files from the bundle
           const { installLocalBundleConstituent } = await import('./local-install.js')
           await installLocalBundleConstituent(pkgRef.name, localFiles, agents, options, spinner)
 
-          // Track in manifest with bundle metadata
           const integrity = computeSha256FromFiles(localFiles)
-          const manifestData = readManifest(projectRoot, scope)
-          manifestData.packages[pkgRef.name] = {
+          manifestData!.packages[pkgRef.name] = {
             source,
             agents,
             installedAt: new Date().toISOString(),
             modified: false,
             bundle: bundleName,
-            packageType: TYPE_STRUCTURE_MAP[pkgRef.type] as
-              | 'SKILL'
-              | 'AGENT_CONFIG'
-              | 'PLUGIN'
-              | 'SCRIPT'
-              | 'PROMPT'
-              | 'BUNDLE',
+            packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
           }
-          writeManifest(projectRoot, manifestData, scope)
-
-          const lockfile = readLockfile(projectRoot, scope)
-          lockfile.packages[pkgRef.name] = {
+          lockfileData!.packages[pkgRef.name] = {
             source,
             integrity,
             agents,
           }
-          writeLockfile(projectRoot, lockfile, scope)
         }
 
         installed.push({
@@ -222,20 +215,17 @@ export async function installBundleFromFiles(
           skipAudit: true,
         })
 
-        // Update the manifest entry with bundle metadata
+        // Update the manifest entry with bundle metadata.
+        // installPackageFn writes its own manifest entry, so re-read to pick it up
+        // before annotating with bundle metadata.
         if (!options.dryRun) {
-          const manifestData = readManifest(projectRoot, scope)
-          const entry = manifestData.packages[result.name]
+          const freshManifest = readManifest(projectRoot, scope)
+          const entry = freshManifest.packages[result.name]
           if (entry) {
             entry.bundle = bundleName
-            entry.packageType = TYPE_STRUCTURE_MAP[pkgRef.type] as
-              | 'SKILL'
-              | 'AGENT_CONFIG'
-              | 'PLUGIN'
-              | 'SCRIPT'
-              | 'PROMPT'
-              | 'BUNDLE'
-            writeManifest(projectRoot, manifestData, scope)
+            entry.packageType = TYPE_PACKAGE_TYPE_MAP[pkgRef.type]
+            // Merge the platform-installed entry into our accumulated manifest
+            manifestData!.packages[result.name] = entry
           }
         }
 
@@ -256,6 +246,12 @@ export async function installBundleFromFiles(
         }
       }
     }
+  }
+
+  // Write accumulated manifest and lockfile changes once
+  if (!options.dryRun) {
+    writeManifest(projectRoot, manifestData!, scope)
+    writeLockfile(projectRoot, lockfileData!, scope)
   }
 
   // Log MCP server info (configuration deferred to a future phase)

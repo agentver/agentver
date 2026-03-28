@@ -2,8 +2,8 @@ import { AgentverError } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FetchedFile } from '../../git/types'
 import type { SpinnerLike } from '../../output'
-import { createNoopSpinner } from '../helpers/mock-spinner'
 import { createLockfile, createManifest, createSharedGitSource } from '../helpers/fixtures'
+import { createNoopSpinner } from '../helpers/mock-spinner'
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -115,9 +115,7 @@ describe('installBundleFromFiles', () => {
   })
 
   it('throws on invalid YAML', async () => {
-    const files: FetchedFile[] = [
-      createBundleFile('invalid: yaml: : : broken'),
-    ]
+    const files: FetchedFile[] = [createBundleFile('invalid: yaml: : : broken')]
 
     await expect(
       installBundleFromFiles(
@@ -133,9 +131,7 @@ describe('installBundleFromFiles', () => {
   })
 
   it('throws on schema-invalid manifest', async () => {
-    const files: FetchedFile[] = [
-      createBundleFile('name: INVALID_NAME!!!\nversion: not-semver'),
-    ]
+    const files: FetchedFile[] = [createBundleFile('name: INVALID_NAME!!!\nversion: not-semver')]
 
     await expect(
       installBundleFromFiles(
@@ -221,8 +217,14 @@ describe('installBundleFromFiles', () => {
 
     // seo-audit and pr-review resolved via platform
     expect(mockInstallPackage).toHaveBeenCalledTimes(2)
-    expect(mockInstallPackage).toHaveBeenCalledWith('seo-audit@2.0.0', expect.objectContaining({ skipAudit: true }))
-    expect(mockInstallPackage).toHaveBeenCalledWith('pr-review', expect.objectContaining({ skipAudit: true }))
+    expect(mockInstallPackage).toHaveBeenCalledWith(
+      'seo-audit@2.0.0',
+      expect.objectContaining({ skipAudit: true })
+    )
+    expect(mockInstallPackage).toHaveBeenCalledWith(
+      'pr-review',
+      expect.objectContaining({ skipAudit: true })
+    )
   })
 
   it('skips optional packages that fail resolution', async () => {
@@ -246,9 +248,7 @@ includes:
     })
 
     // optional-skill fails
-    mockInstallPackage.mockRejectedValueOnce(
-      new AgentverError('NOT_FOUND', 'Package not found')
-    )
+    mockInstallPackage.mockRejectedValueOnce(new AgentverError('NOT_FOUND', 'Package not found'))
 
     const result = await installBundleFromFiles(
       'partial-bundle',
@@ -276,9 +276,7 @@ includes:
 `
     const files = [createBundleFile(bundleYaml)]
 
-    mockInstallPackage.mockRejectedValueOnce(
-      new AgentverError('NOT_FOUND', 'Package not found')
-    )
+    mockInstallPackage.mockRejectedValueOnce(new AgentverError('NOT_FOUND', 'Package not found'))
 
     await expect(
       installBundleFromFiles(

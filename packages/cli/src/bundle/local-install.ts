@@ -40,6 +40,7 @@ export async function installLocalBundleConstituent(
     const resolvedFilePath = resolve(canonicalPath, file.path)
     const relativePath = relative(canonicalPath, resolvedFilePath)
     if (relativePath.startsWith('..') || resolve(resolvedFilePath) !== resolvedFilePath) {
+      spinner.warn(`Skipping file with suspicious path: ${file.path}`)
       continue
     }
 

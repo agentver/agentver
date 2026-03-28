@@ -226,10 +226,8 @@ export function registerRemoveCommand(program: Command): void {
           return
         }
 
-        // Confirmation prompt
-        if (!options.yes && !jsonMode) {
-          let confirmMessage: string
-
+        // Show bundle context warnings before confirmation
+        if (!jsonMode) {
           if (isBundle && constituents.length > 0) {
             console.log(
               chalk.yellow(
@@ -240,14 +238,20 @@ export function registerRemoveCommand(program: Command): void {
               console.log(`  ${chalk.dim('•')} ${cName}`)
             }
             console.log()
-            confirmMessage = `Remove bundle ${chalk.bold(name)} and all constituents?`
           } else if (isConstituent) {
             console.log(
               chalk.yellow(
                 `\n"${name}" was installed as part of bundle "${pkg.bundle}". Removing it individually.`
               )
             )
-            confirmMessage = `Remove ${chalk.bold(name)}?`
+          }
+        }
+
+        // Confirmation prompt
+        if (!options.yes && !jsonMode) {
+          let confirmMessage: string
+          if (isBundle && constituents.length > 0) {
+            confirmMessage = `Remove bundle ${chalk.bold(name)} and all constituents?`
           } else {
             confirmMessage = `Remove ${chalk.bold(name)} and its agent symlinks?`
           }

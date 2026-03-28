@@ -816,4 +816,127 @@ describe('commands/remove', () => {
       )
     })
   })
+
+  // -------------------------------------------------------------------------
+  // Bundle-aware removal
+  // -------------------------------------------------------------------------
+
+  describe('bundle-aware removal', () => {
+    function setupBundleWithConstituents() {
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/bundle-repo',
+        ref: 'main',
+        commit: 'abc1234567',
+      })
+
+      const manifest = createManifest({
+        packages: {
+          'my-bundle': createManifestPackage({
+            source,
+            agents: ['claude-code'],
+            packageType: 'BUNDLE',
+          }),
+          'skill-a': createManifestPackage({
+            source,
+            agents: ['claude-code'],
+            bundle: 'my-bundle',
+          }),
+          'skill-b': createManifestPackage({
+            source,
+            agents: ['claude-code'],
+            bundle: 'my-bundle',
+          }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          'my-bundle': createLockfilePackage({ source, agents: ['claude-code'] }),
+          'skill-a': createLockfilePackage({ source, agents: ['claude-code'] }),
+          'skill-b': createLockfilePackage({ source, agents: ['claude-code'] }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(true)
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockImplementation(
+        (_root: string, name: string) => `/project/.agents/skills/${name}`
+      )
+      vi.mocked(agentDefs.getSkillPlacementPath).mockImplementation(
+        (id: string, skillName: string) => `.${id}/skills/${skillName}`
+      )
+
+      return { manifest, lockfile }
+    }
+
+    it('removes all constituents when removing a bundle', async () => {
+      setupBundleWithConstituents()
+
+      await removeAction('my-bundle', { yes: true })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, updatedManifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(updatedManifest.packages).not.toHaveProperty('my-bundle')
+      expect(updatedManifest.packages).not.toHaveProperty('skill-a')
+      expect(updatedManifest.packages).not.toHaveProperty('skill-b')
+    })
+
+    it('removes constituents from lockfile when removing a bundle', async () => {
+      setupBundleWithConstituents()
+
+      await removeAction('my-bundle', { yes: true })
+
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+      const [, updatedLockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
+      expect(updatedLockfile.packages).not.toHaveProperty('my-bundle')
+      expect(updatedLockfile.packages).not.toHaveProperty('skill-a')
+      expect(updatedLockfile.packages).not.toHaveProperty('skill-b')
+    })
+
+    it('includes bundleConstituents in dry-run JSON output', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      setupBundleWithConstituents()
+
+      await removeAction('my-bundle', { dryRun: true, yes: true })
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'my-bundle',
+          removed: false,
+          bundleConstituents: expect.arrayContaining(['skill-a', 'skill-b']),
+        })
+      )
+    })
+
+    it('allows removing a single constituent with a warning', async () => {
+      setupBundleWithConstituents()
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      await removeAction('skill-a', { yes: true })
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('installed as part of bundle')
+
+      // Only skill-a removed, not the bundle or skill-b
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, updatedManifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(updatedManifest.packages).not.toHaveProperty('skill-a')
+      expect(updatedManifest.packages).toHaveProperty('my-bundle')
+      expect(updatedManifest.packages).toHaveProperty('skill-b')
+
+      consoleSpy.mockRestore()
+    })
+
+    it('reports removal for each constituent when removing a bundle', async () => {
+      setupBundleWithConstituents()
+
+      await removeAction('my-bundle', { yes: true })
+
+      // reportRemoval called for each constituent + the bundle itself
+      expect(reporterModule.reportRemoval).toHaveBeenCalledWith('skill-a')
+      expect(reporterModule.reportRemoval).toHaveBeenCalledWith('skill-b')
+      expect(reporterModule.reportRemoval).toHaveBeenCalledWith('my-bundle')
+    })
+  })
 })
