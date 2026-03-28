@@ -475,15 +475,11 @@ export function registerUpdateCommand(program: Command): void {
           const pkgType = installedPkg?.packageType
           const isSingleFileUpdate = pkgType === 'AGENT' || pkgType === 'COMMAND'
 
+          // Single-file packages (AGENT/COMMAND) skip file backup — createBackup
+          // expects a directory, and these are individual files. Manifest/lockfile
+          // backup still works (skillDir: null skips the cpSync).
           let backupDir: string | null = null
-          if (isSingleFileUpdate) {
-            const getPlacement = pkgType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
-            const entryFileName = installedPkg?.entryFile ?? `${shortName}.md`
-            if (agents[0]) {
-              const placement = getPlacement(agents[0] as AgentId, entryFileName, scope)
-              backupDir = placement ? resolvePlacementPath(placement, projectRoot, scope) : null
-            }
-          } else {
+          if (!isSingleFileUpdate) {
             const placementPath = agents[0]
               ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
               : null
