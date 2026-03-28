@@ -31,6 +31,7 @@ async function main(): Promise<void> {
   registerListTool(server)
   registerRemoveTool(server)
   registerInfoTool(server)
+
   // Connect via stdio transport (standard for MCP)
   const transport = new StdioServerTransport()
   await server.connect(transport)

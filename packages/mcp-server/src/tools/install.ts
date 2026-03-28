@@ -136,6 +136,14 @@ export function registerInstallTool(server: McpServer): void {
         `/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/${encodeURIComponent(resolvedVersion)}/download`
       )
 
+      // Validate required fields before any file I/O
+      if (!data.gitUri || !data.gitRef || !data.gitCommitSha || !data.sha256) {
+        throw new AgentverError(
+          'VALIDATION_ERROR',
+          `Registry response for ${packageName}@${data.version} is missing required fields (git provenance or sha256) for manifest v2.`
+        )
+      }
+
       const files = extractFilesFromManifest(data.fileManifest)
 
       if (files.length === 0) {
@@ -200,14 +208,6 @@ export function registerInstallTool(server: McpServer): void {
         installedTo.push(agentId)
       }
 
-      // Validate git provenance before persisting v2 source
-      if (!data.gitUri || !data.gitRef || !data.gitCommitSha) {
-        throw new AgentverError(
-          'VALIDATION_ERROR',
-          `Registry response for ${packageName}@${data.version} is missing git provenance required by manifest v2.`
-        )
-      }
-
       // Update manifest
       const root = isGlobal ? homedir() : projectRoot
       const manifest = readManifest(root)
@@ -235,7 +235,7 @@ export function registerInstallTool(server: McpServer): void {
           ref: data.gitRef,
           commit: data.gitCommitSha,
         },
-        integrity: `sha256-${data.sha256 ?? 'unverified'}`,
+        integrity: `sha256-${data.sha256}`,
         agents: installedTo,
       }
       writeLockfile(root, lockfile)
