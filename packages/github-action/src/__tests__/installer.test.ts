@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { computeIntegrityHash } from '@agentver/shared'
 import {
   computeIntegrity,
   extractFilesFromManifest,
   IntegrityError,
+  resolvePackage,
   verifyIntegrity,
 } from '../installer'
 
@@ -26,6 +28,14 @@ describe('installer', () => {
       const expected = `sha256-${createHash('sha256').update(combined).digest('base64')}`
 
       expect(computeIntegrity(files)).toBe(expected)
+    })
+
+    it('delegates to the shared computeIntegrityHash helper', () => {
+      const files = [
+        { path: 'x.md', content: 'test' },
+        { path: 'y.md', content: 'data' },
+      ]
+      expect(computeIntegrity(files)).toBe(computeIntegrityHash(files))
     })
 
     it('produces the same hash regardless of input order', () => {
@@ -75,6 +85,14 @@ describe('installer', () => {
     })
   })
 
+  describe('resolvePackage', () => {
+    it('rejects empty version string', async () => {
+      await expect(
+        resolvePackage('org/pkg', '', 'https://example.com', 'key')
+      ).rejects.toThrow('Empty version')
+    })
+  })
+
   describe('extractFilesFromManifest', () => {
     it('extracts from a flat record (key=path, value=content)', () => {
       const manifest: Record<string, unknown> = {
@@ -88,10 +106,10 @@ describe('installer', () => {
     })
 
     it('extracts from an array of {path, content} objects', () => {
-      const manifest = [
+      const manifest: unknown[] = [
         { path: 'a.md', content: 'alpha' },
         { path: 'b.md', content: 'bravo' },
-      ] as unknown as Record<string, unknown>
+      ]
       const files = extractFilesFromManifest(manifest)
       expect(files).toHaveLength(2)
       expect(files).toContainEqual({ path: 'a.md', content: 'alpha' })
@@ -109,12 +127,12 @@ describe('installer', () => {
     })
 
     it('filters out malformed entries from array', () => {
-      const manifest = [
+      const manifest: unknown[] = [
         { path: 'good.md', content: 'ok' },
         { path: 123, content: 'bad path' },
         { path: 'missing-content' },
         null,
-      ] as unknown as Record<string, unknown>
+      ]
       const files = extractFilesFromManifest(manifest)
       expect(files).toHaveLength(1)
       expect(files[0]!.path).toBe('good.md')

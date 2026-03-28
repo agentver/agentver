@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import * as core from '@actions/core'
@@ -7,6 +6,7 @@ import {
   getSkillPlacementPath,
   resolveAgentId,
 } from '@agentver/agent-definitions'
+import { computeIntegrityHash } from '@agentver/shared'
 import type { Lockfile, Manifest } from '@agentver/shared'
 import type { InstallResult } from './reporter'
 
@@ -19,7 +19,7 @@ const REQUEST_TIMEOUT_MS = 30_000
 type DownloadResponse = {
   version: string
   content: string | null
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
   sha256: string | null
   size: number | null
   gitRef: string | null
@@ -182,13 +182,22 @@ function splitPackageName(name: string): { org: string; pkg: string } {
 }
 
 function assertDownloadResponse(data: unknown): asserts data is DownloadResponse {
-  if (
-    typeof data !== 'object' ||
-    data === null ||
-    typeof (data as Record<string, unknown>).version !== 'string' ||
-    typeof (data as Record<string, unknown>).createdAt !== 'string'
-  ) {
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('Invalid response from registry: expected an object')
+  }
+
+  const record = data as Record<string, unknown>
+
+  if (typeof record.version !== 'string' || typeof record.createdAt !== 'string') {
     throw new Error('Invalid response from registry: missing required fields (version, createdAt)')
+  }
+
+  if (
+    record.fileManifest !== null &&
+    record.fileManifest !== undefined &&
+    typeof record.fileManifest !== 'object'
+  ) {
+    throw new Error('Invalid response from registry: fileManifest must be an object or array')
   }
 }
 
@@ -201,15 +210,15 @@ function assertDownloadResponse(data: unknown): asserts data is DownloadResponse
  * - An empty object
  */
 export function extractFilesFromManifest(
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
 ): Array<{ path: string; content: string }> {
   if (Array.isArray(fileManifest)) {
     return fileManifest.filter(
       (entry): entry is { path: string; content: string } =>
         typeof entry === 'object' &&
         entry !== null &&
-        typeof entry.path === 'string' &&
-        typeof entry.content === 'string'
+        typeof (entry as Record<string, unknown>).path === 'string' &&
+        typeof (entry as Record<string, unknown>).content === 'string'
     )
   }
 
@@ -244,6 +253,12 @@ export async function resolvePackage(
   registryUrl: string,
   apiKey: string
 ): Promise<DownloadResponse> {
+  if (!version) {
+    throw new Error(
+      `Empty version for package "${name}". Specify a semver version or "latest" in your manifest.`
+    )
+  }
+
   const { org, pkg } = splitPackageName(name)
 
   const resolvedVersion =
@@ -260,12 +275,7 @@ export async function resolvePackage(
 
 // -- Integrity ---------------------------------------------------------------
 
-export function computeIntegrity(files: Array<{ path: string; content: string }>): string {
-  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
-  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\0')
-  const hash = createHash('sha256').update(combined).digest('base64')
-  return `sha256-${hash}`
-}
+export const computeIntegrity = computeIntegrityHash
 
 export function verifyIntegrity(
   files: Array<{ path: string; content: string }>,

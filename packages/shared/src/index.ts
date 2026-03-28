@@ -54,6 +54,7 @@ export {
 export { type Edition, getEdition, isCloud, isCommunity, isEnterprise } from './edition'
 export { AgentverError, type AgentverErrorCode } from './errors'
 export { generateId, generateShortId } from './id'
+export { computeIntegrityHash } from './integrity'
 export { createLogger } from './logger'
 export {
   type BundleCredentialDefinition,

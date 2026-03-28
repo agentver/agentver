@@ -242,10 +242,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout main branch
+      - name: Checkout tagged commit
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 0
 
       - name: Setup Bun
@@ -259,10 +259,13 @@ jobs:
       - name: Build GitHub Action
         run: bun run turbo build --filter=@agentver/github-action
 
-      - name: Commit dist
+      - name: Commit and push dist to main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git checkout ${{ github.ref }} -- packages/github-action/dist/
           git add packages/github-action/dist/ --force
           git diff --cached --quiet || git commit -m "chore: build github-action dist for ${{ github.ref_name }}"
+          git pull --rebase origin main
           git push origin main

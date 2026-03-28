@@ -6,7 +6,7 @@ import {
   detectInstalledAgents,
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
-import { AgentverError } from '@agentver/shared'
+import { AgentverError, computeIntegrityHash } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
@@ -16,7 +16,7 @@ import { readLockfile, readManifest, writeLockfile, writeManifest } from '../sto
 type DownloadResponse = {
   version: string
   content: string | null
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
   sha256: string | null
   size: number | null
   gitRef: string | null
@@ -51,15 +51,15 @@ function expandTilde(path: string): string {
 }
 
 function extractFilesFromManifest(
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
 ): Array<{ path: string; content: string }> {
   if (Array.isArray(fileManifest)) {
     return fileManifest.filter(
       (entry): entry is { path: string; content: string } =>
         typeof entry === 'object' &&
         entry !== null &&
-        typeof entry.path === 'string' &&
-        typeof entry.content === 'string'
+        typeof (entry as Record<string, unknown>).path === 'string' &&
+        typeof (entry as Record<string, unknown>).content === 'string'
     )
   }
 
@@ -165,6 +165,15 @@ export function registerInstallTool(server: McpServer): void {
       const shortName = name
       const installedTo: string[] = []
 
+      // Validate files up-front so integrity is computed from the same set that gets written
+      const validatedFiles = files.filter((file) => {
+        if (file.path.includes('..')) {
+          console.warn(`Skipping file with path traversal segment: '${file.path}'`)
+          return false
+        }
+        return true
+      })
+
       for (const agentId of detectedAgents) {
         const placementPath = getSkillPlacementPath(
           agentId as AgentId,
@@ -184,11 +193,12 @@ export function registerInstallTool(server: McpServer): void {
 
         const resolvedBase = resolve(fullPath)
 
-        for (const file of files) {
-          if (file.path.includes('..')) continue
-
+        for (const file of validatedFiles) {
           const filePath = resolve(fullPath, file.path)
-          if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) continue
+          if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) {
+            console.warn(`Skipping file that escapes target directory: '${file.path}'`)
+            continue
+          }
 
           const dir = dirname(filePath)
           if (!existsSync(dir)) {
@@ -217,7 +227,7 @@ export function registerInstallTool(server: McpServer): void {
       lockfile.packages[packageName] = {
         version: data.version,
         resolved: downloadUrl,
-        integrity: `sha256-${data.sha256 ?? 'unverified'}`,
+        integrity: computeIntegrityHash(validatedFiles),
         agents: installedTo,
       }
       writeLockfile(root, lockfile)
