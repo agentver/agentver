@@ -35,8 +35,8 @@ describe('AGENT_DEFINITIONS', () => {
   it('should have 38 agent-specific and 5 universal agents', () => {
     const agentSpecific = AGENT_DEFINITIONS.filter((d) => d.category === 'agent-specific')
     const universal = AGENT_DEFINITIONS.filter((d) => d.category === 'universal')
-    expect(agentSpecific).toHaveLength(38)
-    expect(universal).toHaveLength(5)
+    expect(agentSpecific).toHaveLength(39)
+    expect(universal).toHaveLength(4)
   })
 
   it('should have aliases only on copilot, gemini-cli, and roo', () => {
