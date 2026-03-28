@@ -1554,6 +1554,47 @@ describe('commands/install', () => {
       expect(writeCalls).toHaveLength(1)
       expect(writeCalls[0][1]).toBe(rawContent)
     })
+
+    it('composes translated content into existing composed config', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      const newContent = '# My Config\n\nRules for the agent.\n'
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: newContent,
+        },
+      ])
+
+      // Simulate an existing composed config file on disk
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true)
+      const existingComposed = '## From: existing-pkg\n\nExisting rules.\n'
+      vi.mocked(nodeFs.readFileSync).mockReturnValue(existingComposed)
+      vi.mocked(agentDefs.isComposedConfig).mockReturnValue(true)
+      vi.mocked(agentDefs.parseComposedSections).mockReturnValue([
+        { packageName: 'existing-pkg', content: 'Existing rules.\n' },
+      ])
+      const composedOutput = '## From: existing-pkg\n\nExisting rules.\n\n## From: test-skill\n\n# My Config\n\nRules for the agent.\n'
+      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: composedOutput })
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      // composeConfigs should be called with existing + new translated content
+      expect(agentDefs.composeConfigs).toHaveBeenCalledWith([
+        { packageName: 'existing-pkg', content: 'Existing rules.\n', order: 0 },
+        { packageName: DERIVED_NAME, content: newContent, order: 1 },
+      ])
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      expect(writeCalls[0][1]).toBe(composedOutput)
+    })
   })
 
   // -------------------------------------------------------------------------
