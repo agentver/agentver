@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -67,6 +68,13 @@ function extractFilesFromManifest(
   return Object.entries(fileManifest)
     .filter(([, value]) => typeof value === 'string')
     .map(([path, content]) => ({ path, content: content as string }))
+}
+
+function computeIntegrity(files: Array<{ path: string; content: string }>): string {
+  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
+  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\0')
+  const hash = createHash('sha256').update(combined).digest('base64')
+  return `sha256-${hash}`
 }
 
 async function resolveLatestVersion(org: string, name: string): Promise<string> {

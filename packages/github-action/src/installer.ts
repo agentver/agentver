@@ -187,7 +187,6 @@ async function registryFetch<T>(path: string, registryUrl: string, apiKey: strin
       signal: controller.signal,
     })
   } catch (error) {
-    clearTimeout(timeoutId)
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new RegistryTimeoutError(url)
     }
@@ -218,13 +217,18 @@ function splitPackageName(name: string): { org: string; pkg: string } {
 }
 
 function assertDownloadResponse(data: unknown): asserts data is DownloadResponse {
+  const record = data as Record<string, unknown>
   if (
     typeof data !== 'object' ||
     data === null ||
-    typeof (data as Record<string, unknown>).version !== 'string' ||
-    typeof (data as Record<string, unknown>).createdAt !== 'string'
+    typeof record.version !== 'string' ||
+    typeof record.createdAt !== 'string' ||
+    typeof record.fileManifest !== 'object' ||
+    record.fileManifest === null
   ) {
-    throw new Error('Invalid response from registry: missing required fields (version, createdAt)')
+    throw new Error(
+      'Invalid response from registry: missing required fields (version, createdAt, fileManifest)'
+    )
   }
 }
 
@@ -283,7 +287,9 @@ export async function resolvePackage(
   const { org, pkg } = splitPackageName(name)
 
   const resolvedVersion =
-    version === 'latest' ? await resolveLatestVersion(org, pkg, registryUrl, apiKey) : version
+    !version || version === 'latest'
+      ? await resolveLatestVersion(org, pkg, registryUrl, apiKey)
+      : version
 
   const data = await registryFetch<unknown>(
     `/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(resolvedVersion)}/download`,
