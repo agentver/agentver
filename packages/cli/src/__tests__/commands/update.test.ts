@@ -1078,6 +1078,56 @@ describe('commands/update', () => {
   // 13. Patch mode with global scope
   // -------------------------------------------------------------------------
 
+  describe('patch mode with multi-agent', () => {
+    it('passes all agents to installPackage in patch update for multi-agent installs', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      setupSinglePackage('test-skill', OLD_SHA, {
+        agents: ['claude-code', 'cursor', 'windsurf'],
+      })
+      setupResolveToNewSha()
+      vi.mocked(installPackage).mockResolvedValue({
+        name: 'test-skill',
+        ref: 'main',
+        commitSha: NEW_SHA,
+        agents: ['claude-code', 'cursor', 'windsurf'],
+      })
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: 'modified locally', size: 16 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different')
+
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: createFetchedFiles(1),
+        commitSha: OLD_SHA,
+        source: createGitSource(),
+      })
+
+      vi.mocked(patchesModule.generatePatch).mockReturnValue(
+        '--- a/test-skill/SKILL.md\n+++ b/test-skill/SKILL.md\n@@ -1,1 +1,1 @@\n-original\n+modified locally\n'
+      )
+      vi.mocked(patchesModule.savePatch).mockReturnValue(
+        '/project/.agentver/patches/test-skill.patch'
+      )
+      vi.mocked(patchesModule.applyPatch).mockReturnValue({ applied: true, conflicts: [] })
+
+      vi.mocked(prompts)
+        .mockResolvedValueOnce({ confirmed: true })
+        .mockResolvedValueOnce({ action: 'patch' })
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ agent: ['claude-code', 'cursor', 'windsurf'] })
+      )
+    })
+  })
+
   describe('patch mode with --global', () => {
     it('passes global scope to readLockfile and installPackage in patch update', async () => {
       vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
