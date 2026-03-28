@@ -1,0 +1,191 @@
+# CodeRabbit configuration for Agentver
+# Open-source skill registry for AI coding assistants.
+
+language: en-GB
+
+reviews:
+  profile: assertive
+  high_level_summary: true
+  auto_title_placeholder: "@coderabbitai"
+  auto_review:
+    drafts: true
+  request_changes_workflow: true
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+  poem: false
+
+  path_instructions:
+    # ── Global (all source files) ──────────────────────────────────────
+    - path: "**/*.{ts,tsx,js,jsx}"
+      instructions: |
+        ## Language & Naming
+        - British English spelling throughout: "organisation" not "organization",
+          "colour" not "color", "initialise" not "initialize", "behaviour" not "behavior", etc.
+        - File names must be kebab-case.
+        - Type names must be PascalCase.
+        - Test files must be named `[name].test.ts` or `[name].spec.ts`.
+
+        ## Type Safety
+        - Never use `any` casts to fix type errors. If a type assertion is unavoidable, use `unknown` first.
+        - Prefer `type` over `interface` unless the type genuinely needs to be extended.
+        - No `@ts-ignore` or `@ts-expect-error` without an adjacent comment explaining why.
+
+        ## Clean Code
+        - No commented-out code, console.log calls, or debug artefacts in production code.
+        - No over-engineering: don't add helpers, abstractions, or feature flags for one-time operations.
+        - Don't add docstrings, comments, or type annotations to code that wasn't changed.
+        - Only add comments where the logic isn't self-evident.
+
+        ## Security (flag as CRITICAL)
+        - No hardcoded secrets, API keys, tokens, or credentials.
+        - No string interpolation in SQL queries (use parameterised queries).
+        - No unsanitised user content rendered as raw HTML.
+        - No command injection via unsanitised user input in exec/spawn calls.
+        - No sensitive data (passwords, tokens, PII) in log statements.
+
+        ## Performance
+        - Flag N+1 query patterns (queries inside loops).
+        - Flag unbounded database queries (no LIMIT, no pagination).
+        - Flag unhandled promise rejections (missing .catch or try/catch on async).
+        - Flag large synchronous operations that could block the event loop.
+
+    # ── Dashboard (Next.js / React) ────────────────────────────────────
+    - path: "apps/dashboard/src/**/*.{ts,tsx}"
+      instructions: |
+        ## Import Patterns
+        - Always use the `@/` import alias for shared code. Never use relative imports
+          (`./` or `../`) when an alias path exists. Flag any relative import where `@/`
+          could be used instead.
+        - If the same file imports from a module using `@/` AND a relative path,
+          flag the relative import as inconsistent.
+
+        ## Component Patterns
+        - Components must use default exports with named Props types.
+        - Use `cn()` from `@agentver/ui-utils` for className composition.
+          Never use template string interpolation for combining Tailwind classes.
+        - Use `cva` for component variants.
+
+        ## State & Hooks
+        - Custom hooks must be prefixed with `use`.
+        - Simple hooks should return arrays `[value, setValue]`, complex hooks return objects.
+        - State management should use React Context + hooks.
+
+        ## tRPC Endpoints
+        - Verify the correct authorisation procedure is used based on access level:
+          `publicProcedure`, `protectedProcedure`, `adminProcedure`.
+        - `protectedProcedure` routes that mutate org-scoped data must verify
+          organisation membership before acting.
+        - Missing or too-permissive authorisation on mutation endpoints is CRITICAL.
+
+        ## Package Boundaries
+        - Client components (`'use client'`) cannot transitively import Node built-ins
+          (`node:fs`, `node:path`, etc.) — this breaks Turbopack bundling.
+        - `@agentver/shared` must NOT be imported via paths that pull in Node-only code.
+        - Use `@agentver/agent-definitions/types` (not the root export) from client code.
+
+    # ── Dashboard Hooks ────────────────────────────────────────────────
+    - path: "apps/dashboard/src/hooks/**/*.ts"
+      instructions: |
+        ## Hook Robustness
+        - Check for exhaustive-deps violations and stale closures in useEffect.
+        - Flag `defaultValue` or inline objects/arrays in useEffect dependency arrays —
+          these cause infinite re-renders when callers pass unstable references.
+        - Flag fragile multi-effect coordination patterns (refs used to synchronise
+          logic between effects). Prefer collapsing into a single effect.
+        - Hooks are shared utilities — review for robustness against diverse callers,
+          not just current usage. If a caller could trigger an infinite loop by passing
+          an inline object, flag it even if current callers don't.
+        - Flag missing cleanup in useEffect (event listeners, subscriptions, timers).
+
+    # ── Public Packages (MIT-licensed) ─────────────────────────────────
+    - path: "packages/{cli,shared,agent-definitions,mcp-server,github-action}/src/**/*.ts"
+      instructions: |
+        ## Open-Source Boundary (flag violations as CRITICAL)
+        - No references to platform internals: Better Auth, tRPC routers, Prisma models,
+          internal URLs, API keys, or anything dashboard-specific.
+        - No TODOs, FIXMEs, hack comments, or commented-out code.
+        - No hardcoded staging, internal, or development URLs.
+        - No team names, Slack channels, Linear tickets, or internal tooling references.
+        - No debug logging or console.log statements.
+        - No stub or placeholder implementations — everything shipped must work.
+        - These packages must not import `node:fs` or Node-only modules if they need
+          to run in browser/bundler contexts (especially `@agentver/shared`).
+
+    # ── Database (Prisma) ──────────────────────────────────────────────
+    - path: "packages/database/prisma/**"
+      instructions: |
+        ## Migration Safety
+        - Destructive operations (DROP TABLE, DROP COLUMN, ALTER TYPE) must be flagged.
+        - Check for missing indexes on foreign keys and frequently queried columns.
+        - Verify that new models follow existing naming conventions in the schema.
+        - New columns should have sensible defaults or be nullable.
+
+    # ── Backend Services ───────────────────────────────────────────────
+    - path: "apps/*/src/**/*.ts"
+      instructions: |
+        ## API & Service Patterns
+        - Validate request input with Zod at the controller boundary.
+        - Delegate business logic to service layer — controllers should be thin.
+        - Check for missing authentication/authorisation middleware on new endpoints.
+        - Error responses should use consistent error types.
+        - Flag any direct database access that bypasses the ORM layer.
+
+    # ── Tests ──────────────────────────────────────────────────────────
+    - path: "**/*.{test,spec}.{ts,tsx}"
+      instructions: |
+        ## Test Quality
+        - Tests should test behaviour, not implementation details.
+        - Flag brittle tests that will break on refactoring (e.g. testing internal
+          state, asserting on exact object shapes when only a subset matters).
+        - Check for missing negative tests — what happens when things fail?
+        - Test data should use realistic scenarios, not trivial mocks.
+        - Flag tests that duplicate existing coverage without adding value.
+        - If new code paths were added (functions, endpoints, branches) but no
+          corresponding tests exist, flag as SHOULD_FIX.
+
+    # ── Infrastructure ─────────────────────────────────────────────────
+    - path: "**/{Dockerfile,docker-compose*,[Mm]akefile}"
+      instructions: |
+        - Flag images using `latest` tag — pin to specific versions.
+        - Check for secrets or credentials baked into images.
+        - Verify multi-stage builds are used where appropriate.
+
+    # ── Configuration ──────────────────────────────────────────────────
+    - path: "{package.json,tsconfig*.json,turbo.json,biome.json}"
+      instructions: |
+        - Flag new dependencies — are they necessary? Is there an existing dependency
+          that already provides this functionality?
+        - Flag removed dependencies — verify nothing still imports them.
+        - Flag tsconfig changes that weaken type safety (e.g. disabling strict options).
+
+    # ── E2E Tests ──────────────────────────────────────────────────────
+    - path: "e2e/**/*.{ts,tsx}"
+      instructions: |
+        - E2E tests use Playwright. Prefer stable selectors (data-testid, role, label)
+          over brittle CSS selectors.
+        - Flag flaky patterns: hard-coded timeouts, race conditions, browser-specific hacks.
+        - Tests should be independent — no shared state between test files.
+
+  # ─── Finishing Touches ───────────────────────────────────────────────
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+
+  # ─── Path Filters ──────────────────────────────────────────────────
+  path_filters:
+    - "!**/bun.lock"
+    - "!**/dist/**"
+    - "!**/node_modules/**"
+    - "!**/.next/**"
+    - "!**/coverage/**"
+    - "!**/*.generated.*"
+    - "!**/__generated__/**"
+
+# ─── Knowledge Base ────────────────────────────────────────────────
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
