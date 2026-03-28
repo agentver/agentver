@@ -47,7 +47,15 @@ import { PackageManagerTabs } from '@/components/ui/package-manager-tabs'
 import { useOrgContext } from '@/hooks/use-org-context'
 import { trpc } from '@/trpc/client'
 
-const VALID_TYPES = ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'] as const
+const VALID_TYPES = [
+  'SKILL',
+  'AGENT_CONFIG',
+  'PLUGIN',
+  'SCRIPT',
+  'PROMPT',
+  'AGENT',
+  'COMMAND',
+] as const
 
 export default function SkillsPage() {
   return (

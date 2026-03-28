@@ -297,7 +297,14 @@ async function installFromWellKnown(
       } else if (detectedWkType === 'AGENT_CONFIG') {
         await installAgentConfig(selectedEntry.name, fetchResult.files, agents, options, spinner)
       } else if (detectedWkType === 'AGENT' || detectedWkType === 'COMMAND') {
-        installedWkEntryFile = await installSingleFilePackage(selectedEntry.name, fetchResult.files, agents, detectedWkType, options, spinner)
+        installedWkEntryFile = await installSingleFilePackage(
+          selectedEntry.name,
+          fetchResult.files,
+          agents,
+          detectedWkType,
+          options,
+          spinner
+        )
       } else {
         await installStandardPackage(
           selectedEntry.name,
@@ -340,14 +347,29 @@ async function installFromWellKnown(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND' ? { packageType: detectedWkType, entryFile: installedWkEntryFile } : {}),
+      ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND'
+        ? { packageType: detectedWkType, entryFile: installedWkEntryFile }
+        : {}),
     }
     writeManifest(projectRoot, manifest, scope)
+
+    const wkSingleFileIntegrity =
+      installedWkEntryFile && (detectedWkType === 'AGENT' || detectedWkType === 'COMMAND')
+        ? computeSha256FromFiles([
+            {
+              path: installedWkEntryFile,
+              content:
+                fetchResult.files.find(
+                  (f) => (f.path.split('/').pop() ?? f.path) === installedWkEntryFile
+                )?.content ?? '',
+            },
+          ])
+        : integrity
 
     const lockfile = readLockfile(projectRoot, scope)
     lockfile.packages[selectedEntry.name] = {
       source: wellKnownSourceRecord,
-      integrity,
+      integrity: wkSingleFileIntegrity,
       agents,
     }
     writeLockfile(projectRoot, lockfile, scope)
@@ -566,7 +588,14 @@ async function installFromPlatform(
       } else if (detectedPlatformType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, files, agents, options, spinner)
       } else if (detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND') {
-        installedPlatformEntryFile = await installSingleFilePackage(shortName, files, agents, detectedPlatformType, options, spinner)
+        installedPlatformEntryFile = await installSingleFilePackage(
+          shortName,
+          files,
+          agents,
+          detectedPlatformType,
+          options,
+          spinner
+        )
       } else {
         await installStandardPackage(shortName, files, agents, options, spinner)
       }
@@ -604,14 +633,30 @@ async function installFromPlatform(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND' ? { packageType: detectedPlatformType, entryFile: installedPlatformEntryFile } : {}),
+      ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND'
+        ? { packageType: detectedPlatformType, entryFile: installedPlatformEntryFile }
+        : {}),
     }
     writeManifest(projectRoot, manifest, scope)
+
+    const platformSingleFileIntegrity =
+      installedPlatformEntryFile &&
+      (detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND')
+        ? computeSha256FromFiles([
+            {
+              path: installedPlatformEntryFile,
+              content:
+                files.find(
+                  (f) => (f.path.split('/').pop() ?? f.path) === installedPlatformEntryFile
+                )?.content ?? '',
+            },
+          ])
+        : integrity
 
     const lockfile = readLockfile(projectRoot, scope)
     lockfile.packages[shortName] = {
       source: gitSourceRecord,
-      integrity,
+      integrity: platformSingleFileIntegrity,
       agents,
     }
     writeLockfile(projectRoot, lockfile, scope)
@@ -846,7 +891,14 @@ export async function installPackage(
       } else if (detectedType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, result.files, agents, options, spinner)
       } else if (detectedType === 'AGENT' || detectedType === 'COMMAND') {
-        installedEntryFile = await installSingleFilePackage(shortName, result.files, agents, detectedType, options, spinner)
+        installedEntryFile = await installSingleFilePackage(
+          shortName,
+          result.files,
+          agents,
+          detectedType,
+          options,
+          spinner
+        )
       } else {
         await installStandardPackage(shortName, result.files, agents, options, spinner)
       }
@@ -884,14 +936,28 @@ export async function installPackage(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedType === 'AGENT' || detectedType === 'COMMAND' ? { packageType: detectedType, entryFile: installedEntryFile } : {}),
+      ...(detectedType === 'AGENT' || detectedType === 'COMMAND'
+        ? { packageType: detectedType, entryFile: installedEntryFile }
+        : {}),
     }
     writeManifest(projectRoot, manifest, scope)
+
+    const singleFileIntegrity =
+      installedEntryFile && (detectedType === 'AGENT' || detectedType === 'COMMAND')
+        ? computeSha256FromFiles([
+            {
+              path: installedEntryFile,
+              content:
+                result.files.find((f) => (f.path.split('/').pop() ?? f.path) === installedEntryFile)
+                  ?.content ?? '',
+            },
+          ])
+        : integrity
 
     const lockfile = readLockfile(projectRoot, scope)
     lockfile.packages[shortName] = {
       source: gitSourceRecord,
-      integrity,
+      integrity: singleFileIntegrity,
       agents,
     }
     writeLockfile(projectRoot, lockfile, scope)
@@ -1157,11 +1223,17 @@ async function installSingleFilePackage(
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
 
-  const mdFile = files.find((f) => f.path.endsWith('.md'))
-  if (!mdFile) {
+  const mdFiles = files.filter((f) => f.path.endsWith('.md'))
+  if (mdFiles.length === 0) {
     spinner.fail('No .md file found in package')
     throw new AgentverError('NO_FILES', 'No .md file found in package')
   }
+  if (mdFiles.length > 1) {
+    const message = `Expected exactly one markdown file for ${packageType.toLowerCase()} packages, found ${mdFiles.length}`
+    spinner.fail(message)
+    throw new AgentverError('VALIDATION_ERROR', message)
+  }
+  const mdFile = mdFiles[0]!
 
   const fileName = mdFile.path.split('/').pop() ?? mdFile.path
 
@@ -1176,15 +1248,13 @@ async function installSingleFilePackage(
   spinner.text = `Installing ${packageType.toLowerCase()} ${name} to ${agents.length} agent(s)...`
 
   const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+  const writtenAgents: string[] = []
 
   for (const agentId of agents) {
     const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
     if (!placementPath) {
       const typeLabel = packageType === 'AGENT' ? 'agent' : 'command'
-      console.log(
-        chalk.yellow('  Warning:') +
-          ` ${agentId} does not support ${typeLabel}-type packages. Skipping.`
-      )
+      spinner.text = `${agentId} does not support ${typeLabel}-type packages. Skipping.`
       continue
     }
 
@@ -1197,6 +1267,14 @@ async function installSingleFilePackage(
     }
 
     writeFileSync(fullPath, mdFile.content, 'utf-8')
+    writtenAgents.push(agentId)
+  }
+
+  if (writtenAgents.length === 0) {
+    const typeLabel = packageType === 'AGENT' ? 'agent' : 'command'
+    const message = `No agents support ${typeLabel}-type packages`
+    spinner.fail(message)
+    throw new AgentverError('VALIDATION_ERROR', message)
   }
 
   return fileName

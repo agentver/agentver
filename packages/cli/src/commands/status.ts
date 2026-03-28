@@ -1,5 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { type AgentId, getAgentPlacementPath, getCommandPlacementPath } from '@agentver/agent-definitions'
+import {
+  type AgentId,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+} from '@agentver/agent-definitions'
 import type { ManifestV2Package, StatusResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -77,7 +81,8 @@ async function readLocalFiles(
   entryFile?: string
 ): Promise<Array<{ path: string; content: string }>> {
   if (packageType === 'AGENT' || packageType === 'COMMAND') {
-    const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+    const getPlacementPath =
+      packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
     const shortName = packageName.split('/').pop()!
     const fileName = entryFile ?? `${shortName}.md`
     for (const agentId of agents) {
@@ -117,7 +122,14 @@ async function checkPackageStatus(
     let locallyModified = false
 
     try {
-      const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType, entryFile)
+      const localFiles = await readLocalFiles(
+        projectRoot,
+        name,
+        agents,
+        scope,
+        packageType,
+        entryFile
+      )
       if (lockfileIntegrity && localFiles.length > 0) {
         const localIntegrity = computeSha256FromFiles(localFiles)
         locallyModified = localIntegrity !== lockfileIntegrity
@@ -154,7 +166,14 @@ async function checkPackageStatus(
   let upstreamCommit: string | undefined
 
   try {
-    const localFiles = await readLocalFiles(projectRoot, name, agents, scope, packageType, entryFile)
+    const localFiles = await readLocalFiles(
+      projectRoot,
+      name,
+      agents,
+      scope,
+      packageType,
+      entryFile
+    )
 
     if (lockfileIntegrity && localFiles.length > 0) {
       const localIntegrity = computeSha256FromFiles(localFiles)

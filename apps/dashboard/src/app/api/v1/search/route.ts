@@ -6,7 +6,15 @@ import { z } from 'zod'
 
 const logger = createLogger('api:search')
 
-const packageTypeSchema = z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'])
+const packageTypeSchema = z.enum([
+  'SKILL',
+  'AGENT_CONFIG',
+  'PLUGIN',
+  'SCRIPT',
+  'PROMPT',
+  'AGENT',
+  'COMMAND',
+])
 const sortSchema = z.enum(['relevance', 'stars', 'installs', 'recent'])
 
 type SortOption = z.infer<typeof sortSchema>
