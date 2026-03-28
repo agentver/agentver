@@ -4,10 +4,11 @@ import { dirname, join, relative, resolve } from 'node:path'
 import {
   composeConfigs,
   detectInstalledAgents,
-  getConfigFilePath,
   isComposedConfig,
   parseComposedSections,
+  translateConfig,
 } from '@agentver/agent-definitions'
+import type { AgentId } from '@agentver/agent-definitions'
 import type { InstallResult as InstallResultJSON } from '@agentver/shared'
 import {
   AGENT_CONFIG_FILES,
@@ -902,20 +903,19 @@ async function installAgentConfig(
 
   const configContent = contentFile.content
 
-  for (const agentId of agents) {
-    const configPath = getConfigFilePath(agentId as Parameters<typeof getConfigFilePath>[0], name)
-    if (!configPath) continue
+  const translations = translateConfig(configContent, name, agents as AgentId[])
 
+  for (const translation of translations) {
     const fullConfigPath = options.global
-      ? configPath.replace('~', homedir())
-      : join(projectRoot, configPath)
+      ? translation.filePath.replace('~', homedir())
+      : join(projectRoot, translation.filePath)
 
     const configDir = join(fullConfigPath, '..')
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true })
     }
 
-    let finalContent = configContent
+    let finalContent = translation.content
     if (existsSync(fullConfigPath)) {
       const existingContent = readFileSync(fullConfigPath, 'utf-8')
 
@@ -932,7 +932,7 @@ async function installAgentConfig(
             })),
             {
               packageName: name,
-              content: contentFile.content,
+              content: translation.content,
               order: existingSections.length,
             },
           ]
