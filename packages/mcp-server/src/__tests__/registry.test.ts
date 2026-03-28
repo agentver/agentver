@@ -10,6 +10,17 @@ vi.mock('node:os', () => ({
   homedir: vi.fn(() => '/home/test'),
 }))
 
+vi.mock('@agentver/shared', () => ({
+  AgentverError: class AgentverError extends Error {
+    code: string
+    constructor(code: string, message: string) {
+      super(message)
+      this.code = code
+      this.name = 'AgentverError'
+    }
+  },
+}))
+
 describe('registry', () => {
   let fs: typeof import('node:fs')
   let registry: typeof import('../shared/registry')

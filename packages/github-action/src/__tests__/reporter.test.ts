@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createInstallResult, createInstallSummary } from './helpers/fixtures'
 
+vi.mock('@agentver/shared', () => ({}))
+
 vi.mock('@actions/core', () => ({
   setOutput: vi.fn(),
   summary: { addRaw: vi.fn().mockReturnThis(), write: vi.fn().mockResolvedValue(undefined) },

@@ -26,6 +26,17 @@ vi.mock('@agentver/agent-definitions', () => ({
   getSkillPlacementPath: vi.fn(),
 }))
 
+vi.mock('@agentver/shared', () => ({
+  AgentverError: class AgentverError extends Error {
+    code: string
+    constructor(code: string, message: string) {
+      super(message)
+      this.code = code
+      this.name = 'AgentverError'
+    }
+  },
+}))
+
 describe('tools/remove', () => {
   let fs: typeof import('node:fs')
   let contextMod: typeof import('../../shared/context')

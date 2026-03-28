@@ -30,6 +30,8 @@ vi.mock('@agentver/agent-definitions', () => ({
   resolveAgentId: vi.fn(),
 }))
 
+vi.mock('@agentver/shared', () => ({}))
+
 describe('installer', () => {
   let fs: typeof import('node:fs')
   let core: typeof import('@actions/core')
