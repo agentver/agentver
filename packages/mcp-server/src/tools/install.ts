@@ -18,7 +18,7 @@ import { readLockfile, readManifest, writeLockfile, writeManifest } from '../sto
 type DownloadResponse = {
   version: string
   content: string | null
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | Array<{ path: string; content: string }>
   sha256: string | null
   size: number | null
   gitRef: string | null
@@ -53,7 +53,7 @@ function expandTilde(path: string): string {
 }
 
 function extractFilesFromManifest(
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
 ): Array<{ path: string; content: string }> {
   if (Array.isArray(fileManifest)) {
     return fileManifest.filter(
@@ -202,10 +202,16 @@ export function registerInstallTool(server: McpServer): void {
         const resolvedBase = resolve(fullPath)
 
         for (const file of files) {
-          if (file.path.includes('..')) continue
+          if (file.path.includes('..')) {
+            console.warn(`Skipping file with path traversal segment: '${file.path}'`)
+            continue
+          }
 
           const filePath = resolve(fullPath, file.path)
-          if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) continue
+          if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) {
+            console.warn(`Skipping file that escapes target directory: '${file.path}'`)
+            continue
+          }
 
           const dir = dirname(filePath)
           if (!existsSync(dir)) {

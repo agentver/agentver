@@ -25,7 +25,7 @@ const REQUEST_TIMEOUT_MS = 30_000
 type DownloadResponse = {
   version: string
   content: string | null
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | Array<{ path: string; content: string }>
   sha256: string | null
   size: number | null
   gitRef: string | null
@@ -241,7 +241,7 @@ function assertDownloadResponse(data: unknown): asserts data is DownloadResponse
  * - An empty object
  */
 export function extractFilesFromManifest(
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
 ): Array<{ path: string; content: string }> {
   if (Array.isArray(fileManifest)) {
     return fileManifest.filter(
