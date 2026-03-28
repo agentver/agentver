@@ -104,13 +104,15 @@ export function detectGlobalAgents(homeDir: string): DetectedAgent[] {
 
 export function scanForSkillFiles(directory: string): ScannedFile[] {
   const files: ScannedFile[] = []
+  const seenPaths = new Set<string>()
 
   for (const agent of AGENT_DEFINITIONS) {
     const skillDir = join(directory, agent.projectSkillPath)
-    scanSkillDirectory(skillDir, agent.id, files)
+    scanSkillDirectory(skillDir, agent.id, files, seenPaths)
 
     for (const configFile of agent.configFiles) {
       const fullPath = join(directory, configFile)
+      if (seenPaths.has(fullPath)) continue
       if (existsSync(fullPath) && statSync(fullPath).isFile()) {
         files.push({
           path: fullPath,
@@ -119,6 +121,7 @@ export function scanForSkillFiles(directory: string): ScannedFile[] {
           detectedType: 'AGENT_CONFIG',
           name: configFile,
         })
+        seenPaths.add(fullPath)
       }
     }
   }
