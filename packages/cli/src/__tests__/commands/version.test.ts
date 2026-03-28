@@ -151,7 +151,9 @@ describe('version command', () => {
       throw new Error('process.exit called')
     }) as never)
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(
+      createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
+    )
   })
 
   afterEach(() => {
