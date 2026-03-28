@@ -83,6 +83,7 @@ vi.mock('@agentver/agent-definitions', () => ({
   composeConfigs: vi.fn(),
   isComposedConfig: vi.fn(),
   parseComposedSections: vi.fn(),
+  translateConfig: vi.fn(),
 }))
 
 vi.mock('node:fs', () => ({
@@ -1387,15 +1388,20 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.getConfigFilePath).mockReturnValue('.claude/skills/test-skill/CLAUDE.md')
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: '# My Config\n\nRules for the agent.\n',
+        },
+      ])
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      // writeFileSync should be called for the config file path
       expect(nodeFs.writeFileSync).toHaveBeenCalled()
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       const writtenPaths = writeCalls.map((c) => String(c[0]))
-      expect(writtenPaths.some((p) => p.includes('.claude/skills/test-skill/CLAUDE.md'))).toBe(true)
+      expect(writtenPaths.some((p) => p.includes('CLAUDE.md'))).toBe(true)
     })
 
     it('does not write config file in dry-run mode for AGENT_CONFIG', async () => {
@@ -1406,17 +1412,15 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.getConfigFilePath).mockReturnValue('.claude/skills/test-skill/CLAUDE.md')
 
       const result = await installPackage(TEST_SOURCE, { agent: 'claude-code', dryRun: true })
 
-      // In dry-run mode, writeFileSync should NOT be called for config files
-      // (it might be called for canonical path, but not for config specifically)
+      // In dry-run mode, writeFileSync should NOT be called — returns before translateConfig
       expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
       expect(result).toBeDefined()
     })
 
-    it('skips agents where getConfigFilePath returns null', async () => {
+    it('skips writing when translateConfig returns empty array', async () => {
       setupHappyPathMocks()
       const configFiles = createAgentConfigFiles()
       vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
@@ -1424,13 +1428,131 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.getConfigFilePath).mockReturnValue(null)
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([])
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      // writeFileSync should not be called for the config since getConfigFilePath returned null
-      // (manifest/lockfile writes go through their own mocked functions, not writeFileSync)
       expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
+    })
+
+    it('writes YAML-wrapped content for goose', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      const yamlContent = 'instructions: "# My Config\\n\\nRules for the agent.\\n"\n'
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'goose',
+          filePath: '.goose/config.yaml',
+          content: yamlContent,
+        },
+      ])
+
+      await installPackage(TEST_SOURCE, { agent: 'goose' })
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      expect(String(writeCalls[0][0])).toContain('.goose/config.yaml')
+      expect(writeCalls[0][1]).toBe(yamlContent)
+    })
+
+    it('writes read redirect for aider', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      const redirectContent = 'read:\n  - AGENTS.md\n'
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'aider',
+          filePath: '.aider.conf.yml',
+          content: redirectContent,
+        },
+      ])
+
+      await installPackage(TEST_SOURCE, { agent: 'aider' })
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      expect(String(writeCalls[0][0])).toContain('.aider.conf.yml')
+      expect(writeCalls[0][1]).toBe(redirectContent)
+    })
+
+    it('writes to dynamic path for roo', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'roo',
+          filePath: `.roo/rules/${DERIVED_NAME}.md`,
+          content: '# My Config\n\nRules for the agent.\n',
+        },
+      ])
+
+      await installPackage(TEST_SOURCE, { agent: 'roo' })
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      expect(String(writeCalls[0][0])).toContain(`.roo/rules/${DERIVED_NAME}.md`)
+    })
+
+    it('writes to dynamic path for cline', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'cline',
+          filePath: `.clinerules/${DERIVED_NAME}.md`,
+          content: '# My Config\n\nRules for the agent.\n',
+        },
+      ])
+
+      await installPackage(TEST_SOURCE, { agent: 'cline' })
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      expect(String(writeCalls[0][0])).toContain(`.clinerules/${DERIVED_NAME}.md`)
+    })
+
+    it('passes raw markdown for claude-code (passthrough)', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      const rawContent = '# My Config\n\nRules for the agent.\n'
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: rawContent,
+        },
+      ])
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      expect(writeCalls[0][1]).toBe(rawContent)
     })
   })
 
