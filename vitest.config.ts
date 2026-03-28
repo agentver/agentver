@@ -32,6 +32,15 @@ export default defineConfig({
           testTimeout: 30_000,
         },
       },
+      {
+        test: {
+          name: 'github-action',
+          root: './packages/github-action',
+          environment: 'node',
+          globals: true,
+          include: ['src/**/*.test.ts'],
+        },
+      },
     ],
   },
 })
