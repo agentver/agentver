@@ -34937,6 +34937,15 @@ function detectAgents(workingDirectory, specifiedAgents) {
   const detected = detectInstalledAgents(workingDirectory);
   return detected.map((a) => a.id);
 }
+function validateFiles(files) {
+  return files.filter((file2) => {
+    if (file2.path.includes("..")) {
+      core.warning(`Skipping file with path traversal segment: '${file2.path}'`);
+      return false;
+    }
+    return true;
+  });
+}
 function placeFiles(files, packageName, agents, workingDirectory) {
   let filesWritten = 0;
   const skillName = packageName.split("/").pop() ?? packageName;
@@ -35044,7 +35053,8 @@ async function installAllPackages(manifest, config2, existingLockfile) {
         config2.registryUrl,
         config2.apiKey
       );
-      files = extractFilesFromManifest(response.fileManifest);
+      const rawFiles = extractFilesFromManifest(response.fileManifest);
+      files = validateFiles(rawFiles);
       if (files.length === 0) {
         core.warning(`Package ${packageName}@${response.version} has no files in its manifest`);
         results.push({

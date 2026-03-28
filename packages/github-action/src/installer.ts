@@ -305,6 +305,24 @@ export function detectAgents(workingDirectory: string, specifiedAgents: string[]
   return detected.map((a) => a.id)
 }
 
+// -- File validation ---------------------------------------------------------
+
+/**
+ * Filter out files with path traversal segments so that integrity hashes
+ * and file placement operate on the same validated set.
+ */
+export function validateFiles(
+  files: Array<{ path: string; content: string }>
+): Array<{ path: string; content: string }> {
+  return files.filter((file) => {
+    if (file.path.includes('..')) {
+      core.warning(`Skipping file with path traversal segment: '${file.path}'`)
+      return false
+    }
+    return true
+  })
+}
+
 // -- File placement ----------------------------------------------------------
 
 export function placeFiles(
@@ -477,7 +495,8 @@ export async function installAllPackages(
         config.registryUrl,
         config.apiKey
       )
-      files = extractFilesFromManifest(response.fileManifest)
+      const rawFiles = extractFilesFromManifest(response.fileManifest)
+      files = validateFiles(rawFiles)
 
       if (files.length === 0) {
         core.warning(`Package ${packageName}@${response.version} has no files in its manifest`)

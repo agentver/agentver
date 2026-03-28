@@ -235,7 +235,7 @@ export function registerInstallTool(server: McpServer): void {
       const summary = [
         `Installed ${packageName}@${data.version}`,
         `Target agents: ${installedTo.join(', ')}`,
-        `Files: ${files.length} file(s) placed`,
+        `Files: ${validatedFiles.length} file(s) placed`,
         `Scope: ${isGlobal ? 'global' : 'project'}`,
       ]
 
