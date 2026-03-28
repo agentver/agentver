@@ -54,6 +54,16 @@ vi.mock('../../wellknown/index.js', () => ({
 
 vi.mock('prompts', () => ({ default: vi.fn() }))
 
+// Used to override homedir for global install tests
+let fakeHomePath: string | null = null
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return {
+    ...actual,
+    homedir: () => fakeHomePath ?? actual.homedir(),
+  }
+})
+
 // ---------------------------------------------------------------------------
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
@@ -73,14 +83,7 @@ const skillContent = createSkillMd()
 let tempDir: string
 let originalCwd: string
 
-beforeEach(() => {
-  tempDir = createTempDir()
-  originalCwd = process.cwd()
-  process.chdir(tempDir)
-
-  // Create .claude/ so detectInstalledAgents finds claude-code
-  mkdirSync(join(tempDir, '.claude'), { recursive: true })
-
+function setupGitMocks(files: Array<{ path: string; content: string; size: number }>): void {
   const gitSource = createGitSource({
     host: 'github.com',
     owner: 'test-owner',
@@ -91,7 +94,7 @@ beforeEach(() => {
 
   const resolved: ResolvedRef = { source: gitSource, commitSha: COMMIT_SHA }
   const fetchResult: FetchResult = {
-    files: [{ path: 'SKILL.md', content: skillContent, size: skillContent.length }],
+    files,
     commitSha: COMMIT_SHA,
     source: gitSource,
   }
@@ -106,6 +109,17 @@ beforeEach(() => {
     duration: 1,
     provider: 'built-in',
   })
+}
+
+beforeEach(() => {
+  tempDir = createTempDir()
+  originalCwd = process.cwd()
+  process.chdir(tempDir)
+
+  // Create .claude/ so detectInstalledAgents finds claude-code
+  mkdirSync(join(tempDir, '.claude'), { recursive: true })
+
+  setupGitMocks([{ path: 'SKILL.md', content: skillContent, size: skillContent.length }])
 })
 
 afterEach(() => {
@@ -115,7 +129,7 @@ afterEach(() => {
 })
 
 // ---------------------------------------------------------------------------
-// Tests
+// Standard install
 // ---------------------------------------------------------------------------
 
 describe('E2E: install (in-process, real filesystem)', () => {
@@ -135,34 +149,27 @@ describe('E2E: install (in-process, real filesystem)', () => {
     expect(existsSync(skillMdPath)).toBe(true)
     expect(readFileSync(skillMdPath, 'utf-8')).toBe(skillContent)
 
-    // Verify symlink
+    // Verify symlink is relative
     const symlinkPath = join(tempDir, '.claude/skills/test-repo')
-    expect(existsSync(symlinkPath)).toBe(true)
     expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true)
-
-    // Symlink should be relative
     const target = readlinkSync(symlinkPath)
     expect(target.startsWith('/')).toBe(false)
     expect(target).toContain('.agents/skills/test-repo')
 
-    // Verify manifest
+    // Verify manifest schema
     const manifestPath = join(tempDir, '.agentver/manifest.json')
-    expect(existsSync(manifestPath)).toBe(true)
     const manifestRaw = readFileSync(manifestPath, 'utf-8')
-    const manifest = JSON.parse(manifestRaw) as unknown
-    const manifestResult = manifestV2Schema.safeParse(manifest)
+    const manifestResult = manifestV2Schema.safeParse(JSON.parse(manifestRaw) as unknown)
     expect(manifestResult.success).toBe(true)
     if (manifestResult.success) {
       expect(manifestResult.data.packages['test-repo']).toBeDefined()
       expect(manifestResult.data.packages['test-repo']!.agents).toContain('claude-code')
     }
 
-    // Verify lockfile
+    // Verify lockfile schema
     const lockfilePath = join(tempDir, '.agentver/lockfile.json')
-    expect(existsSync(lockfilePath)).toBe(true)
     const lockfileRaw = readFileSync(lockfilePath, 'utf-8')
-    const lockfile = JSON.parse(lockfileRaw) as unknown
-    const lockfileResult = lockfileV2Schema.safeParse(lockfile)
+    const lockfileResult = lockfileV2Schema.safeParse(JSON.parse(lockfileRaw) as unknown)
     expect(lockfileResult.success).toBe(true)
     if (lockfileResult.success) {
       expect(lockfileResult.data.packages['test-repo']).toBeDefined()
@@ -178,9 +185,83 @@ describe('E2E: install (in-process, real filesystem)', () => {
 
     expect(result.name).toBe('test-repo')
 
-    // Nothing should be written
     expect(existsSync(join(tempDir, '.agents/skills/test-repo'))).toBe(false)
     expect(existsSync(join(tempDir, '.agentver/manifest.json'))).toBe(false)
     expect(existsSync(join(tempDir, '.agentver/lockfile.json'))).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Global install
+// ---------------------------------------------------------------------------
+
+describe('E2E: install --global (in-process, real filesystem)', () => {
+  it('creates files under home directory paths', async () => {
+    const fakeHome = createTempDir()
+    fakeHomePath = fakeHome
+
+    try {
+      const result = await installPackage('github.com/test-owner/test-repo', {
+        skipAudit: true,
+        global: true,
+        agent: 'claude-code',
+      })
+
+      expect(result.name).toBe('test-repo')
+
+      // Verify files created under fake home
+      expect(existsSync(join(fakeHome, '.agents/skills/test-repo/SKILL.md'))).toBe(true)
+      expect(existsSync(join(fakeHome, '.agentver/manifest.json'))).toBe(true)
+      expect(existsSync(join(fakeHome, '.agentver/lockfile.json'))).toBe(true)
+
+      // Symlink should exist under home
+      const symlinkPath = join(fakeHome, '.claude/skills/test-repo')
+      expect(lstatSync(symlinkPath).isSymbolicLink()).toBe(true)
+
+      // Verify schema
+      const manifestRaw = readFileSync(join(fakeHome, '.agentver/manifest.json'), 'utf-8')
+      expect(manifestV2Schema.safeParse(JSON.parse(manifestRaw) as unknown).success).toBe(true)
+    } finally {
+      fakeHomePath = null
+      cleanupTempDir(fakeHome)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AGENT_CONFIG install
+// ---------------------------------------------------------------------------
+
+describe('E2E: install AGENT_CONFIG (in-process, real filesystem)', () => {
+  it('installs CLAUDE.md config file to project root', async () => {
+    const configContent = '# My project rules\n\nAlways use TypeScript.\n'
+
+    // Re-mock with CLAUDE.md as the fetched file (triggers AGENT_CONFIG detection)
+    setupGitMocks([{ path: 'CLAUDE.md', content: configContent, size: configContent.length }])
+
+    const result = await installPackage('github.com/test-owner/test-repo', {
+      skipAudit: true,
+    })
+
+    expect(result.name).toBe('test-repo')
+
+    // AGENT_CONFIG installs write directly to config file path, not canonical dir
+    const configFilePath = join(tempDir, 'CLAUDE.md')
+    expect(existsSync(configFilePath)).toBe(true)
+    const written = readFileSync(configFilePath, 'utf-8')
+    expect(written).toContain('Always use TypeScript')
+
+    // Manifest and lockfile should still be created
+    const manifestPath = join(tempDir, '.agentver/manifest.json')
+    expect(existsSync(manifestPath)).toBe(true)
+    const manifestRaw = readFileSync(manifestPath, 'utf-8')
+    const manifestResult = manifestV2Schema.safeParse(JSON.parse(manifestRaw) as unknown)
+    expect(manifestResult.success).toBe(true)
+
+    const lockfilePath = join(tempDir, '.agentver/lockfile.json')
+    expect(existsSync(lockfilePath)).toBe(true)
+    const lockfileRaw = readFileSync(lockfilePath, 'utf-8')
+    const lockfileResult = lockfileV2Schema.safeParse(JSON.parse(lockfileRaw) as unknown)
+    expect(lockfileResult.success).toBe(true)
   })
 })

@@ -9,16 +9,14 @@ import { fileURLToPath } from 'node:url'
 import type { GitSource, LockfileV2Package, ManifestV2Package } from '@agentver/shared'
 import { createAgentSymlinks, getCanonicalSkillPath } from '../../storage/canonical'
 import { computeSha256FromFiles } from '../../storage/integrity'
-import { writeLockfile } from '../../storage/lockfile'
-import { writeManifest } from '../../storage/manifest'
-import { readManifest } from '../../storage/manifest'
-import { readLockfile } from '../../storage/lockfile'
+import { readLockfile, writeLockfile } from '../../storage/lockfile'
+import { readManifest, writeManifest } from '../../storage/manifest'
 
 /**
  * Walk up from the current file to find the CLI package root
- * (the directory containing package.json with name @agentver/cli).
+ * (the directory containing both package.json and tsup.config.ts).
  */
-function findCliRoot(): string {
+export function findCliRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url))
   for (let i = 0; i < 10; i++) {
     if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'tsup.config.ts'))) {
@@ -87,7 +85,7 @@ export function runCli(
 export async function runCliJson<T = unknown>(
   args: string[],
   options: { cwd: string; homeDir?: string; env?: Record<string, string> }
-): Promise<{ data: T; exitCode: number; stderr: string; raw: string }> {
+): Promise<{ data: T; success: boolean; exitCode: number; stderr: string; raw: string }> {
   const result = await runCli(args, options)
 
   // The CLI outputs JSON as a single line to stdout
@@ -100,10 +98,15 @@ export async function runCliJson<T = unknown>(
     )
   }
 
-  const parsed = JSON.parse(jsonLine) as { success: boolean; data: T; error?: { code: string; message: string } }
+  const parsed = JSON.parse(jsonLine) as {
+    success: boolean
+    data: T
+    error?: { code: string; message: string }
+  }
 
   return {
     data: parsed.data,
+    success: parsed.success,
     exitCode: result.exitCode,
     stderr: result.stderr,
     raw: result.stdout,
