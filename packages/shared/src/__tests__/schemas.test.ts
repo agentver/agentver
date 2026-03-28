@@ -316,6 +316,11 @@ describe('gitSourceSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('should reject empty commit string', () => {
+    const result = gitSourceSchema.safeParse({ ...validGitSource, commit: '' })
+    expect(result.success).toBe(false)
+  })
+
   it('should reject commit shorter than 7 characters', () => {
     const result = gitSourceSchema.safeParse({ ...validGitSource, commit: 'abc12' })
     expect(result.success).toBe(false)

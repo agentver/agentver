@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
-import { lockfileAnySchema } from '@agentver/shared'
+import { lockfileAnySchema, lockfileV2Schema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
@@ -93,6 +93,8 @@ export function writeLockfile(
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
+
+  lockfileV2Schema.parse(lockfile)
 
   const filePath = getLockfilePath(projectRoot, scope)
   const tmpPath = `${filePath}.tmp`

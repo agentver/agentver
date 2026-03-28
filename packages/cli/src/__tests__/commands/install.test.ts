@@ -40,6 +40,7 @@ vi.mock('../../storage/canonical', () => ({
 
 vi.mock('../../storage/integrity', () => ({
   computeSha256FromFiles: vi.fn(),
+  computeContentHash: vi.fn(),
 }))
 
 vi.mock('../../security/index.js', () => ({
@@ -129,6 +130,7 @@ const DERIVED_NAME = 'test-skill'
 const TEST_SOURCE = 'github.com/test-org/test-repo/skills/test-skill@main'
 const RESOLVED_SHA = 'abc1234567890abcdef1234567890abcdef1234567'
 const INTEGRITY_HASH = 'sha256-testIntegrityHash123'
+const CONTENT_HASH = 'f0e1d2c3b4a5968778695a4b3c2d1e0f12345678'
 
 /** Sentinel error thrown by our process.exit mock to halt execution */
 class ExitError extends Error {
@@ -1632,6 +1634,7 @@ describe('commands/install', () => {
       globalThis.fetch = mockFetch
 
       vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(integrityModule.computeContentHash).mockReturnValue(CONTENT_HASH)
       vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
       vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
       vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
@@ -1666,9 +1669,53 @@ describe('commands/install', () => {
       expect(result).toBeDefined()
       expect(result!.name).toBe('google-search-console')
       expect(result!.agents).toEqual(['claude-code'])
-      // Should write manifest and lockfile
+      expect(result!.commitSha).toBe(CONTENT_HASH)
+      // Should write manifest and lockfile with valid commit
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const writtenManifest = vi.mocked(manifestModule.writeManifest).mock.calls[0]![1]
+      const manifestPkg = writtenManifest.packages['google-search-console']
+      expect(manifestPkg).toBeDefined()
+      expect(manifestPkg!.source.type).toBe('git')
+      if (manifestPkg!.source.type === 'git') {
+        expect(manifestPkg!.source.commit).toBe(CONTENT_HASH)
+        expect(manifestPkg!.source.commit.length).toBeGreaterThanOrEqual(7)
+      }
       expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+      const writtenLockfile = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]![1]
+      const lockfilePkg = writtenLockfile.packages['google-search-console']
+      expect(lockfilePkg).toBeDefined()
+      if (lockfilePkg!.source.type === 'git') {
+        expect(lockfilePkg!.source.commit).toBe(CONTENT_HASH)
+      }
+    })
+
+    it('uses commitSha from platform response when available', async () => {
+      const platformCommitSha = 'deadbeef1234567890abcdef1234567890abcdef'
+      const platformFiles = [
+        { path: 'SKILL.md', content: '# Skill\n\nContent.' },
+      ]
+      setupPlatformMocks({
+        gitUri: 'github.com/lleverage/skills',
+        gitPath: 'google-search-console',
+        gitRef: 'main',
+        source: 'platform',
+        commitSha: platformCommitSha,
+        files: platformFiles,
+      })
+
+      const result = await installPackage(
+        'agentver://lleverage/skills/google-search-console@main',
+        { agent: 'claude-code' }
+      )
+
+      expect(result).toBeDefined()
+      expect(result!.commitSha).toBe(platformCommitSha)
+      // computeContentHash should not be used when commitSha is provided
+      const writtenManifest = vi.mocked(manifestModule.writeManifest).mock.calls[0]![1]
+      const manifestPkg = writtenManifest.packages['google-search-console']
+      if (manifestPkg!.source.type === 'git') {
+        expect(manifestPkg!.source.commit).toBe(platformCommitSha)
+      }
     })
 
     it('delegates to git install flow when platform resolves a git-backed package', async () => {

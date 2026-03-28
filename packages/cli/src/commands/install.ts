@@ -35,7 +35,7 @@ import { reportInstallation } from '../registry/reporter.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
 import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical'
-import { computeSha256FromFiles } from '../storage/integrity'
+import { computeContentHash, computeSha256FromFiles } from '../storage/integrity'
 import { readLockfile, writeLockfile } from '../storage/lockfile'
 import { readManifest, writeManifest } from '../storage/manifest'
 import { extractError } from '../utils.js'
@@ -67,6 +67,7 @@ type ResolveResponse = {
   gitPath: string
   gitRef: string
   source?: 'git' | 'platform'
+  commitSha?: string
   files?: Array<{ path: string; content: string }>
 }
 
@@ -461,6 +462,7 @@ async function installFromPlatform(
     }
 
     const integrity = computeSha256FromFiles(files)
+    const commitValue = resolved.commitSha ?? computeContentHash(files)
     const projectRoot = process.cwd()
     const scope = options.global ? 'global' : 'project'
     const sourceUri = `agentver://${parsed.org}`
@@ -498,7 +500,7 @@ async function installFromPlatform(
         } else {
           spinner.warn('No agents detected. Use --agent to specify one.')
         }
-        return { name: shortName, ref, commitSha: '', agents: [] }
+        return { name: shortName, ref, commitSha: commitValue, agents: [] }
       }
 
       const packageType = detectPackageType(files)
@@ -524,7 +526,7 @@ async function installFromPlatform(
           audit: buildAuditData(securityScanResult),
         })
       }
-      return { name: shortName, ref, commitSha: '', agents }
+      return { name: shortName, ref, commitSha: commitValue, agents }
     }
 
     const gitSourceRecord: GitSource = {
@@ -532,7 +534,7 @@ async function installFromPlatform(
       uri: sourceUri,
       path: resolved.gitPath ?? '',
       ref,
-      commit: '',
+      commit: commitValue,
     }
 
     const manifest = readManifest(projectRoot, scope)
@@ -581,7 +583,7 @@ async function installFromPlatform(
       )
     }
 
-    return { name: shortName, ref, commitSha: '', agents }
+    return { name: shortName, ref, commitSha: commitValue, agents }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')

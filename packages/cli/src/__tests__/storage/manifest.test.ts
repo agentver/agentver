@@ -196,6 +196,31 @@ describe('storage/manifest', () => {
       expect(fs.renameSync).not.toHaveBeenCalled()
     })
 
+    it('throws when manifest contains invalid source data', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      const invalidManifest = {
+        version: 2 as const,
+        packages: {
+          'bad-skill': {
+            source: {
+              type: 'git' as const,
+              uri: 'https://github.com/org/repo',
+              path: '',
+              ref: 'main',
+              commit: '',
+            },
+            agents: ['claude'],
+            installedAt: '2024-01-01T00:00:00.000Z',
+            modified: false,
+          },
+        },
+      }
+
+      expect(() => manifestModule.writeManifest('/project', invalidManifest)).toThrow()
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
+    })
+
     it('rename target is manifest.json, not the tmp file', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
 

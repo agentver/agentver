@@ -30,6 +30,42 @@ describe('storage/integrity', () => {
     })
   })
 
+  describe('computeContentHash', () => {
+    it('returns a hex string of 40 characters', () => {
+      const files = [{ path: 'a.txt', content: 'hello' }]
+      const result = integrityModule.computeContentHash(files)
+      expect(result).toMatch(/^[0-9a-f]{40}$/)
+    })
+
+    it('satisfies the gitSourceSchema min(7) requirement', () => {
+      const files = [{ path: 'a.txt', content: 'hello' }]
+      const result = integrityModule.computeContentHash(files)
+      expect(result.length).toBeGreaterThanOrEqual(7)
+    })
+
+    it('produces the same hash regardless of input order (files are sorted by path)', () => {
+      const filesAFirst = [
+        { path: 'a.txt', content: 'alpha' },
+        { path: 'b.txt', content: 'bravo' },
+      ]
+      const filesBFirst = [
+        { path: 'b.txt', content: 'bravo' },
+        { path: 'a.txt', content: 'alpha' },
+      ]
+      expect(integrityModule.computeContentHash(filesAFirst)).toBe(
+        integrityModule.computeContentHash(filesBFirst)
+      )
+    })
+
+    it('returns different hash for different file contents', () => {
+      const files1 = [{ path: 'a.txt', content: 'hello' }]
+      const files2 = [{ path: 'a.txt', content: 'world' }]
+      expect(integrityModule.computeContentHash(files1)).not.toBe(
+        integrityModule.computeContentHash(files2)
+      )
+    })
+  })
+
   describe('computeSha256FromFiles', () => {
     it('computes hash from concatenated file contents', () => {
       const files = [

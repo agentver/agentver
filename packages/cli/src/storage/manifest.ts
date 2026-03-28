@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ManifestV2 } from '@agentver/shared'
-import { manifestAnySchema } from '@agentver/shared'
+import { manifestAnySchema, manifestV2Schema } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
@@ -91,6 +91,8 @@ export function writeManifest(
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
+
+  manifestV2Schema.parse(manifest)
 
   const filePath = getManifestPath(projectRoot, scope)
   const tmpPath = `${filePath}.tmp`

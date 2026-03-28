@@ -151,6 +151,30 @@ describe('storage/lockfile', () => {
       expect(fs.renameSync).not.toHaveBeenCalled()
     })
 
+    it('throws when lockfile contains invalid source data', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+
+      const invalidLockfile = {
+        version: 2 as const,
+        packages: {
+          'bad-skill': {
+            source: {
+              type: 'git' as const,
+              uri: 'https://github.com/org/repo',
+              path: '',
+              ref: 'main',
+              commit: '',
+            },
+            integrity: 'sha256-abc123',
+            agents: ['claude'],
+          },
+        },
+      }
+
+      expect(() => lockfileModule.writeLockfile('/project', invalidLockfile)).toThrow()
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
+    })
+
     it('rename target is the actual lockfile path, not the tmp path', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
 
