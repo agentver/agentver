@@ -136,6 +136,7 @@ export const manifestV2PackageSchema = z.object({
   path: z.string().optional(),
   bundle: z.string().optional(),
   packageType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE', 'AGENT', 'COMMAND']).optional(),
+  entryFile: z.string().optional(),
 })
 
 export type ManifestV2Package = z.infer<typeof manifestV2PackageSchema>
