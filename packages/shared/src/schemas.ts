@@ -54,7 +54,7 @@ export const skillMetadataSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
   version: z.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'Must be valid semver'),
-  type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE']),
+  type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE', 'SUB_AGENT', 'COMMAND']),
   tags: z.array(z.string().max(50)).max(20).default([]),
   agents: z.array(agentIdEnum).default([]),
 })
@@ -160,7 +160,7 @@ export type LockfileAny = z.infer<typeof lockfileAnySchema>
 // --- Package structure ---
 
 export const packageStructureSchema = z.object({
-  type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE']),
+  type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE', 'SUB_AGENT', 'COMMAND']),
   entryFile: z.string(),
   requiredFiles: z.array(z.string()).default([]),
   optionalDirs: z.array(z.string()).default([]),
@@ -204,6 +204,18 @@ export const PACKAGE_STRUCTURES: Record<string, PackageStructure> = {
     entryFile: 'agentver.bundle.yaml',
     requiredFiles: ['agentver.bundle.yaml'],
     optionalDirs: ['skills', 'mcp-servers', 'prompts', 'rules', 'scripts'],
+  },
+  SUB_AGENT: {
+    type: 'SUB_AGENT',
+    entryFile: 'AGENT.md',
+    requiredFiles: ['AGENT.md'],
+    optionalDirs: [],
+  },
+  COMMAND: {
+    type: 'COMMAND',
+    entryFile: 'COMMAND.md',
+    requiredFiles: ['COMMAND.md'],
+    optionalDirs: [],
   },
 }
 
@@ -333,7 +345,7 @@ export const fileManifestSchema = z.object({
   files: z.array(fileManifestEntrySchema),
   totalSize: z.number().int().nonnegative(),
   entryFile: z.string(),
-  packageType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE']),
+  packageType: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE', 'SUB_AGENT', 'COMMAND']),
 })
 
 export type FileManifest = z.infer<typeof fileManifestSchema>
