@@ -988,7 +988,7 @@ describe('commands/update', () => {
       // Force updates to exist so the confirmation prompt is reached
       setupResolveToNewSha()
       // Make prompts reject — this is inside the try block and not per-package caught
-      vi.mocked(prompts).mockRejectedValue(new Error('Terminal closed'))
+      vi.mocked(prompts).mockRejectedValueOnce(new Error('Terminal closed'))
 
       await expect(updateAction(undefined, {})).rejects.toThrow(ExitError)
 

@@ -39,9 +39,9 @@ type UpdateAction = 'replace' | 'patch' | 'skip'
  */
 function validateManifestPath(path: string | undefined): string | undefined {
   if (!path) return undefined
+  if (path.includes('..')) return undefined
   const normalised = normalize(path)
   if (!isAbsolute(normalised)) return undefined
-  if (normalised.includes('..')) return undefined
   return normalised
 }
 
