@@ -5,6 +5,8 @@ import type { AgentId } from '@agentver/agent-definitions'
 import {
   composeConfigs,
   detectInstalledAgents,
+  getConfigFilePath,
+  getGlobalConfigFilePath,
   isComposedConfig,
   parseComposedSections,
   translateConfig,
@@ -976,15 +978,28 @@ async function installAgentConfig(
   const translations = translateConfig(configContent, name, agents as AgentId[])
 
   for (const translation of translations) {
-    const baseRoot = options.global ? homedir() : projectRoot
-    const fullConfigPath = resolve(baseRoot, translation.filePath)
-    const rel = relative(baseRoot, fullConfigPath)
+    const fullConfigPath = options.global
+      ? (getGlobalConfigFilePath(translation.agentId, name)?.replace(/^~/, homedir()) ?? null)
+      : resolve(projectRoot, translation.filePath)
+    if (!fullConfigPath) continue
 
-    if (rel.startsWith('..') || isAbsolute(rel)) {
-      continue
-    }
+    // Guard against path traversal (e.g. malicious package name containing ../)
+    // Derive trusted base from a probe with a fixed dummy name, so the base
+    // is never influenced by the untrusted package name.
+    const probePath = options.global
+      ? getGlobalConfigFilePath(translation.agentId, '__probe__')
+      : getConfigFilePath(translation.agentId, '__probe__')
+    if (!probePath) continue
+    const resolvedBase = resolve(
+      options.global
+        ? dirname(probePath.replace(/^~/, homedir()))
+        : join(projectRoot, dirname(probePath))
+    )
+    const resolvedTarget = resolve(fullConfigPath)
+    const relativeToBase = relative(resolvedBase, resolvedTarget)
+    if (relativeToBase.startsWith('..') || isAbsolute(relativeToBase)) continue
 
-    const configDir = dirname(fullConfigPath)
+    const configDir = join(fullConfigPath, '..')
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true })
     }

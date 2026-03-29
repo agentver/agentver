@@ -141,6 +141,22 @@ export function translateConfig(
     .filter((result): result is TranslatedConfig => result !== null)
 }
 
+export function getGlobalConfigFilePath(agentId: AgentId, name: string): string | null {
+  const configPath = getConfigFilePath(agentId, name)
+  if (!configPath) return null
+
+  const agent = AGENT_MAP.get(agentId)
+  if (!agent) return null
+
+  const primaryDir = agent.configDirs[0]
+  if (!primaryDir) return `~/${configPath}`
+
+  // If configPath already starts with the configDir (e.g. .roo/rules/name.md), avoid double-prefixing
+  if (configPath.startsWith(`${primaryDir}/`)) return `~/${configPath}`
+
+  return `~/${primaryDir}/${configPath}`
+}
+
 export function getConfigFilePath(agentId: AgentId, name: string): string | null {
   const translator = CONFIG_TRANSLATORS.find((t) => t.agentId === agentId)
   if (translator) {

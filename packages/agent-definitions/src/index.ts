@@ -12,7 +12,12 @@ export {
   isComposedConfig,
   parseComposedSections,
 } from './config-composer'
-export { getConfigFilePath, type TranslatedConfig, translateConfig } from './config-translator'
+export {
+  getConfigFilePath,
+  getGlobalConfigFilePath,
+  type TranslatedConfig,
+  translateConfig,
+} from './config-translator'
 export type { DetectedAgent, DetectedFileType, ScannedFile } from './scanner'
 export {
   detectGlobalAgents,
