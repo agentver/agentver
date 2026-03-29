@@ -404,4 +404,106 @@ describe('save command', () => {
     expect(stderr.join('')).toContain('not found in manifest')
     expect(platformFetch).not.toHaveBeenCalled()
   })
+
+  // -------------------------------------------------------------------------
+  // agentver:// URI org extraction
+  // -------------------------------------------------------------------------
+
+  describe('agentver:// URI org extraction', () => {
+    function setupWithUri(uri: string): void {
+      const source = createSharedGitSource({ uri })
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
+      vi.mocked(readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'test-skill': createManifestPackage({ source }),
+          },
+        })
+      )
+      vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+      vi.mocked(readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'test-skill': createLockfilePackage({ source }),
+          },
+        })
+      )
+      vi.mocked(writeLockfile).mockReturnValue(undefined)
+      vi.mocked(platformFetch).mockResolvedValue({ commitSha: 'abc1234567' })
+    }
+
+    it('extracts org from agentver://orgSlug URI', async () => {
+      setupWithUri('agentver://lleverage')
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'save'])
+
+      expect(platformFetch).toHaveBeenCalledWith(
+        '/skills/@lleverage/test-skill/save',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    it('extracts org from agentver://orgSlug with trailing path segments', async () => {
+      setupWithUri('agentver://my-org/skills/some-skill')
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'save'])
+
+      expect(platformFetch).toHaveBeenCalledWith(
+        '/skills/@my-org/test-skill/save',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    it('extracts org from agentver://orgSlug with ref', async () => {
+      setupWithUri('agentver://acme-corp@main')
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'save'])
+
+      expect(platformFetch).toHaveBeenCalledWith(
+        '/skills/@acme-corp/test-skill/save',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    it('extracts org from external https git URI', async () => {
+      setupWithUri('https://github.com/test-org/test-repo')
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'save'])
+
+      expect(platformFetch).toHaveBeenCalledWith(
+        '/skills/@test-org/test-skill/save',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    it('extracts org from external git URI without protocol', async () => {
+      setupWithUri('github.com/some-org/some-repo')
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'save'])
+
+      expect(platformFetch).toHaveBeenCalledWith(
+        '/skills/@some-org/test-skill/save',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    it('includes correct org in dry-run JSON output for agentver:// URI', async () => {
+      setupWithUri('agentver://lleverage')
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'save', '--dry-run', '--json'])
+
+      expect(platformFetch).not.toHaveBeenCalled()
+      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+      const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+      expect(data.skill).toBe('@lleverage/test-skill')
+    })
+  })
 })
