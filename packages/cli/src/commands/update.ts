@@ -175,8 +175,9 @@ async function handlePatchUpdate(
   spinner.text = `Reapplying local patch for ${update.name}...`
 
   try {
-    const skillDir = resolveReadPath(projectRoot, shortName, agents, scope)
-      ?? getCanonicalSkillPath(projectRoot, shortName, scope)
+    const skillDir =
+      resolveReadPath(projectRoot, shortName, agents, scope) ??
+      getCanonicalSkillPath(projectRoot, shortName, scope)
     const applyResult = applyPatch(skillDir, patchContent)
 
     if (applyResult.applied) {
