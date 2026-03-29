@@ -8,6 +8,7 @@ vi.mock('node:fs', () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   renameSync: vi.fn(),
+  rmSync: vi.fn(),
 }))
 
 vi.mock('@agentver/shared', async () => {
@@ -22,6 +23,10 @@ vi.mock('@agentver/shared', async () => {
     }),
   }
 })
+
+vi.mock('../../storage/file-lock', () => ({
+  withStorageLock: <T>(_projectRoot: string, _scope: string, callback: () => T) => callback(),
+}))
 
 describe('storage/lockfile', () => {
   let fs: typeof import('node:fs')

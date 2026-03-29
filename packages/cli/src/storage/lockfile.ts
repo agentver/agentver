@@ -5,6 +5,7 @@ import type { LockfileV2 } from '@agentver/shared'
 import { lockfileAnySchema, migrateLockfileV1ToV2 } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
+import { type FileLockOptions, withStorageLock } from './file-lock'
 import { serialiseDeterministic } from './serialise'
 
 const logger = createCliLogger('lockfile')
@@ -50,14 +51,36 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
 
   if (result.data.version === 1) {
     const migrated = migrateLockfileV1ToV2(result.data)
-    writeLockfile(projectRoot, migrated, scope)
+    writeLockfileUnsafe(projectRoot, migrated, scope)
     return migrated
   }
 
   return result.data
 }
 
+/**
+ * Writes the lockfile while holding the storage lock.
+ * Safe for concurrent CLI processes operating on the same project.
+ */
 export function writeLockfile(
+  projectRoot: string,
+  lockfile: LockfileV2,
+  scope: Scope = 'project',
+  lockOptions?: FileLockOptions
+): void {
+  withStorageLock(
+    projectRoot,
+    scope,
+    () => writeLockfileUnsafe(projectRoot, lockfile, scope),
+    lockOptions
+  )
+}
+
+/**
+ * Internal unlocked write — used by migration (already inside readLockfile)
+ * and by writeLockfile (which acquires the lock itself).
+ */
+function writeLockfileUnsafe(
   projectRoot: string,
   lockfile: LockfileV2,
   scope: Scope = 'project'
@@ -72,4 +95,28 @@ export function writeLockfile(
   const tmpPath = `${filePath}.tmp`
   writeFileSync(tmpPath, serialiseDeterministic(lockfile))
   renameSync(tmpPath, filePath)
+}
+
+/**
+ * Reads the lockfile, applies a transform, and writes it back — all under
+ * a single storage lock. Prevents lost-update races between concurrent
+ * CLI processes.
+ */
+export function updateLockfile(
+  projectRoot: string,
+  scope: Scope,
+  updater: (lockfile: LockfileV2) => LockfileV2,
+  lockOptions?: FileLockOptions
+): LockfileV2 {
+  return withStorageLock(
+    projectRoot,
+    scope,
+    () => {
+      const current = readLockfile(projectRoot, scope)
+      const updated = updater(current)
+      writeLockfileUnsafe(projectRoot, updated, scope)
+      return updated
+    },
+    lockOptions
+  )
 }
