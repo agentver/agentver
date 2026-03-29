@@ -123,6 +123,7 @@ export const manifestV2PackageSchema = z.object({
   installedAt: z.string().datetime(),
   modified: z.boolean().default(false),
   pinned: z.boolean().optional(),
+  path: z.string().optional(),
 })
 
 export type ManifestV2Package = z.infer<typeof manifestV2PackageSchema>

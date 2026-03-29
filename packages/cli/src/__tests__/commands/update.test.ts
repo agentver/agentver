@@ -193,6 +193,7 @@ function setupSinglePackage(
   options?: {
     agents?: string[]
     pinned?: boolean
+    path?: string
   }
 ) {
   const agents = options?.agents ?? ['claude-code']
@@ -207,6 +208,7 @@ function setupSinglePackage(
     source,
     agents,
     ...(options?.pinned ? { pinned: true } : {}),
+    ...(options?.path ? { path: options.path } : {}),
   })
 
   const lockfilePkg = createLockfilePackage({
@@ -328,6 +330,22 @@ describe('commands/update', () => {
       expect(installPackage).toHaveBeenCalledWith(
         expect.stringContaining('github.com/test-org/test-repo'),
         expect.objectContaining({ agent: ['claude-code', 'cursor', 'windsurf'] })
+      )
+    })
+
+    it('preserves custom install path when updating', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: '/custom/install/path',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ path: '/custom/install/path' })
       )
     })
 
@@ -1124,6 +1142,49 @@ describe('commands/update', () => {
       expect(installPackage).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ agent: ['claude-code', 'cursor', 'windsurf'] })
+      )
+    })
+
+    it('preserves custom install path in patch update', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: '/custom/skill/path',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: 'modified locally', size: 16 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different')
+
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: createFetchedFiles(1),
+        commitSha: OLD_SHA,
+        source: createGitSource(),
+      })
+
+      vi.mocked(patchesModule.generatePatch).mockReturnValue(
+        '--- a/test-skill/SKILL.md\n+++ b/test-skill/SKILL.md\n@@ -1,1 +1,1 @@\n-original\n+modified locally\n'
+      )
+      vi.mocked(patchesModule.savePatch).mockReturnValue(
+        '/project/.agentver/patches/test-skill.patch'
+      )
+      vi.mocked(patchesModule.applyPatch).mockReturnValue({ applied: true, conflicts: [] })
+
+      vi.mocked(prompts)
+        .mockResolvedValueOnce({ confirmed: true })
+        .mockResolvedValueOnce({ action: 'patch' })
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ path: '/custom/skill/path' })
       )
     })
   })

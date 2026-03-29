@@ -309,6 +309,7 @@ async function installFromWellKnown(
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
+      ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -550,6 +551,7 @@ async function installFromPlatform(
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
+      ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -807,6 +809,7 @@ export async function installPackage(
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
+      ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
