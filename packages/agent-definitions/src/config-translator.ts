@@ -143,6 +143,7 @@ export function translateConfig(
 
 export function getGlobalConfigFilePath(agentId: AgentId, name: string): string | null {
   const configPath = getConfigFilePath(agentId, name)
+  if (!configPath) return null
 
   const agent = AGENT_MAP.get(agentId)
   if (!agent) return null
