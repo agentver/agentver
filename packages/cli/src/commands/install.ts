@@ -983,8 +983,12 @@ async function installAgentConfig(
     if (!fullConfigPath) continue
 
     // Guard against path traversal (e.g. malicious package name containing ../)
-    const expectedBase = options.global ? homedir() : projectRoot
-    if (!resolve(fullConfigPath).startsWith(expectedBase)) continue
+    const resolvedBase = resolve(
+      options.global ? dirname(configPath.replace(/^~/, homedir())) : join(projectRoot, dirname(configPath))
+    )
+    const resolvedTarget = resolve(fullConfigPath)
+    const relativeToBase = relative(resolvedBase, resolvedTarget)
+    if (relativeToBase.startsWith('..') || isAbsolute(relativeToBase)) continue
 
     const configDir = join(fullConfigPath, '..')
     if (!existsSync(configDir)) {

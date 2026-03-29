@@ -169,6 +169,7 @@ describe('getGlobalConfigFilePath', () => {
   })
 
   it('should return null for unknown agent', () => {
-    expect(getGlobalConfigFilePath('nonexistent-agent' as AgentId, 'my-config')).toBeNull()
+    const unknownAgent = 'nonexistent-agent' as unknown as AgentId
+    expect(getGlobalConfigFilePath(unknownAgent, 'my-config')).toBeNull()
   })
 })

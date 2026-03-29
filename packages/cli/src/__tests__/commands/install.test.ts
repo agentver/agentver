@@ -112,6 +112,8 @@ import { installPackage, parseAgentverUri, registerInstallCommand } from '../../
 // ---------------------------------------------------------------------------
 
 import * as nodeFs from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import * as agentDefs from '@agentver/agent-definitions'
 import promptsDefault from 'prompts'
 import * as gitIndex from '../../git/index.js'
@@ -1676,7 +1678,8 @@ describe('commands/install', () => {
       expect(nodeFs.writeFileSync).toHaveBeenCalled()
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       const writtenPaths = writeCalls.map((c) => String(c[0]))
-      expect(writtenPaths.some((p) => p.endsWith('/.claude/CLAUDE.md'))).toBe(true)
+      const expected = resolve(homedir(), '.claude/CLAUDE.md')
+      expect(writtenPaths).toContain(expected)
     })
 
     it('installs AGENT_CONFIG to correct global path for cursor', async () => {
@@ -1701,7 +1704,8 @@ describe('commands/install', () => {
       expect(nodeFs.writeFileSync).toHaveBeenCalled()
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       const writtenPaths = writeCalls.map((c) => String(c[0]))
-      expect(writtenPaths.some((p) => p.endsWith('/.cursor/.cursorrules'))).toBe(true)
+      const expected = resolve(homedir(), '.cursor/.cursorrules')
+      expect(writtenPaths).toContain(expected)
     })
 
     it('skips agents where getGlobalConfigFilePath returns null for global install', async () => {
