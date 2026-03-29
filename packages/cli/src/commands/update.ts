@@ -9,7 +9,7 @@ import { readFilesFromDirectory } from '../git/fetcher.js'
 import { fetchFiles, resolveRef } from '../git/index.js'
 import type { GitSource as CliGitSource, ResolvedRef } from '../git/types.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
-import { resolveReadPath } from '../storage/canonical.js'
+import { getCanonicalSkillPath, resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity'
 import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
@@ -177,7 +177,10 @@ async function handlePatchUpdate(
   spinner.text = `Reapplying local patch for ${update.name}...`
 
   try {
-    const applyResult = applyPatch(projectRoot, patchContent)
+    const skillDir =
+      resolveReadPath(projectRoot, shortName, agents, scope) ??
+      getCanonicalSkillPath(projectRoot, shortName, scope)
+    const applyResult = applyPatch(skillDir, patchContent)
 
     if (applyResult.applied) {
       removePatch(projectRoot, update.name)
