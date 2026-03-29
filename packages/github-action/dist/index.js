@@ -19924,9 +19924,9 @@ var AGENT_DEFINITIONS = [
     configDirs: [".gemini"],
     category: "agent-specific",
     aliases: ["gemini"],
-    mcpConfigPath: null,
-    globalMcpConfigPath: null,
-    mcpConfigFormat: null
+    mcpConfigPath: ".gemini/settings.json",
+    globalMcpConfigPath: "~/.gemini/settings.json",
+    mcpConfigFormat: "mcp-servers"
   },
   {
     id: "roo",
@@ -20570,9 +20570,11 @@ function assertDownloadResponse(data) {
 }
 function extractFilesFromManifest(fileManifest) {
   if (Array.isArray(fileManifest)) {
-    return fileManifest.filter(
-      (entry) => typeof entry === "object" && entry !== null && typeof entry.path === "string" && typeof entry.content === "string"
-    );
+    return fileManifest.filter((entry) => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const record = entry;
+      return typeof record.path === "string" && typeof record.content === "string";
+    });
   }
   return Object.entries(fileManifest).filter(([, value]) => typeof value === "string").map(([path, content]) => ({ path, content }));
 }
@@ -20641,13 +20643,10 @@ function placeFiles(files, packageName, agents, workingDirectory) {
       (0, import_node_fs2.mkdirSync)(fullPath, { recursive: true });
     }
     for (const file of files) {
-      if (file.path.includes("..")) {
-        core.warning(`Skipping file with path traversal segment: '${file.path}'`);
-        continue;
-      }
       const filePath = (0, import_node_path2.resolve)(fullPath, file.path);
       const resolvedBase = (0, import_node_path2.resolve)(fullPath);
-      if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) {
+      const rel = (0, import_node_path2.relative)(resolvedBase, filePath);
+      if (rel.startsWith("..") || (0, import_node_path2.isAbsolute)(rel)) {
         core.warning(`Skipping file that escapes target directory: '${file.path}'`);
         continue;
       }
