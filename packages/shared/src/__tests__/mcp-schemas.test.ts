@@ -284,7 +284,10 @@ describe('mcpServerSourceSchema', () => {
     })
 
     it('should accept git source without optional ref', () => {
-      const result = mcpServerSourceSchema.parse({ type: 'git', uri: 'https://github.com/org/repo' })
+      const result = mcpServerSourceSchema.parse({
+        type: 'git',
+        uri: 'https://github.com/org/repo',
+      })
       expect(result.type).toBe('git')
     })
 
@@ -381,13 +384,14 @@ describe('mcpServerConfigSchema', () => {
     expect(result.transport).toBe('stdio')
   })
 
-  it.each(['stdio', 'http', 'sse'] as const)(
-    'should accept transport "%s" explicitly',
-    (transport) => {
-      const result = mcpServerConfigSchema.parse({ name: 'my-server', transport })
-      expect(result.transport).toBe(transport)
-    },
-  )
+  it.each([
+    'stdio',
+    'http',
+    'sse',
+  ] as const)('should accept transport "%s" explicitly', (transport) => {
+    const result = mcpServerConfigSchema.parse({ name: 'my-server', transport })
+    expect(result.transport).toBe(transport)
+  })
 
   it('should reject empty name', () => {
     const result = mcpServerConfigSchema.safeParse({ name: '' })
@@ -472,8 +476,10 @@ describe('mcpServerConfigSchema', () => {
   it('should accept env record', () => {
     const result = mcpServerConfigSchema.parse({
       name: 'my-server',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: testing credential placeholder syntax
       env: { API_KEY: '${credentials.api-key}' },
     })
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: testing credential placeholder syntax
     expect(result.env).toEqual({ API_KEY: '${credentials.api-key}' })
   })
 })
@@ -640,13 +646,14 @@ describe('bundleManifestSchema', () => {
     expect(result.name).toBe(name)
   })
 
-  it.each(['1.0.0', '0.1.0-alpha', '2.3.4-beta.1'])(
-    'should accept valid semver "%s"',
-    (version) => {
-      const result = bundleManifestSchema.parse({ name: 'my-bundle', version })
-      expect(result.version).toBe(version)
-    },
-  )
+  it.each([
+    '1.0.0',
+    '0.1.0-alpha',
+    '2.3.4-beta.1',
+  ])('should accept valid semver "%s"', (version) => {
+    const result = bundleManifestSchema.parse({ name: 'my-bundle', version })
+    expect(result.version).toBe(version)
+  })
 
   it.each(['1.0', 'abc', 'v1.0.0'])('should reject invalid semver "%s"', (version) => {
     const result = bundleManifestSchema.safeParse({ name: 'my-bundle', version })

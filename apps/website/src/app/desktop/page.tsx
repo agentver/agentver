@@ -514,7 +514,7 @@ function DownloadSection({
                       <div className="font-medium text-dark-text text-sm">{download.label}</div>
                       <div className="mt-0.5 text-dark-muted text-xs">Coming soon</div>
                     </div>
-                    <span className="rounded-full border border-dark-border px-2.5 py-0.5 font-mono text-dark-muted text-[10px]">
+                    <span className="rounded-full border border-dark-border px-2.5 py-0.5 font-mono text-[10px] text-dark-muted">
                       Soon
                     </span>
                   </div>
@@ -534,12 +534,12 @@ function DownloadSection({
               {Object.entries(INSTALL_INSTRUCTIONS).map(([key, instruction]) => (
                 <div
                   key={key}
-                  className={`rounded-xl border border-dark-border bg-dark-surface p-5${instruction.comingSoon ? ' opacity-60' : ''}`}
+                  className={`rounded-xl border border-dark-border bg-dark-surface p-5${instruction.comingSoon ? 'opacity-60' : ''}`}
                 >
                   <div className="mb-3 flex items-center gap-2 font-medium text-dark-text text-sm">
                     {instruction.label}
                     {instruction.comingSoon && (
-                      <span className="rounded-full border border-dark-border px-2 py-0.5 font-mono text-dark-muted text-[10px]">
+                      <span className="rounded-full border border-dark-border px-2 py-0.5 font-mono text-[10px] text-dark-muted">
                         Soon
                       </span>
                     )}
