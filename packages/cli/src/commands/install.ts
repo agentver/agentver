@@ -46,8 +46,11 @@ import {
   parseWellKnownSource,
 } from '../wellknown/index.js'
 
+const toAgentList = (agent?: string | string[]): string[] =>
+  agent ? (Array.isArray(agent) ? agent : [agent]) : []
+
 export type InstallOptions = {
-  agent?: string
+  agent?: string | string[]
   global?: boolean
   dryRun?: boolean
   path?: string
@@ -225,19 +228,22 @@ async function installFromWellKnown(
 
     if (options.path) {
       await installToCustomPath(selectedEntry.name, fetchResult.files, options, spinner)
-      agents = options.agent ? [options.agent] : []
+      agents = toAgentList(options.agent)
     } else {
-      if (options.detect === false && !options.agent) {
+      const requestedAgents = toAgentList(options.agent)
+
+      if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
         throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
-      agents = options.agent
-        ? [options.agent]
-        : options.detect === false
-          ? []
-          : detectInstalledAgents(projectRoot).map((a) => a.id)
+      agents =
+        requestedAgents.length > 0
+          ? requestedAgents
+          : options.detect === false
+            ? []
+            : detectInstalledAgents(projectRoot).map((a) => a.id)
 
       if (agents.length === 0) {
         if (jsonMode) {
@@ -303,6 +309,7 @@ async function installFromWellKnown(
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
+      ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -468,19 +475,22 @@ async function installFromPlatform(
 
     if (options.path) {
       await installToCustomPath(shortName, files, options, spinner)
-      agents = options.agent ? [options.agent] : []
+      agents = toAgentList(options.agent)
     } else {
-      if (options.detect === false && !options.agent) {
+      const requestedAgents = toAgentList(options.agent)
+
+      if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
         throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
-      agents = options.agent
-        ? [options.agent]
-        : options.detect === false
-          ? []
-          : detectInstalledAgents(projectRoot).map((a) => a.id)
+      agents =
+        requestedAgents.length > 0
+          ? requestedAgents
+          : options.detect === false
+            ? []
+            : detectInstalledAgents(projectRoot).map((a) => a.id)
 
       if (agents.length === 0) {
         if (jsonMode) {
@@ -541,6 +551,7 @@ async function installFromPlatform(
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
+      ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -722,19 +733,22 @@ export async function installPackage(
 
     if (options.path) {
       await installToCustomPath(shortName, result.files, options, spinner)
-      agents = options.agent ? [options.agent] : []
+      agents = toAgentList(options.agent)
     } else {
-      if (options.detect === false && !options.agent) {
+      const requestedAgents = toAgentList(options.agent)
+
+      if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
         throw new AgentverError('VALIDATION_ERROR', msg)
       }
 
-      agents = options.agent
-        ? [options.agent]
-        : options.detect === false
-          ? []
-          : detectInstalledAgents(projectRoot).map((a) => a.id)
+      agents =
+        requestedAgents.length > 0
+          ? requestedAgents
+          : options.detect === false
+            ? []
+            : detectInstalledAgents(projectRoot).map((a) => a.id)
 
       if (agents.length === 0) {
         if (jsonMode) {
@@ -795,6 +809,7 @@ export async function installPackage(
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
+      ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 

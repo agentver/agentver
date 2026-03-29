@@ -102,7 +102,8 @@ async function handlePatchUpdate(
   projectRoot: string,
   agents: string[],
   spinner: ReturnType<typeof ora>,
-  scope: Scope = 'project'
+  scope: Scope = 'project',
+  installedPath?: string
 ): Promise<{ commitSha: string } | null> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[update.name]
@@ -168,8 +169,9 @@ async function handlePatchUpdate(
     : `${update.sourceUri}@${update.ref}`
 
   const result = await installPackage(sourceUrl, {
-    ...(agents[0] ? { agent: agents[0] } : {}),
+    ...(agents.length > 0 ? { agent: agents } : {}),
     ...(scope === 'global' ? { global: true } : {}),
+    ...(installedPath ? { path: installedPath } : {}),
   })
 
   spinner.text = `Reapplying local patch for ${update.name}...`
@@ -365,6 +367,7 @@ export function registerUpdateCommand(program: Command): void {
         for (const update of updates) {
           const installedPkg = manifest.packages[update.name]
           const agents = installedPkg?.agents ?? []
+          const installedPath = installedPkg?.path
 
           if (update.locallyModified) {
             let action: UpdateAction
@@ -390,7 +393,8 @@ export function registerUpdateCommand(program: Command): void {
                   projectRoot,
                   agents,
                   updateSpinner,
-                  scope
+                  scope,
+                  installedPath
                 )
 
                 if (patchResult) {
@@ -444,8 +448,9 @@ export function registerUpdateCommand(program: Command): void {
               : `${update.sourceUri}@${update.ref}`
 
             const result = await installPackage(sourceUrl, {
-              ...(agents[0] ? { agent: agents[0] } : {}),
+              ...(agents.length > 0 ? { agent: agents } : {}),
               ...(scope === 'global' ? { global: true } : {}),
+              ...(installedPath ? { path: installedPath } : {}),
             })
 
             cleanupBackup(backup)
