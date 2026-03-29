@@ -4,15 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderScanResult } from '../../security/reporter.js'
 import type { ScanFinding, ScanResult } from '../../security/types.js'
 
-type MockSpinner = {
-  [K in keyof ReturnType<typeof ora>]: ReturnType<typeof ora>[K] extends (
-    ...args: infer A
-  ) => infer R
-    ? ReturnType<typeof vi.fn<(...args: A) => R>>
-    : ReturnType<typeof ora>[K]
-}
-
-function createMockSpinner(): MockSpinner {
+function createMockSpinner(): ReturnType<typeof ora> {
   return {
     succeed: vi.fn(),
     stop: vi.fn(),
@@ -33,7 +25,7 @@ function createMockSpinner(): MockSpinner {
     frame: vi.fn(),
     stopAndPersist: vi.fn(),
     [Symbol.dispose]: vi.fn(),
-  } as unknown as MockSpinner
+  } as unknown as ReturnType<typeof ora>
 }
 
 function makeFinding(overrides: Partial<ScanFinding> = {}): ScanFinding {
@@ -75,10 +67,10 @@ describe('renderScanResult', () => {
     const spinner = createMockSpinner()
     const result = makeResult({ verdict: 'PASS', findings: [], duration: 42 })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     expect(spinner.succeed).toHaveBeenCalledOnce()
-    const succeedArg = spinner.succeed.mock.calls[0]![0] as string
+    const succeedArg = vi.mocked(spinner.succeed).mock.calls[0]![0] as string
     expect(succeedArg).toContain(chalk.green('Security scan passed'))
     expect(succeedArg).toContain(chalk.dim('(42ms)'))
     expect(spinner.stop).not.toHaveBeenCalled()
@@ -100,7 +92,7 @@ describe('renderScanResult', () => {
       ],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     expect(spinner.stop).toHaveBeenCalledOnce()
     const output = allOutput()
@@ -129,7 +121,7 @@ describe('renderScanResult', () => {
       ],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     expect(spinner.stop).toHaveBeenCalledOnce()
     const output = allOutput()
@@ -148,6 +140,7 @@ describe('renderScanResult', () => {
     const result = makeResult({
       verdict: 'BLOCK',
       findings: [
+        makeFinding({ severity: 'INFO', file: 'info.ts', message: 'Info issue' }),
         makeFinding({ severity: 'LOW', file: 'low.ts', message: 'Low issue' }),
         makeFinding({ severity: 'CRITICAL', file: 'crit.ts', message: 'Critical issue' }),
         makeFinding({ severity: 'MEDIUM', file: 'med.ts', message: 'Medium issue' }),
@@ -155,7 +148,7 @@ describe('renderScanResult', () => {
       ],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     const output = allOutput()
     // Verify each severity label uses correct chalk colour
@@ -163,15 +156,18 @@ describe('renderScanResult', () => {
     expect(output).toContain(chalk.red('  HIGH'))
     expect(output).toContain(chalk.yellow('  MEDIUM'))
     expect(output).toContain(chalk.dim('  LOW'))
+    expect(output).toContain(chalk.dim('  INFO'))
 
     const critIdx = output.indexOf('Critical issue')
     const highIdx = output.indexOf('High issue')
     const medIdx = output.indexOf('Medium issue')
     const lowIdx = output.indexOf('Low issue')
+    const infoIdx = output.indexOf('Info issue')
 
     expect(critIdx).toBeLessThan(highIdx)
     expect(highIdx).toBeLessThan(medIdx)
     expect(medIdx).toBeLessThan(lowIdx)
+    expect(lowIdx).toBeLessThan(infoIdx)
   })
 
   it('groups findings by file within the same severity', () => {
@@ -185,7 +181,7 @@ describe('renderScanResult', () => {
       ],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     const output = allOutput()
     expect(output).toContain('a.ts')
@@ -206,7 +202,7 @@ describe('renderScanResult', () => {
     const spinner = createMockSpinner()
     const result = makeResult({ verdict: 'WARN', findings: [] })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     expect(spinner.stop).toHaveBeenCalledOnce()
     const output = allOutput()
@@ -222,7 +218,7 @@ describe('renderScanResult', () => {
       findings: [makeFinding({ severity: 'LOW', message: 'Minor issue' })],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     const output = allOutput()
     expect(output).toContain('1 finding,')
@@ -241,7 +237,7 @@ describe('renderScanResult', () => {
       ],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     const output = allOutput()
     // Long evidence should be truncated with ellipsis
@@ -259,7 +255,7 @@ describe('renderScanResult', () => {
       findings: [makeFinding({ severity: 'MEDIUM', line: undefined, message: 'No line ref' })],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     const output = allOutput()
     // Verify the ✖ symbol is present on the finding line
@@ -281,7 +277,7 @@ describe('renderScanResult', () => {
       ],
     })
 
-    renderScanResult(result, spinner as unknown as ReturnType<typeof ora>)
+    renderScanResult(result, spinner)
 
     const spy = console.log as unknown as ReturnType<typeof vi.fn>
     const calls = spy.mock.calls.map((c: unknown[]) => c.join(' '))
