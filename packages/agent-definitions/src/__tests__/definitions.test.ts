@@ -6,7 +6,35 @@ import {
   getCommandCapableAgents,
   getMcpCapableAgents,
 } from '../agents/definitions'
+import type { AgentDefinition } from '../types'
 import { AGENT_IDS } from '../types'
+
+/** Minimal agent definition stub for predicate tests */
+function stubAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
+  return {
+    id: 'claude-code',
+    name: 'Claude Code',
+    projectSkillPath: '.claude',
+    globalSkillPath: '~/.claude',
+    configFiles: [],
+    configDirs: [],
+    category: 'agent-specific',
+    mcpConfigPath: null,
+    globalMcpConfigPath: null,
+    mcpConfigFormat: null,
+    ...overrides,
+  }
+}
+
+/** Mirrors the predicate used by getAgentCapableAgents */
+function isAgentCapable(a: AgentDefinition): boolean {
+  return Boolean(a.agentsPath?.trim() || a.globalAgentsPath?.trim())
+}
+
+/** Mirrors the predicate used by getCommandCapableAgents */
+function isCommandCapable(a: AgentDefinition): boolean {
+  return Boolean(a.commandsPath?.trim() || a.globalCommandsPath?.trim())
+}
 
 describe('AGENT_DEFINITIONS', () => {
   it('should contain exactly 43 definitions', () => {
@@ -100,6 +128,26 @@ describe('getAgentCapableAgents', () => {
       expect(agent.globalAgentsPath).toBeDefined()
     }
   })
+
+  it('should match an agent with only a project-level agentsPath', () => {
+    const agent = stubAgent({ agentsPath: '.my/agents', globalAgentsPath: undefined })
+    expect(isAgentCapable(agent)).toBe(true)
+  })
+
+  it('should match an agent with only a global-level agentsPath', () => {
+    const agent = stubAgent({ agentsPath: undefined, globalAgentsPath: '~/.my/agents' })
+    expect(isAgentCapable(agent)).toBe(true)
+  })
+
+  it('should reject an agent with empty-string agentsPath values', () => {
+    const agent = stubAgent({ agentsPath: '', globalAgentsPath: '' })
+    expect(isAgentCapable(agent)).toBe(false)
+  })
+
+  it('should reject an agent with whitespace-only agentsPath values', () => {
+    const agent = stubAgent({ agentsPath: '  ', globalAgentsPath: '  ' })
+    expect(isAgentCapable(agent)).toBe(false)
+  })
 })
 
 describe('getCommandCapableAgents', () => {
@@ -115,6 +163,26 @@ describe('getCommandCapableAgents', () => {
       expect(agent.commandsPath).toBeDefined()
       expect(agent.globalCommandsPath).toBeDefined()
     }
+  })
+
+  it('should match an agent with only a project-level commandsPath', () => {
+    const agent = stubAgent({ commandsPath: '.my/commands', globalCommandsPath: undefined })
+    expect(isCommandCapable(agent)).toBe(true)
+  })
+
+  it('should match an agent with only a global-level commandsPath', () => {
+    const agent = stubAgent({ commandsPath: undefined, globalCommandsPath: '~/.my/commands' })
+    expect(isCommandCapable(agent)).toBe(true)
+  })
+
+  it('should reject an agent with empty-string commandsPath values', () => {
+    const agent = stubAgent({ commandsPath: '', globalCommandsPath: '' })
+    expect(isCommandCapable(agent)).toBe(false)
+  })
+
+  it('should reject an agent with whitespace-only commandsPath values', () => {
+    const agent = stubAgent({ commandsPath: '  ', globalCommandsPath: '  ' })
+    expect(isCommandCapable(agent)).toBe(false)
   })
 })
 
