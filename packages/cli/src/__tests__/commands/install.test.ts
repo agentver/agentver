@@ -93,6 +93,10 @@ vi.mock('node:fs', () => ({
   readFileSync: vi.fn(),
 }))
 
+vi.mock('node:os', () => ({
+  homedir: vi.fn().mockReturnValue('/mock-home'),
+}))
+
 vi.mock('prompts', () => ({ default: vi.fn() }))
 
 // ---------------------------------------------------------------------------
@@ -1580,7 +1584,8 @@ describe('commands/install', () => {
       vi.mocked(agentDefs.parseComposedSections).mockReturnValue([
         { packageName: 'existing-pkg', content: 'Existing rules.\n' },
       ])
-      const composedOutput = '## From: existing-pkg\n\nExisting rules.\n\n## From: test-skill\n\n# My Config\n\nRules for the agent.\n'
+      const composedOutput =
+        '## From: existing-pkg\n\nExisting rules.\n\n## From: test-skill\n\n# My Config\n\nRules for the agent.\n'
       vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: composedOutput })
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
@@ -1594,6 +1599,74 @@ describe('commands/install', () => {
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
       expect(writeCalls[0][1]).toBe(composedOutput)
+    })
+
+    it('updates existing section when reinstalling into a composed config', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      const updatedContent = '# Updated Config\n\nNew rules.\n'
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: updatedContent,
+        },
+      ])
+
+      // Simulate an existing composed config that already contains this package
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true)
+      const existingComposed =
+        '## From: test-skill\n\nOld rules.\n\n## From: other-pkg\n\nOther rules.\n'
+      vi.mocked(nodeFs.readFileSync).mockReturnValue(existingComposed)
+      vi.mocked(agentDefs.isComposedConfig).mockReturnValue(true)
+      vi.mocked(agentDefs.parseComposedSections).mockReturnValue([
+        { packageName: DERIVED_NAME, content: 'Old rules.\n' },
+        { packageName: 'other-pkg', content: 'Other rules.\n' },
+      ])
+      const recomposedOutput =
+        '## From: test-skill\n\n# Updated Config\n\nNew rules.\n\n## From: other-pkg\n\nOther rules.\n'
+      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: recomposedOutput })
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      // composeConfigs should be called with updated content for this package, preserving others
+      expect(agentDefs.composeConfigs).toHaveBeenCalledWith([
+        { packageName: DERIVED_NAME, content: updatedContent, order: 0 },
+        { packageName: 'other-pkg', content: 'Other rules.\n', order: 1 },
+      ])
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      expect(writeCalls[0][1]).toBe(recomposedOutput)
+    })
+
+    it('resolves config path under homedir for global installs', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'goose',
+          filePath: '.goose/config.yaml',
+          content: 'instructions: "rules"\n',
+        },
+      ])
+
+      await installPackage(TEST_SOURCE, { agent: 'goose', global: true })
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      expect(writeCalls).toHaveLength(1)
+      // Global path should be resolved under homedir, not project root
+      expect(String(writeCalls[0][0])).toBe('/mock-home/.goose/config.yaml')
     })
   })
 
