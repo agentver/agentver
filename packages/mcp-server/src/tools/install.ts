@@ -6,8 +6,8 @@ import {
   detectInstalledAgents,
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
-import { AgentverError, createLogger } from '@agentver/shared'
 import type { GitSource } from '@agentver/shared'
+import { AgentverError, createLogger } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
