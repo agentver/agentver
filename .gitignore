@@ -56,4 +56,4 @@ test-results/
 .local/
 
 # Worktrees
-.worktrees/
+.worktrees/node_modules
