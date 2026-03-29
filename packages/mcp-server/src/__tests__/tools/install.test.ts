@@ -324,6 +324,75 @@ describe('tools/install', () => {
     expect(text).toContain('project')
   })
 
+  it('uses global scope paths when global is true', async () => {
+    setupAuthenticated()
+    vi.mocked(registryMod.registryFetch).mockResolvedValue(
+      createDownloadResponse({
+        fileManifest: { 'SKILL.md': '# Skill content' },
+      })
+    )
+    vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+      { id: 'claude-code', name: 'Claude Code', configPath: '/home/test/.claude' },
+    ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
+    vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/skills/test-skill')
+
+    await handler({
+      package: 'test-org/test-skill',
+      version: '1.0.0',
+      agents: undefined,
+      global: true,
+    })
+
+    expect(agentDefs.getSkillPlacementPath).toHaveBeenCalledWith('claude-code', 'test-skill', 'global')
+  })
+
+  it('writes manifest to ~/.agentver when global is true', async () => {
+    setupAuthenticated()
+    vi.mocked(registryMod.registryFetch).mockResolvedValue(createDownloadResponse())
+    vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+      { id: 'claude-code', name: 'Claude Code', configPath: '/home/test/.claude' },
+    ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
+    vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/skills/test-skill')
+
+    await handler({
+      package: 'test-org/test-skill',
+      version: '1.0.0',
+      agents: undefined,
+      global: true,
+    })
+
+    expect(storageMod.writeManifest).toHaveBeenCalledWith(
+      '/home/test/.agentver',
+      expect.objectContaining({
+        packages: expect.objectContaining({
+          'test-org/test-skill': expect.objectContaining({ version: '1.0.0' }),
+        }),
+      })
+    )
+    expect(storageMod.writeLockfile).toHaveBeenCalledWith(
+      '/home/test/.agentver',
+      expect.anything()
+    )
+  })
+
+  it('returns global scope in summary when global is true', async () => {
+    setupAuthenticated()
+    vi.mocked(registryMod.registryFetch).mockResolvedValue(createDownloadResponse())
+    vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+      { id: 'claude-code', name: 'Claude Code', configPath: '/home/test/.claude' },
+    ] as ReturnType<typeof agentDefs.detectInstalledAgents>)
+    vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/skills/test-skill')
+
+    const result = (await handler({
+      package: 'test-org/test-skill',
+      version: '1.0.0',
+      agents: undefined,
+      global: true,
+    })) as { content: Array<{ text: string }> }
+
+    expect(result.content[0]!.text).toContain('global')
+  })
+
   it('filters out YANKED versions when resolving latest', async () => {
     setupAuthenticated()
     vi.mocked(registryMod.registryFetch)

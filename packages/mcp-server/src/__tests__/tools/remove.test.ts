@@ -167,6 +167,56 @@ describe('tools/remove', () => {
     expect(result.content[0]!.text).toContain('claude-code')
   })
 
+  it('reads manifest from ~/.agentver when global is true', async () => {
+    vi.mocked(storageMod.readManifest).mockReturnValue(
+      createManifest({
+        packages: { 'test-org/test-skill': createInstalledPackage() },
+      })
+    )
+    vi.mocked(storageMod.readLockfile).mockReturnValue(createLockfile())
+    vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/skills/test-skill')
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+
+    await handler({ package: 'test-org/test-skill', global: true })
+
+    expect(storageMod.readManifest).toHaveBeenCalledWith('/home/test/.agentver')
+    expect(storageMod.writeManifest).toHaveBeenCalledWith('/home/test/.agentver', expect.anything())
+    expect(storageMod.writeLockfile).toHaveBeenCalledWith('/home/test/.agentver', expect.anything())
+  })
+
+  it('uses global scope for getSkillPlacementPath when global is true', async () => {
+    vi.mocked(storageMod.readManifest).mockReturnValue(
+      createManifest({
+        packages: { 'test-org/test-skill': createInstalledPackage() },
+      })
+    )
+    vi.mocked(storageMod.readLockfile).mockReturnValue(createLockfile())
+    vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/skills/test-skill')
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+
+    await handler({ package: 'test-org/test-skill', global: true })
+
+    expect(agentDefs.getSkillPlacementPath).toHaveBeenCalledWith('claude-code', 'test-skill', 'global')
+  })
+
+  it('expands tilde in placement path when global is true', async () => {
+    vi.mocked(storageMod.readManifest).mockReturnValue(
+      createManifest({
+        packages: { 'test-org/test-skill': createInstalledPackage() },
+      })
+    )
+    vi.mocked(storageMod.readLockfile).mockReturnValue(createLockfile())
+    vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('~/skills/test-skill')
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+
+    await handler({ package: 'test-org/test-skill', global: true })
+
+    expect(fs.rmSync).toHaveBeenCalledWith('/home/test/skills/test-skill', {
+      recursive: true,
+      force: true,
+    })
+  })
+
   it('handles agents with no placement path', async () => {
     vi.mocked(contextMod.getWorkingDirectory).mockReturnValue('/project')
     vi.mocked(storageMod.readManifest).mockReturnValue(

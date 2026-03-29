@@ -511,6 +511,61 @@ describe('installer', () => {
       expect(results[0]!.error).toContain('no files')
     })
 
+    it('returns failed result when no agents detected and none specified', async () => {
+      const manifest = createManifest({
+        packages: {
+          'test-org/test-skill': {
+            name: 'test-org/test-skill',
+            version: '1.0.0',
+            agents: ['claude-code'],
+            installedAt: '2024-01-01T00:00:00.000Z',
+          },
+        },
+      })
+      const config = createInstallerConfig({ agents: [] })
+      mockFetchResponse(createDownloadResponse())
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([])
+
+      const { results } = await installer.installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.success).toBe(false)
+      expect(results[0]!.error).toContain('No agents detected')
+      expect(results[0]!.fileCount).toBe(0)
+    })
+
+    it('returns failed result when integrity check fails', async () => {
+      const manifest = createManifest({
+        packages: {
+          'test-org/test-skill': {
+            name: 'test-org/test-skill',
+            version: '1.0.0',
+            agents: ['claude-code'],
+            installedAt: '2024-01-01T00:00:00.000Z',
+          },
+        },
+      })
+      const config = createInstallerConfig({ agents: ['claude-code'], verifyIntegrity: true })
+      mockFetchResponse(createDownloadResponse())
+      const lockfile = createLockfile({
+        packages: {
+          'test-org/test-skill': {
+            version: '1.0.0',
+            resolved: 'https://test.registry.com/api/v1/skills/test-org/test-skill/1.0.0/download',
+            integrity: 'sha256-WRONGVALUE',
+            agents: ['claude-code'],
+          },
+        },
+      })
+
+      const { results } = await installer.installAllPackages(manifest, config, lockfile)
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.success).toBe(false)
+      expect(results[0]!.error).toContain('Integrity check failed')
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
+    })
+
     it('continues installing remaining packages when one fails', async () => {
       const manifest = createManifest({
         packages: {
