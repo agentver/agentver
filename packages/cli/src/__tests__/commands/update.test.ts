@@ -1190,6 +1190,52 @@ describe('commands/update', () => {
     })
   })
 
+  describe('manifest path validation', () => {
+    it('discards relative paths from manifest and does not pass path to installPackage', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: 'relative/path',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      const opts = vi.mocked(installPackage).mock.calls[0]![1]
+      expect(opts).not.toHaveProperty('path')
+    })
+
+    it('discards paths with traversal segments from manifest', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: '/safe/../../etc/passwd',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      const opts = vi.mocked(installPackage).mock.calls[0]![1]
+      expect(opts).not.toHaveProperty('path')
+    })
+
+    it('passes valid absolute paths from manifest to installPackage', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: '/valid/absolute/path',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ path: '/valid/absolute/path' })
+      )
+    })
+  })
+
   describe('patch mode with --global', () => {
     it('passes global scope to readLockfile and installPackage in patch update', async () => {
       vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
