@@ -303,7 +303,7 @@ export function getAgentPlacementPath(
   const agent = AGENT_DEFINITIONS.find((a) => a.id === agentId)
   if (!agent) return null
 
-  const basePath = scope === 'project' ? agent.projectAgentsPath : agent.globalAgentsPath
+  const basePath = scope === 'project' ? agent.agentsPath : agent.globalAgentsPath
   if (!basePath) return null
   return join(basePath, fileName)
 }
@@ -316,7 +316,7 @@ export function getCommandPlacementPath(
   const agent = AGENT_DEFINITIONS.find((a) => a.id === agentId)
   if (!agent) return null
 
-  const basePath = scope === 'project' ? agent.projectCommandsPath : agent.globalCommandsPath
+  const basePath = scope === 'project' ? agent.commandsPath : agent.globalCommandsPath
   if (!basePath) return null
   return join(basePath, fileName)
 }

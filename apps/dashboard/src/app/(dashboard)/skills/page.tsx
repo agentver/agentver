@@ -769,10 +769,7 @@ function SkillsPageContent() {
 
   const { data, isLoading } = trpc.skills.list.useQuery({
     search: search || undefined,
-    type:
-      type !== 'all'
-        ? (type as 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT' | 'AGENT' | 'COMMAND')
-        : undefined,
+    type: type !== 'all' ? (type as (typeof VALID_TYPES)[number]) : undefined,
   })
 
   // Fetch unfiltered list for type counts (only when a type filter is active)
