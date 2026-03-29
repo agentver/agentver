@@ -106,14 +106,14 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
     }
 
     // Array item continuation (e.g. `  - value`)
-    const arrayItemMatch = line.match(/^ +- +(.+)$/)
+    const arrayItemMatch = line.match(/^ +- +(\S.*)$/)
     if (arrayItemMatch && currentKey && currentArray) {
       currentArray.push(arrayItemMatch[1]!.trim().replace(/^['"]|['"]$/g, ''))
       continue
     }
 
     // Record item continuation (e.g. `  subkey: value`)
-    const recordItemMatch = line.match(/^ +(\S+): +(.+)$/)
+    const recordItemMatch = line.match(/^ +(\S+): +(\S.*)$/)
     if (recordItemMatch && currentKey && currentRecord) {
       currentRecord[recordItemMatch[1]!] = recordItemMatch[2]!.trim().replace(/^['"]|['"]$/g, '')
       continue
