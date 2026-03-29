@@ -352,6 +352,23 @@ description: >
     })
   })
 
+  it('should preserve more-indented lines in folded block scalar', () => {
+    const content = `---
+name: test
+description: >
+  first
+    code
+  second
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      description: 'first\n  code\nsecond',
+    })
+  })
+
   it('should parse block scalar followed by another key', () => {
     const content = `---
 description: |

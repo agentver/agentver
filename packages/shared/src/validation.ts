@@ -29,24 +29,35 @@ function flushBlockScalar(lines: string[], style: '|' | '>'): string {
     return trimmed.join('\n')
   }
 
-  // Folded style: single line breaks become spaces, but blank lines preserve paragraph breaks
-  const paragraphs: string[] = []
+  // Folded style: single line breaks become spaces, but blank lines and
+  // more-indented lines preserve line breaks.
+  const parts: string[] = []
   let current: string[] = []
-  for (const line of trimmed) {
-    if (line === '') {
-      if (current.length > 0) {
-        paragraphs.push(current.join(' '))
-        current = []
-      }
-      paragraphs.push('')
-    } else {
-      current.push(line)
+
+  const flushCurrent = () => {
+    if (current.length > 0) {
+      parts.push(current.join(' '))
+      current = []
     }
   }
-  if (current.length > 0) {
-    paragraphs.push(current.join(' '))
+
+  for (const line of trimmed) {
+    if (line === '') {
+      flushCurrent()
+      parts.push('')
+      continue
+    }
+
+    if (/^ /.test(line)) {
+      flushCurrent()
+      parts.push(line)
+      continue
+    }
+
+    current.push(line)
   }
-  return paragraphs.join('\n')
+  flushCurrent()
+  return parts.join('\n')
 }
 
 /**
@@ -95,14 +106,14 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
     }
 
     // Array item continuation (e.g. `  - value`)
-    const arrayItemMatch = line.match(/^\s+-\s+(.+)$/)
+    const arrayItemMatch = line.match(/^ +- +(.+)$/)
     if (arrayItemMatch && currentKey && currentArray) {
       currentArray.push(arrayItemMatch[1]!.trim().replace(/^['"]|['"]$/g, ''))
       continue
     }
 
     // Record item continuation (e.g. `  subkey: value`)
-    const recordItemMatch = line.match(/^\s+(\S+):\s+(.+)$/)
+    const recordItemMatch = line.match(/^ +(\S+): +(.+)$/)
     if (recordItemMatch && currentKey && currentRecord) {
       currentRecord[recordItemMatch[1]!] = recordItemMatch[2]!.trim().replace(/^['"]|['"]$/g, '')
       continue
@@ -149,9 +160,7 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
     if (inlineArrayMatch) {
       const inner = inlineArrayMatch[1]!.trim()
       result[key] =
-        inner === ''
-          ? []
-          : inner.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+        inner === '' ? [] : inner.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
       continue
     }
 
