@@ -73,7 +73,9 @@ describe('commands/sync', () => {
     process.argv = ['node', 'agentver', 'sync']
     process.exit = vi.fn() as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(
+      createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
+    )
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
     platformMock = setupPlatformMock()

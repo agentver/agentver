@@ -81,7 +81,9 @@ describe('commands/audit', () => {
     process.argv = ['node', 'agentver', 'audit']
     process.exit = vi.fn() as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(
+      createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
+    )
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
     vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
     vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue(createFetchedFiles(2))
