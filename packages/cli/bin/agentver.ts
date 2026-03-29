@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 import chalk from 'chalk'
 import { Command, CommanderError } from 'commander'
 import updateNotifier from 'update-notifier'
-import { isJSONMode, outputError } from '../src/output'
 import { registerAdoptCommand } from '../src/commands/adopt'
 import { registerAgentsCommand } from '../src/commands/agents'
 import { registerAuditCommand } from '../src/commands/audit'
@@ -36,6 +35,7 @@ import { registerValidateCommand } from '../src/commands/validate'
 import { registerVerifyCommand } from '../src/commands/verify'
 import { registerVersionCommand } from '../src/commands/version'
 import { registerWhoamiCommand } from '../src/commands/whoami'
+import { isJSONMode, outputError } from '../src/output'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -106,9 +106,7 @@ try {
   if (err instanceof CommanderError) {
     // --help and --version exit with code 0 — let them through silently
     if (err.exitCode !== 0 && isJSONMode()) {
-      const code = err.code === 'commander.unknownCommand'
-        ? 'UNKNOWN_COMMAND'
-        : 'VALIDATION_ERROR'
+      const code = err.code === 'commander.unknownCommand' ? 'UNKNOWN_COMMAND' : 'VALIDATION_ERROR'
       outputError(code, err.message)
     }
     process.exit(err.exitCode)
