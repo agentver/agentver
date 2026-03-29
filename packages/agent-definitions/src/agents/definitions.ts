@@ -96,9 +96,9 @@ export const AGENT_DEFINITIONS: AgentDefinition[] = [
     configDirs: ['.gemini'],
     category: 'agent-specific',
     aliases: ['gemini'],
-    mcpConfigPath: null,
-    globalMcpConfigPath: null,
-    mcpConfigFormat: null,
+    mcpConfigPath: '.gemini/settings.json',
+    globalMcpConfigPath: '~/.gemini/settings.json',
+    mcpConfigFormat: 'mcp-servers',
   },
   {
     id: 'roo',
