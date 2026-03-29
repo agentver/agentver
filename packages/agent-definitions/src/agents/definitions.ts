@@ -546,14 +546,14 @@ export function getMcpCapableAgents(): AgentDefinition[] {
 
 /** Get agents that support sub-agent distribution */
 export function getAgentCapableAgents(): AgentDefinition[] {
-  return AGENT_DEFINITIONS.filter(
-    (a) => Boolean(a.agentsPath?.trim() || a.globalAgentsPath?.trim())
+  return AGENT_DEFINITIONS.filter((a) =>
+    Boolean(a.agentsPath?.trim() || a.globalAgentsPath?.trim())
   )
 }
 
 /** Get agents that support command distribution */
 export function getCommandCapableAgents(): AgentDefinition[] {
-  return AGENT_DEFINITIONS.filter(
-    (a) => Boolean(a.commandsPath?.trim() || a.globalCommandsPath?.trim())
+  return AGENT_DEFINITIONS.filter((a) =>
+    Boolean(a.commandsPath?.trim() || a.globalCommandsPath?.trim())
   )
 }

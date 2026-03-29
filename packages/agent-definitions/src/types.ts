@@ -70,7 +70,7 @@ export type AgentDefinition = {
   globalMcpConfigPath: string | null
   /** MCP config format identifier. Determines how to write server entries. Null if agent doesn't support MCP. */
   mcpConfigFormat: McpConfigFormat | null
-  /** Path to project-level agents directory, relative to project root. */
+  /** Path to project-level agents directory, relative to project root. Uses `?: string` (optional) rather than `string | null` because most agents lack this capability entirely. */
   agentsPath?: string
   /** Path to global agents directory. Uses ~ for home dir. */
   globalAgentsPath?: string
