@@ -49,6 +49,7 @@ async function runCompletion(args: string[]): Promise<void> {
 // The list of all expected top-level commands from the completion script
 const EXPECTED_COMMANDS = [
   'adopt',
+  'agents',
   'audit',
   'completion',
   'config',
@@ -62,6 +63,7 @@ const EXPECTED_COMMANDS = [
   'log',
   'login',
   'logout',
+  'pin',
   'publish',
   'remove',
   'save',
@@ -71,8 +73,10 @@ const EXPECTED_COMMANDS = [
   'suggest',
   'suggestions',
   'sync',
+  'unpin',
   'update',
   'upgrade',
+  'validate',
   'verify',
   'version',
   'whoami',
