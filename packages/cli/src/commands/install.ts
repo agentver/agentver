@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import type { AgentId } from '@agentver/agent-definitions'
 import {
   composeConfigs,
   detectInstalledAgents,
-  getConfigFilePath,
   isComposedConfig,
   parseComposedSections,
+  translateConfig,
 } from '@agentver/agent-definitions'
 import type { InstallResult as InstallResultJSON } from '@agentver/shared'
 import {
@@ -917,20 +918,23 @@ async function installAgentConfig(
 
   const configContent = contentFile.content
 
-  for (const agentId of agents) {
-    const configPath = getConfigFilePath(agentId as Parameters<typeof getConfigFilePath>[0], name)
-    if (!configPath) continue
+  const translations = translateConfig(configContent, name, agents as AgentId[])
 
-    const fullConfigPath = options.global
-      ? configPath.replace('~', homedir())
-      : join(projectRoot, configPath)
+  for (const translation of translations) {
+    const baseRoot = options.global ? homedir() : projectRoot
+    const fullConfigPath = resolve(baseRoot, translation.filePath)
+    const rel = relative(baseRoot, fullConfigPath)
 
-    const configDir = join(fullConfigPath, '..')
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      continue
+    }
+
+    const configDir = dirname(fullConfigPath)
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true })
     }
 
-    let finalContent = configContent
+    let finalContent = translation.content
     if (existsSync(fullConfigPath)) {
       const existingContent = readFileSync(fullConfigPath, 'utf-8')
 
@@ -938,22 +942,26 @@ async function installAgentConfig(
         const existingSections = parseComposedSections(existingContent)
         const alreadyPresent = existingSections.some((s) => s.packageName === name)
 
-        if (!alreadyPresent) {
-          const allConfigs = [
-            ...existingSections.map((s, idx) => ({
+        const allConfigs = alreadyPresent
+          ? existingSections.map((s, idx) => ({
               packageName: s.packageName,
-              content: s.content,
+              content: s.packageName === name ? translation.content : s.content,
               order: idx,
-            })),
-            {
-              packageName: name,
-              content: contentFile.content,
-              order: existingSections.length,
-            },
-          ]
-          const composed = composeConfigs(allConfigs)
-          finalContent = composed.content
-        }
+            }))
+          : [
+              ...existingSections.map((s, idx) => ({
+                packageName: s.packageName,
+                content: s.content,
+                order: idx,
+              })),
+              {
+                packageName: name,
+                content: translation.content,
+                order: existingSections.length,
+              },
+            ]
+        const composed = composeConfigs(allConfigs)
+        finalContent = composed.content
       }
     }
 
