@@ -1460,8 +1460,8 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain('.goose/config.yaml')
-      expect(writeCalls[0][1]).toBe(yamlContent)
+      expect(String(writeCalls[0]![0])).toContain('.goose/config.yaml')
+      expect(writeCalls[0]![1]).toBe(yamlContent)
     })
 
     it('writes read redirect for aider', async () => {
@@ -1485,8 +1485,8 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain('.aider.conf.yml')
-      expect(writeCalls[0][1]).toBe(redirectContent)
+      expect(String(writeCalls[0]![0])).toContain('.aider.conf.yml')
+      expect(writeCalls[0]![1]).toBe(redirectContent)
     })
 
     it('writes to dynamic path for roo', async () => {
@@ -1509,7 +1509,7 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain(`.roo/rules/${DERIVED_NAME}.md`)
+      expect(String(writeCalls[0]![0])).toContain(`.roo/rules/${DERIVED_NAME}.md`)
     })
 
     it('writes to dynamic path for cline', async () => {
@@ -1532,7 +1532,7 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain(`.clinerules/${DERIVED_NAME}.md`)
+      expect(String(writeCalls[0]![0])).toContain(`.clinerules/${DERIVED_NAME}.md`)
     })
 
     it('passes raw markdown for claude-code (passthrough)', async () => {
@@ -1556,7 +1556,7 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(writeCalls[0][1]).toBe(rawContent)
+      expect(writeCalls[0]![1]).toBe(rawContent)
     })
 
     it('composes translated content into existing composed config', async () => {
@@ -1586,7 +1586,10 @@ describe('commands/install', () => {
       ])
       const composedOutput =
         '## From: existing-pkg\n\nExisting rules.\n\n## From: test-skill\n\n# My Config\n\nRules for the agent.\n'
-      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: composedOutput })
+      vi.mocked(agentDefs.composeConfigs).mockReturnValue({
+        content: composedOutput,
+        sources: ['existing-pkg', DERIVED_NAME],
+      })
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
@@ -1598,7 +1601,7 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(writeCalls[0][1]).toBe(composedOutput)
+      expect(writeCalls[0]![1]).toBe(composedOutput)
     })
 
     it('updates existing section when reinstalling into a composed config', async () => {
@@ -1630,7 +1633,10 @@ describe('commands/install', () => {
       ])
       const recomposedOutput =
         '## From: test-skill\n\n# Updated Config\n\nNew rules.\n\n## From: other-pkg\n\nOther rules.\n'
-      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: recomposedOutput })
+      vi.mocked(agentDefs.composeConfigs).mockReturnValue({
+        content: recomposedOutput,
+        sources: [DERIVED_NAME, 'other-pkg'],
+      })
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
@@ -1642,7 +1648,7 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(writeCalls[0][1]).toBe(recomposedOutput)
+      expect(writeCalls[0]![1]).toBe(recomposedOutput)
     })
 
     it('resolves config path under homedir for global installs', async () => {
@@ -1666,7 +1672,7 @@ describe('commands/install', () => {
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
       // Global path should be resolved under homedir, not project root
-      expect(String(writeCalls[0][0])).toBe('/mock-home/.goose/config.yaml')
+      expect(String(writeCalls[0]![0])).toBe('/mock-home/.goose/config.yaml')
     })
 
     it('rejects path traversal in translateConfig filePath', async () => {
