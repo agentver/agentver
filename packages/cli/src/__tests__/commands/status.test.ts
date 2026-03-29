@@ -76,7 +76,6 @@ import { registerStatusCommand } from '../../commands/status'
 
 import * as nodeFs from 'node:fs'
 import * as agentDefs from '@agentver/agent-definitions'
-import * as pathsModule from '../../utils/paths'
 import * as fetcherModule from '../../git/fetcher.js'
 import * as gitModule from '../../git/index.js'
 import * as outputModule from '../../output'
@@ -84,6 +83,7 @@ import * as canonicalModule from '../../storage/canonical.js'
 import * as integrityModule from '../../storage/integrity.js'
 import * as lockfileModule from '../../storage/lockfile.js'
 import * as manifestModule from '../../storage/manifest.js'
+import * as pathsModule from '../../utils/paths'
 
 // ---------------------------------------------------------------------------
 // Tests

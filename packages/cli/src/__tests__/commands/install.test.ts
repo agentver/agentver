@@ -2540,9 +2540,7 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: gitSource,
       })
-      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue(
-        '.claude/agents/deep-research.md'
-      )
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/deep-research.md')
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
 
