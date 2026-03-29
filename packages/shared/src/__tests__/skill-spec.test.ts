@@ -238,6 +238,16 @@ describe('agentverSkillSchema', () => {
     const result = agentverSkillSchema.safeParse({ ...VALID_SPEC, version: 'not-semver' })
     expect(result.success).toBe(false)
   })
+
+  it('should reject leading zeros in version field', () => {
+    const result = agentverSkillSchema.safeParse({ ...VALID_SPEC, version: '01.0.0' })
+    expect(result.success).toBe(false)
+  })
+
+  it('should accept build metadata in version field', () => {
+    const result = agentverSkillSchema.parse({ ...VALID_SPEC, version: '1.0.0+build.123' })
+    expect(result.version).toBe('1.0.0+build.123')
+  })
 })
 
 // ---------------------------------------------------------------------------

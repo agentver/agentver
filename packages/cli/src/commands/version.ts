@@ -81,7 +81,9 @@ export function registerVersionCommand(program: Command): void {
     .action(async (semver: string, options: VersionCreateOptions) => {
       if (!SEMVER_REGEX.test(semver)) {
         process.stderr.write(
-          chalk.red(`Invalid semver "${semver}". Expected format: 1.0.0 or 1.0.0-beta.1\n`)
+          chalk.red(
+            `Invalid semver "${semver}". Expected format: 1.0.0, 1.0.0-beta.1, or 1.0.0+build.42\n`
+          )
         )
         process.exit(1)
       }

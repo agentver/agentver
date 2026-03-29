@@ -119,7 +119,7 @@ describe('skillMetadataSchema', () => {
   })
 
   it('should reject invalid semver version', () => {
-    for (const bad of ['1.0', 'v1.0.0', 'abc', '1.0.0.0']) {
+    for (const bad of ['1.0', 'v1.0.0', 'abc', '1.0.0.0', '01.0.0', '0.01.0', '0.0.01']) {
       const result = skillMetadataSchema.safeParse({ name: 'ok', version: bad, type: 'SKILL' })
       expect(result.success).toBe(false)
     }
@@ -128,6 +128,11 @@ describe('skillMetadataSchema', () => {
   it('should accept valid semver with prerelease (1.0.0-alpha)', () => {
     skillMetadataSchema.parse({ name: 'ok', version: '1.0.0-alpha', type: 'SKILL' })
     skillMetadataSchema.parse({ name: 'ok', version: '0.1.0-beta.1', type: 'SKILL' })
+  })
+
+  it('should accept valid semver with build metadata', () => {
+    skillMetadataSchema.parse({ name: 'ok', version: '1.0.0+build.123', type: 'SKILL' })
+    skillMetadataSchema.parse({ name: 'ok', version: '1.0.0-beta.1+sha.abc123', type: 'SKILL' })
   })
 
   it('should reject invalid package type', () => {

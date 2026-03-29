@@ -650,12 +650,21 @@ describe('bundleManifestSchema', () => {
     '1.0.0',
     '0.1.0-alpha',
     '2.3.4-beta.1',
+    '1.0.0+build.123',
+    '1.0.0-beta.1+sha.abc123',
   ])('should accept valid semver "%s"', (version) => {
     const result = bundleManifestSchema.parse({ name: 'my-bundle', version })
     expect(result.version).toBe(version)
   })
 
-  it.each(['1.0', 'abc', 'v1.0.0'])('should reject invalid semver "%s"', (version) => {
+  it.each([
+    '1.0',
+    'abc',
+    'v1.0.0',
+    '01.0.0',
+    '0.01.0',
+    '0.0.01',
+  ])('should reject invalid semver "%s"', (version) => {
     const result = bundleManifestSchema.safeParse({ name: 'my-bundle', version })
     expect(result.success).toBe(false)
   })

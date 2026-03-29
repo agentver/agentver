@@ -49,6 +49,7 @@ export {
 export {
   PACKAGE_TYPES,
   type PackageType,
+  SEMVER_REGEX,
   VISIBILITY_LEVELS,
   type VisibilityLevel,
   WARNING_NO_LICENCE,

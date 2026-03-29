@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SEMVER_REGEX } from './constants'
 
 // Canonical list lives in @agentver/agent-definitions/types.ts — kept in sync by a test.
 // Not imported directly because @agentver/shared is published to npm and
@@ -54,7 +55,7 @@ export const agentIdEnum = z.enum(AGENT_IDS_FOR_SCHEMA)
 export const skillMetadataSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
-  version: z.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'Must be valid semver'),
+  version: z.string().regex(SEMVER_REGEX, 'Must be valid semver'),
   type: z.enum([
     'SKILL',
     'AGENT_CONFIG',
