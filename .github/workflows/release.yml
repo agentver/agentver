@@ -215,7 +215,7 @@ jobs:
           docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:${{ github.ref_name }}
 
       - name: Post release summary
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             core.summary

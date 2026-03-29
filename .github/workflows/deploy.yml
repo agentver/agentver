@@ -100,7 +100,7 @@ jobs:
 
       - name: Set commit status
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const succeeded = '${{ job.status }}' === 'success'
@@ -191,7 +191,7 @@ jobs:
 
       - name: Set commit status
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const succeeded = '${{ job.status }}' === 'success'
