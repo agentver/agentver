@@ -28,6 +28,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@agentver/agent-definitions": "workspace:*",
     "@agentver/typescript-config": "workspace:*",
     "typescript": "^5.9.3"
   },

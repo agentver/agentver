@@ -1,7 +1,8 @@
 import { z } from 'zod'
 
-// Canonical list lives in @agentver/agent-definitions/types.ts — kept in sync manually.
-// Not imported directly to avoid pulling node:fs into client bundles via the agent-definitions barrel export.
+// Canonical list lives in @agentver/agent-definitions/types.ts — kept in sync by a test.
+// Not imported directly because @agentver/shared is published to npm and
+// @agentver/agent-definitions is a private workspace-only package.
 const AGENT_IDS_FOR_SCHEMA = [
   'adal',
   'aider',
@@ -48,7 +49,7 @@ const AGENT_IDS_FOR_SCHEMA = [
   'zencoder',
 ] as const
 
-const agentIdEnum = z.enum(AGENT_IDS_FOR_SCHEMA)
+export const agentIdEnum = z.enum(AGENT_IDS_FOR_SCHEMA)
 
 export const skillMetadataSchema = z.object({
   name: z.string().min(1).max(100),
