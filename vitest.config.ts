@@ -29,6 +29,7 @@ export default defineConfig({
           environment: 'node',
           globals: true,
           include: ['src/**/*.test.ts'],
+          exclude: ['src/__tests__/e2e/**'],
           testTimeout: 30_000,
         },
       },
