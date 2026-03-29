@@ -534,7 +534,7 @@ function DownloadSection({
               {Object.entries(INSTALL_INSTRUCTIONS).map(([key, instruction]) => (
                 <div
                   key={key}
-                  className={`rounded-xl border border-dark-border bg-dark-surface p-5${instruction.comingSoon ? ' opacity-60' : ''}`}
+                  className={`rounded-xl border border-dark-border bg-dark-surface p-5${instruction.comingSoon ? 'opacity-60' : ''}`}
                 >
                   <div className="mb-3 flex items-center gap-2 font-medium text-dark-text text-sm">
                     {instruction.label}
