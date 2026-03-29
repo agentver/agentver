@@ -1,5 +1,4 @@
 import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
@@ -12,7 +11,7 @@ export function registerListTool(server: McpServer): void {
       title: 'Agentver List',
       description:
         'List all installed Agentver packages in the current project (or globally). ' +
-        'Shows package name, version, and target agents.',
+        'Shows package name, source, and target agents.',
       inputSchema: z.object({
         global: z
           .boolean()
@@ -23,26 +22,28 @@ export function registerListTool(server: McpServer): void {
       }),
     },
     async ({ global: isGlobal }) => {
-      const root = isGlobal ? join(homedir(), '.agentver') : getWorkingDirectory()
+      const root = isGlobal ? homedir() : getWorkingDirectory()
       const manifest = readManifest(root)
-      const packages = Object.values(manifest.packages)
+      const entries = Object.entries(manifest.packages)
 
-      if (packages.length === 0) {
+      if (entries.length === 0) {
         const scope = isGlobal ? 'globally' : 'in this project'
         return {
-          content: [{ type: 'text', text: `No packages installed ${scope}.` }],
+          content: [{ type: 'text' as const, text: `No packages installed ${scope}.` }],
         }
       }
 
-      const lines = packages.map((pkg) => {
+      const lines = entries.map(([name, pkg]) => {
         const agents = pkg.agents.length > 0 ? ` [${pkg.agents.join(', ')}]` : ''
-        return `- ${pkg.name}@${pkg.version}${agents}`
+        const sourceInfo =
+          pkg.source.type === 'git' ? `${pkg.source.uri}@${pkg.source.ref}` : pkg.source.skillName
+        return `- ${name} (${sourceInfo})${agents}`
       })
 
       const scope = isGlobal ? 'Global' : 'Project'
-      const header = `${scope} packages (${packages.length}):\n`
+      const header = `${scope} packages (${entries.length}):\n`
       return {
-        content: [{ type: 'text', text: header + lines.join('\n') }],
+        content: [{ type: 'text' as const, text: header + lines.join('\n') }],
       }
     }
   )

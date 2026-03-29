@@ -44,7 +44,7 @@ export function registerRemoveTool(server: McpServer): void {
       }),
     },
     async ({ package: packageName, global: isGlobal }) => {
-      const root = isGlobal ? join(homedir(), '.agentver') : getWorkingDirectory()
+      const root = isGlobal ? homedir() : getWorkingDirectory()
       const manifest = readManifest(root)
 
       const pkg = manifest.packages[packageName]

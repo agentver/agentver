@@ -7,10 +7,11 @@ import {
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
 import { AgentverError } from '@agentver/shared'
+import type { GitSource } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
-import { getRegistryUrl, isAuthenticated, registryFetch } from '../shared/registry'
+import { isAuthenticated, registryFetch } from '../shared/registry'
 import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
 
 type DownloadResponse = {
@@ -136,6 +137,14 @@ export function registerInstallTool(server: McpServer): void {
         `/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/${encodeURIComponent(resolvedVersion)}/download`
       )
 
+      // Validate required fields before any file I/O
+      if (!data.gitUri || !data.gitRef || !data.gitCommitSha || !data.sha256) {
+        throw new AgentverError(
+          'VALIDATION_ERROR',
+          `Registry response for ${packageName}@${data.version} is missing required fields (git provenance or sha256) for manifest v2.`
+        )
+      }
+
       const files = extractFilesFromManifest(data.fileManifest)
 
       if (files.length === 0) {
@@ -200,24 +209,31 @@ export function registerInstallTool(server: McpServer): void {
         installedTo.push(agentId)
       }
 
+      // Shared source for both manifest and lockfile v2 entries
+      const source: GitSource = {
+        type: 'git',
+        uri: data.gitUri,
+        path: data.gitPath ?? '',
+        ref: data.gitRef,
+        commit: data.gitCommitSha,
+      }
+
       // Update manifest
-      const root = isGlobal ? join(homedir(), '.agentver') : projectRoot
+      const root = isGlobal ? homedir() : projectRoot
       const manifest = readManifest(root)
       manifest.packages[packageName] = {
-        name: packageName,
-        version: data.version,
+        source,
         agents: installedTo,
         installedAt: new Date().toISOString(),
+        modified: false,
       }
       writeManifest(root, manifest)
 
       // Update lockfile
-      const downloadUrl = `${getRegistryUrl()}/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/${encodeURIComponent(data.version)}/download`
       const lockfile = readLockfile(root)
       lockfile.packages[packageName] = {
-        version: data.version,
-        resolved: downloadUrl,
-        integrity: `sha256-${data.sha256 ?? 'unverified'}`,
+        source,
+        integrity: `sha256-${data.sha256}`,
         agents: installedTo,
       }
       writeLockfile(root, lockfile)

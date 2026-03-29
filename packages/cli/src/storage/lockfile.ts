@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
-import { lockfileAnySchema } from '@agentver/shared'
+import { lockfileAnySchema, migrateLockfileV1ToV2 } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
@@ -21,32 +21,6 @@ function getLockfileRoot(projectRoot: string, scope: Scope): string {
 
 function getLockfilePath(projectRoot: string, scope: Scope = 'project'): string {
   return join(getLockfileRoot(projectRoot, scope), LOCKFILE_FILE)
-}
-
-function migrateV1ToV2(v1: {
-  version: 1
-  packages: Record<
-    string,
-    { version: string; resolved: string; integrity: string; agents: string[] }
-  >
-}): LockfileV2 {
-  const packages: LockfileV2['packages'] = {}
-
-  for (const [name, pkg] of Object.entries(v1.packages)) {
-    packages[name] = {
-      source: {
-        type: 'git',
-        uri: 'unknown',
-        path: '',
-        ref: 'unknown',
-        commit: 'unknown',
-      },
-      integrity: pkg.integrity,
-      agents: pkg.agents,
-    }
-  }
-
-  return { version: 2, packages }
 }
 
 export function readLockfile(projectRoot: string, scope: Scope = 'project'): LockfileV2 {
@@ -75,7 +49,7 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
   }
 
   if (result.data.version === 1) {
-    const migrated = migrateV1ToV2(result.data)
+    const migrated = migrateLockfileV1ToV2(result.data)
     writeLockfile(projectRoot, migrated, scope)
     return migrated
   }

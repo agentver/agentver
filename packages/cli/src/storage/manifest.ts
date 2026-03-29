@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ManifestV2 } from '@agentver/shared'
-import { manifestAnySchema } from '@agentver/shared'
+import { manifestAnySchema, migrateManifestV1ToV2 } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { serialiseDeterministic } from './serialise'
@@ -21,30 +21,6 @@ function getManifestRoot(projectRoot: string, scope: Scope): string {
 
 function getManifestPath(projectRoot: string, scope: Scope = 'project'): string {
   return join(getManifestRoot(projectRoot, scope), MANIFEST_FILE)
-}
-
-function migrateV1ToV2(v1: {
-  version: 1
-  packages: Record<string, { name: string; version: string; agents: string[]; installedAt: string }>
-}): ManifestV2 {
-  const packages: ManifestV2['packages'] = {}
-
-  for (const [name, pkg] of Object.entries(v1.packages)) {
-    packages[name] = {
-      source: {
-        type: 'git',
-        uri: 'unknown',
-        path: '',
-        ref: 'unknown',
-        commit: 'unknown',
-      },
-      agents: pkg.agents,
-      installedAt: pkg.installedAt,
-      modified: false,
-    }
-  }
-
-  return { version: 2, packages }
 }
 
 export function readManifest(projectRoot: string, scope: Scope = 'project'): ManifestV2 {
@@ -73,7 +49,7 @@ export function readManifest(projectRoot: string, scope: Scope = 'project'): Man
   }
 
   if (result.data.version === 1) {
-    const migrated = migrateV1ToV2(result.data)
+    const migrated = migrateManifestV1ToV2(result.data)
     writeManifest(projectRoot, migrated, scope)
     return migrated
   }

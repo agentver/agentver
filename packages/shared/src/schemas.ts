@@ -158,6 +158,49 @@ export const lockfileAnySchema = z.discriminatedUnion('version', [lockfileSchema
 
 export type LockfileAny = z.infer<typeof lockfileAnySchema>
 
+// --- v1 → v2 migration helpers ---
+
+export function migrateManifestV1ToV2(v1: Manifest): ManifestV2 {
+  const packages: ManifestV2['packages'] = {}
+
+  for (const [name, pkg] of Object.entries(v1.packages)) {
+    packages[name] = {
+      source: {
+        type: 'git',
+        uri: 'unknown',
+        path: '',
+        ref: pkg.version,
+        commit: 'unknown',
+      },
+      agents: pkg.agents,
+      installedAt: pkg.installedAt,
+      modified: false,
+    }
+  }
+
+  return { version: 2, packages }
+}
+
+export function migrateLockfileV1ToV2(v1: Lockfile): LockfileV2 {
+  const packages: LockfileV2['packages'] = {}
+
+  for (const [name, pkg] of Object.entries(v1.packages)) {
+    packages[name] = {
+      source: {
+        type: 'git',
+        uri: 'unknown',
+        path: '',
+        ref: pkg.version,
+        commit: 'unknown',
+      },
+      integrity: pkg.integrity,
+      agents: pkg.agents,
+    }
+  }
+
+  return { version: 2, packages }
+}
+
 // --- Package structure ---
 
 export const packageStructureSchema = z.object({
