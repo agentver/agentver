@@ -215,9 +215,157 @@ describe('diff command', () => {
       await expect(runDiff('nonexistent')).rejects.toThrow()
 
       expect(vi.mocked(outputModule.outputError)).toHaveBeenCalledWith(
-        'NOT_INSTALLED',
+        'NOT_FOUND',
         expect.stringContaining('nonexistent')
       )
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // --global flag
+  // ---------------------------------------------------------------------------
+
+  describe('--global flag', () => {
+    it('passes global scope to readManifest and readLockfile', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      setupInstalledPackage('test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+
+      const content = 'identical\n'
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
+        files: [{ path: 'SKILL.md', content, size: content.length }],
+        commitSha: COMMIT_SHA,
+        source: createGitSource(),
+      })
+
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content, size: content.length },
+      ])
+
+      await runDiff('test-skill', '--global')
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'global')
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith(expect.any(String), 'global')
+      expect(canonicalModule.resolveReadPath).toHaveBeenCalledWith(
+        expect.any(String),
+        'test-skill',
+        ['claude-code'],
+        'global'
+      )
+    })
+
+    it('defaults to project scope without --global', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      setupInstalledPackage('test-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/test-skill'
+      )
+
+      const content = 'identical\n'
+      vi.mocked(gitModule.fetchFiles).mockResolvedValue({
+        files: [{ path: 'SKILL.md', content, size: content.length }],
+        commitSha: COMMIT_SHA,
+        source: createGitSource(),
+      })
+
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content, size: content.length },
+      ])
+
+      await runDiff('test-skill')
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith(expect.any(String), 'project')
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith(expect.any(String), 'project')
+      expect(canonicalModule.resolveReadPath).toHaveBeenCalledWith(
+        expect.any(String),
+        'test-skill',
+        ['claude-code'],
+        'project'
+      )
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // Cross-scope hint
+  // ---------------------------------------------------------------------------
+
+  describe('cross-scope hint', () => {
+    it('hints about global scope when package exists globally but not in project', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: {
+              'global-skill': createManifestPackage(),
+            },
+          })
+        )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+
+      await expect(runDiff('global-skill')).rejects.toThrow()
+
+      const output = consoleErrorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('--global')
+    })
+
+    it('hints about project scope when using --global and package exists in project', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: {
+              'project-skill': createManifestPackage(),
+            },
+          })
+        )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+
+      await expect(runDiff('project-skill', '--global')).rejects.toThrow()
+
+      const output = consoleErrorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('without --global')
+    })
+
+    it('includes hint in JSON error when package exists in other scope', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      vi.mocked(manifestModule.readManifest)
+        .mockReturnValueOnce(createManifest())
+        .mockReturnValueOnce(
+          createManifest({
+            packages: {
+              'global-skill': createManifestPackage(),
+            },
+          })
+        )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+
+      await expect(runDiff('global-skill')).rejects.toThrow()
+
+      expect(vi.mocked(outputModule.outputError)).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('--global')
+      )
+    })
+
+    it('does not hint when package is not in either scope', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+
+      await expect(runDiff('nonexistent')).rejects.toThrow()
+
+      const output = consoleErrorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).not.toContain('--global')
+      expect(output).not.toContain('Found in')
     })
   })
 
