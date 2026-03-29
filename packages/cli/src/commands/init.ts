@@ -338,7 +338,11 @@ export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description('Scaffold a new package')
-    .option('--type <type>', 'Package type: skill, agent, plugin, script, prompt, sub-agent, command, bundle', 'skill')
+    .option(
+      '--type <type>',
+      'Package type: skill, agent, plugin, script, prompt, sub-agent, command, bundle',
+      'skill'
+    )
     .option('--repo', 'Scaffold in a Git-repo-friendly structure')
     .option('--name <name>', 'Package name (required in JSON mode)')
     .option('--description <desc>', 'Package description')
