@@ -104,7 +104,6 @@ function removePackageFiles(
   delete lockfile.packages[manifestKey]
 }
 
-
 /**
  * Collect removal paths for single-file AGENT/COMMAND packages.
  */
