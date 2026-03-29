@@ -106,18 +106,6 @@ vi.mock('prompts', () => ({
   default: vi.fn().mockResolvedValue({ confirmed: true }),
 }))
 
-vi.mock('ora', () => ({
-  default: vi.fn().mockReturnValue({
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    warn: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    text: '',
-  }),
-}))
-
 // ---------------------------------------------------------------------------
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
@@ -269,7 +257,9 @@ describe('commands/update', () => {
       throw new ExitError(code)
     }) as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(
+      createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
+    )
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
     vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)

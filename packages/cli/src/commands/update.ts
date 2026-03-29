@@ -3,11 +3,11 @@ import { getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { UpdateResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import ora from 'ora'
 import prompts from 'prompts'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import { fetchFiles, resolveRef } from '../git/index.js'
 import type { GitSource as CliGitSource, ResolvedRef } from '../git/types.js'
+import type { SpinnerLike } from '../output.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCanonicalSkillPath, resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity'
@@ -101,7 +101,7 @@ async function handlePatchUpdate(
   update: UpdateInfo,
   projectRoot: string,
   agents: string[],
-  spinner: ReturnType<typeof ora>,
+  spinner: SpinnerLike,
   scope: Scope = 'project',
   installedPath?: string
 ): Promise<{ commitSha: string } | null> {
@@ -388,7 +388,9 @@ export function registerUpdateCommand(program: Command): void {
             }
 
             if (action === 'patch') {
-              const updateSpinner = ora(`Processing patch update for ${update.name}...`).start()
+              const updateSpinner = createSpinner(
+                `Processing patch update for ${update.name}...`
+              ).start()
 
               try {
                 const patchResult = await handlePatchUpdate(
