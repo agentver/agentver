@@ -7,6 +7,7 @@ import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile, writeLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { parseAgentverUri } from './install.js'
 
 type SaveOptions = {
   path?: string
@@ -65,10 +66,18 @@ function findNamespace(
     return null
   }
 
-  // Source URI format: host/org/repo or just org from platform
-  const parts = entry.source.uri.split('/')
-  // The org is typically the second segment (host/org/repo)
-  const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+  const agentverParsed = parseAgentverUri(entry.source.uri)
+  let org: string | undefined
+
+  if (agentverParsed) {
+    // agentver://orgSlug — org is the first segment
+    org = agentverParsed.org
+  } else {
+    // External git URI (e.g. github.com/org/repo or https://github.com/org/repo)
+    const parts = entry.source.uri.split('/').filter(Boolean)
+    org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+  }
+
   if (!org) return null
 
   return { org, name: skillName }
