@@ -116,6 +116,88 @@ describe('storage/manifest', () => {
       const result = manifestModule.readManifest('/project')
       expect(result).toEqual({ version: 2, packages: {} })
     })
+
+    it('recovers valid entries when one entry has invalid commit (empty string)', () => {
+      const manifest = {
+        version: 2,
+        packages: {
+          'valid-skill': {
+            source: {
+              type: 'git',
+              uri: 'github.com/org/repo',
+              path: 'skills/valid',
+              ref: 'main',
+              commit: 'abc1234567890abcdef1234567890abcdef123456',
+            },
+            agents: ['claude-code'],
+            installedAt: '2025-01-01T00:00:00.000Z',
+            modified: false,
+          },
+          'broken-skill': {
+            source: {
+              type: 'git',
+              uri: 'agentver://org',
+              path: '',
+              ref: 'main',
+              commit: '',
+            },
+            agents: ['claude-code'],
+            installedAt: '2025-01-01T00:00:00.000Z',
+            modified: false,
+          },
+        },
+      }
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(manifest))
+
+      const result = manifestModule.readManifest('/project')
+
+      expect(result.version).toBe(2)
+      expect(result.packages['valid-skill']).toBeDefined()
+      expect(result.packages['broken-skill']).toBeUndefined()
+    })
+
+    it('recovers all entries when all are valid but z.record() fails for other reasons', () => {
+      const manifest = {
+        version: 2,
+        packages: {
+          'skill-a': {
+            source: {
+              type: 'git',
+              uri: 'github.com/a/b',
+              path: '',
+              ref: 'main',
+              commit: 'abc1234567890abcdef1234567890abcdef123456',
+            },
+            agents: ['claude-code'],
+            installedAt: '2025-06-01T00:00:00.000Z',
+            modified: false,
+          },
+          'skill-b': {
+            source: {
+              type: 'well-known',
+              baseUrl: 'https://example.com',
+              hostname: 'example.com',
+              skillName: 'skill-b',
+            },
+            agents: ['cursor'],
+            installedAt: '2025-06-02T00:00:00.000Z',
+            modified: false,
+          },
+        },
+      }
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(manifest))
+
+      const result = manifestModule.readManifest('/project')
+
+      expect(result.version).toBe(2)
+      expect(Object.keys(result.packages)).toHaveLength(2)
+      expect(result.packages['skill-a']).toBeDefined()
+      expect(result.packages['skill-b']).toBeDefined()
+    })
   })
 
   describe('writeManifest', () => {

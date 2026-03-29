@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ManifestV2 } from '@agentver/shared'
-import { manifestAnySchema, migrateManifestV1ToV2 } from '@agentver/shared'
+import { manifestAnySchema, manifestV2PackageSchema, migrateManifestV1ToV2 } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
@@ -43,6 +43,28 @@ export function readManifest(projectRoot: string, scope: Scope = 'project'): Man
 
   const result = manifestAnySchema.safeParse(parsed)
   if (!result.success) {
+    // Full-schema parse failed — attempt per-entry recovery so one bad entry
+    // does not wipe the entire manifest (e.g. an empty commit from a platform install).
+    const raw2 = parsed as Record<string, unknown>
+    if (raw2?.version === 2 && typeof raw2?.packages === 'object' && raw2.packages !== null) {
+      const recovered: ManifestV2['packages'] = {}
+      let dropped = 0
+      for (const [name, entry] of Object.entries(raw2.packages as Record<string, unknown>)) {
+        const entryResult = manifestV2PackageSchema.safeParse(entry)
+        if (entryResult.success) {
+          recovered[name] = entryResult.data
+        } else {
+          dropped++
+          logger.warn(`Dropping invalid manifest entry "${name}" — ${entryResult.error.message}`)
+        }
+      }
+      if (Object.keys(recovered).length > 0) {
+        logger.warn(
+          `Recovered ${Object.keys(recovered).length} entry/entries from manifest (${dropped} dropped)`
+        )
+        return { version: 2, packages: recovered }
+      }
+    }
     logger.warn(
       `Invalid manifest at ${manifestPath} — schema validation failed. Using empty manifest.`
     )
