@@ -108,7 +108,12 @@ vi.mock('prompts', () => ({ default: vi.fn() }))
 // ---------------------------------------------------------------------------
 
 import { Command } from 'commander'
-import { installPackage, parseAgentverUri, registerInstallCommand } from '../../commands/install'
+import {
+  deriveCommitFromIntegrity,
+  installPackage,
+  parseAgentverUri,
+  registerInstallCommand,
+} from '../../commands/install'
 
 // ---------------------------------------------------------------------------
 // Mock module imports (typed references)
@@ -2644,6 +2649,140 @@ describe('commands/install', () => {
       // Without type override, SKILL.md should be detected as a SKILL
       const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
       expect(manifest.packages[DERIVED_NAME]!.packageType).toBeUndefined()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // deriveCommitFromIntegrity
+  // -------------------------------------------------------------------------
+
+  describe('deriveCommitFromIntegrity', () => {
+    it('returns a 40-char hex string', () => {
+      const result = deriveCommitFromIntegrity('sha256-abc123')
+      expect(result).toMatch(/^[0-9a-f]{40}$/)
+    })
+
+    it('is deterministic — same input yields same output', () => {
+      const a = deriveCommitFromIntegrity('sha256-testHash')
+      const b = deriveCommitFromIntegrity('sha256-testHash')
+      expect(a).toBe(b)
+    })
+
+    it('produces different hashes for different inputs', () => {
+      const a = deriveCommitFromIntegrity('sha256-hashA')
+      const b = deriveCommitFromIntegrity('sha256-hashB')
+      expect(a).not.toBe(b)
+    })
+
+    it('always satisfies the min(7) schema constraint', () => {
+      const result = deriveCommitFromIntegrity('')
+      expect(result.length).toBeGreaterThanOrEqual(7)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Platform install writes valid commit SHA
+  // -------------------------------------------------------------------------
+
+  describe('platform install commit SHA', () => {
+    const PLATFORM_URL = 'https://app.agentver.com'
+    let originalFetch: typeof globalThis.fetch
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch
+    })
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    it('writes a non-empty commit SHA to the manifest for platform-hosted packages', async () => {
+      vi.mocked(configModule.readConfig).mockReturnValue({ platformUrl: PLATFORM_URL })
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            gitUri: 'agentver://test-org',
+            gitPath: 'skills/my-skill',
+            gitRef: 'main',
+            source: 'platform',
+            files: [{ path: 'SKILL.md', content: '# My Skill\n\nContent here.' }],
+          }),
+      })
+
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        '/project/.agents/skills/my-skill'
+      )
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      const result = await installPackage('agentver://test-org/skills/my-skill@main', {
+        agent: 'claude-code',
+      })
+
+      expect(result).toBeDefined()
+      expect(result!.commitSha).not.toBe('')
+      expect(result!.commitSha.length).toBeGreaterThanOrEqual(7)
+
+      // Verify the manifest was written with a valid commit
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const entry = manifest.packages[result!.name]!
+      expect(entry.source.type).toBe('git')
+      if (entry.source.type === 'git') {
+        expect(entry.source.commit).not.toBe('')
+        expect(entry.source.commit.length).toBeGreaterThanOrEqual(7)
+        expect(entry.source.commit).toMatch(/^[0-9a-f]{40}$/)
+      }
+
+      // Verify the lockfile was also written with a valid commit
+      const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
+      const lockEntry = lockfile.packages[result!.name]!
+      if (lockEntry.source.type === 'git') {
+        expect(lockEntry.source.commit).not.toBe('')
+        expect(lockEntry.source.commit).toMatch(/^[0-9a-f]{40}$/)
+      }
+    })
+
+    it('derives commit SHA from integrity hash deterministically', async () => {
+      vi.mocked(configModule.readConfig).mockReturnValue({ platformUrl: PLATFORM_URL })
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            gitUri: 'agentver://org',
+            gitPath: 'skill-a',
+            gitRef: 'main',
+            source: 'platform',
+            files: [{ path: 'SKILL.md', content: '# Skill\n\nContent.' }],
+          }),
+      })
+
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        '/project/.agents/skills/skill-a'
+      )
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      const expected = deriveCommitFromIntegrity(INTEGRITY_HASH)
+      const result = await installPackage('agentver://org/skill-a@main', {
+        agent: 'claude-code',
+      })
+
+      expect(result!.commitSha).toBe(expected)
     })
   })
 })

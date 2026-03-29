@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -120,6 +121,18 @@ export function parseAgentverUri(source: string): AgentverUri | null {
     path: segments.slice(1).join('/'),
     ref,
   }
+}
+
+/**
+ * Derive a synthetic 40-char hex commit SHA from an integrity hash.
+ *
+ * Platform-hosted packages have no real git commit, but the manifest schema
+ * requires a valid commit string (min 7 chars). We produce a deterministic
+ * SHA-1 hex digest from the integrity value so downstream commands that
+ * display or compare commit hashes work correctly.
+ */
+export function deriveCommitFromIntegrity(integrity: string): string {
+  return createHash('sha1').update(integrity).digest('hex')
 }
 
 function buildAuditData(scanResult?: SecurityScanResult): InstallResultJSON['audit'] {
@@ -520,6 +533,7 @@ async function installFromPlatform(
     }
 
     const integrity = computeSha256FromFiles(files)
+    const syntheticCommit = deriveCommitFromIntegrity(integrity)
     const projectRoot = process.cwd()
     const requestedAgents = toAgentList(options.agent)
     const scope = options.global ? 'global' : 'project'
@@ -561,7 +575,7 @@ async function installFromPlatform(
         } else {
           spinner.warn('No agents detected. Use --agent to specify one.')
         }
-        return { name: shortName, ref, commitSha: '', agents: [] }
+        return { name: shortName, ref, commitSha: syntheticCommit, agents: [] }
       }
 
       detectedPlatformType = detectPackageType(files, options.type)
@@ -572,7 +586,7 @@ async function installFromPlatform(
           uri: sourceUri,
           path: resolved.gitPath ?? '',
           ref,
-          commit: '',
+          commit: syntheticCommit,
         }
         return installBundleFlow(shortName, files, agents, options, spinner, {
           sourceRecord: gitSourceRecord,
@@ -582,7 +596,7 @@ async function installFromPlatform(
           projectRoot,
           scope,
           ref,
-          commitSha: '',
+          commitSha: syntheticCommit,
         })
       } else if (detectedPlatformType === 'AGENT_CONFIG') {
         await installAgentConfig(shortName, files, agents, options, spinner)
@@ -614,7 +628,7 @@ async function installFromPlatform(
           audit: buildAuditData(securityScanResult),
         })
       }
-      return { name: shortName, ref, commitSha: '', agents }
+      return { name: shortName, ref, commitSha: syntheticCommit, agents }
     }
 
     const gitSourceRecord: GitSource = {
@@ -622,7 +636,7 @@ async function installFromPlatform(
       uri: sourceUri,
       path: resolved.gitPath ?? '',
       ref,
-      commit: '',
+      commit: syntheticCommit,
     }
 
     const manifest = readManifest(projectRoot, scope)
@@ -685,11 +699,11 @@ async function installFromPlatform(
       )
     } else {
       spinner.succeed(
-        `Installed ${chalk.green(shortName)} ${chalk.dim(`(${scopeLabel})`)} from ${chalk.dim(sourceUri)} ${chalk.cyan(`@${ref}`)} to ${target}`
+        `Installed ${chalk.green(shortName)} ${chalk.dim(`(${scopeLabel})`)} from ${chalk.dim(sourceUri)} ${chalk.cyan(`@${ref}`)} ${chalk.dim(`(${syntheticCommit.slice(0, 7)})`)} to ${target}`
       )
     }
 
-    return { name: shortName, ref, commitSha: '', agents }
+    return { name: shortName, ref, commitSha: syntheticCommit, agents }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')

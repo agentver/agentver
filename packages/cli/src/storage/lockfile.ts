@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { LockfileV2 } from '@agentver/shared'
-import { lockfileAnySchema, migrateLockfileV1ToV2 } from '@agentver/shared'
+import { lockfileAnySchema, lockfileV2PackageSchema, migrateLockfileV1ToV2 } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
@@ -43,6 +43,28 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
 
   const result = lockfileAnySchema.safeParse(parsed)
   if (!result.success) {
+    // Full-schema parse failed — attempt per-entry recovery so one bad entry
+    // does not wipe the entire lockfile.
+    const raw2 = parsed as Record<string, unknown>
+    if (raw2?.version === 2 && typeof raw2?.packages === 'object' && raw2.packages !== null) {
+      const recovered: LockfileV2['packages'] = {}
+      let dropped = 0
+      for (const [name, entry] of Object.entries(raw2.packages as Record<string, unknown>)) {
+        const entryResult = lockfileV2PackageSchema.safeParse(entry)
+        if (entryResult.success) {
+          recovered[name] = entryResult.data
+        } else {
+          dropped++
+          logger.warn(`Dropping invalid lockfile entry "${name}" — ${entryResult.error.message}`)
+        }
+      }
+      if (Object.keys(recovered).length > 0) {
+        logger.warn(
+          `Recovered ${Object.keys(recovered).length} entry/entries from lockfile (${dropped} dropped)`
+        )
+        return { version: 2, packages: recovered }
+      }
+    }
     logger.warn(
       `Invalid lockfile at ${lockfilePath} — schema validation failed. Using empty lockfile.`
     )
