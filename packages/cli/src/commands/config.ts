@@ -42,11 +42,11 @@ function validateValue(key: KnownKey, value: string): { valid: boolean; parsed?:
       return { valid: true, parsed: value === 'true' }
     }
     case 'platformUrl': {
-      if (!value.startsWith('https://')) {
+      if (!value.startsWith('https://') && !value.startsWith('http://')) {
         if (isJSONMode()) {
-          outputError('INVALID_VALUE', 'platformUrl must start with https://')
+          outputError('INVALID_VALUE', 'platformUrl must start with http:// or https://')
         } else {
-          console.error(chalk.red('platformUrl must start with https://'))
+          console.error(chalk.red('platformUrl must start with http:// or https://'))
         }
         return { valid: false }
       }

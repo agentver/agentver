@@ -268,7 +268,26 @@ describe('config command', () => {
     // 7. config set platformUrl with invalid URL — validation error
     // -----------------------------------------------------------------------
 
-    it('rejects platformUrl that does not start with https://', async () => {
+    it('sets platformUrl with a valid HTTP URL (self-hosting)', async () => {
+      vi.mocked(readConfig).mockReturnValue({})
+
+      const program = buildProgram()
+      await program.parseAsync([
+        'node',
+        'agentver',
+        'config',
+        'set',
+        'platformUrl',
+        'http://localhost:3001',
+      ])
+
+      expect(writeConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ platformUrl: 'http://localhost:3001' })
+      )
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Set platformUrl'))
+    })
+
+    it('rejects platformUrl that does not start with http:// or https://', async () => {
       const program = buildProgram()
 
       await expect(
@@ -278,13 +297,13 @@ describe('config command', () => {
           'config',
           'set',
           'platformUrl',
-          'http://insecure.example.com',
+          'ftp://bad-protocol.example.com',
         ])
       ).rejects.toThrow('process.exit called')
 
       expect(processExitSpy).toHaveBeenCalledWith(1)
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('platformUrl must start with https://')
+        expect.stringContaining('platformUrl must start with http:// or https://')
       )
       expect(writeConfig).not.toHaveBeenCalled()
     })
