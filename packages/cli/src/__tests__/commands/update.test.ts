@@ -257,7 +257,7 @@ describe('commands/update', () => {
       throw new ExitError(code)
     }) as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>)
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
     vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)

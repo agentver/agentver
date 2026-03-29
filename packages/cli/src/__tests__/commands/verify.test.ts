@@ -152,7 +152,7 @@ describe('commands/verify', () => {
     process.exit = vi.fn() as never
     process.exitCode = undefined
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>)
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
   })
 
@@ -419,7 +419,7 @@ describe('commands/verify', () => {
       setupVerifyMocks()
       vi.mocked(registryClient.registryFetch).mockRejectedValue(new Error('Network error'))
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -517,9 +517,9 @@ describe('commands/verify', () => {
       const integritySpinner = createNoopSpinner()
       const securitySpinner = createNoopSpinner()
       vi.mocked(outputModule.createSpinner)
-        .mockReturnValueOnce(publisherSpinner as never)
-        .mockReturnValueOnce(integritySpinner as never)
-        .mockReturnValueOnce(securitySpinner as never)
+        .mockReturnValueOnce(publisherSpinner as unknown as ReturnType<typeof outputModule.createSpinner>)
+        .mockReturnValueOnce(integritySpinner as unknown as ReturnType<typeof outputModule.createSpinner>)
+        .mockReturnValueOnce(securitySpinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -566,9 +566,9 @@ describe('commands/verify', () => {
       const integritySpinner = createNoopSpinner()
       const securitySpinner = createNoopSpinner()
       vi.mocked(outputModule.createSpinner)
-        .mockReturnValueOnce(publisherSpinner as never)
-        .mockReturnValueOnce(integritySpinner as never)
-        .mockReturnValueOnce(securitySpinner as never)
+        .mockReturnValueOnce(publisherSpinner as unknown as ReturnType<typeof outputModule.createSpinner>)
+        .mockReturnValueOnce(integritySpinner as unknown as ReturnType<typeof outputModule.createSpinner>)
+        .mockReturnValueOnce(securitySpinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -651,7 +651,7 @@ describe('commands/verify', () => {
     it('shows spinner succeed for verified publisher', async () => {
       setupVerifyMocks()
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -661,7 +661,7 @@ describe('commands/verify', () => {
     it('shows spinner fail for unverified publisher', async () => {
       setupVerifyMocks({ publisherVerified: false })
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -671,7 +671,7 @@ describe('commands/verify', () => {
     it('shows spinner succeed for integrity check passed', async () => {
       setupVerifyMocks()
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -683,7 +683,7 @@ describe('commands/verify', () => {
     it('shows spinner fail for integrity check failed', async () => {
       setupVerifyMocks({ integrityMatch: false })
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -693,7 +693,7 @@ describe('commands/verify', () => {
     it('shows spinner succeed for security audit passed', async () => {
       setupVerifyMocks()
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 
@@ -703,7 +703,7 @@ describe('commands/verify', () => {
     it('shows spinner fail for security audit failed', async () => {
       setupVerifyMocks({ scanVerdict: 'BLOCK' })
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(spinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await runVerify(['verify', '@test-org/my-skill'])
 

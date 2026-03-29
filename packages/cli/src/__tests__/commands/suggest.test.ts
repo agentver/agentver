@@ -150,7 +150,7 @@ describe('commands/suggest', () => {
     process.argv = ['node', 'agentver', 'suggest']
     process.exit = vi.fn() as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>)
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
     platformMock = setupPlatformMock()
@@ -611,7 +611,7 @@ describe('commands/suggestions', () => {
     process.argv = ['node', 'agentver', 'suggestions']
     process.exit = vi.fn() as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>)
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
     platformMock = setupPlatformMock()

@@ -183,7 +183,7 @@ describe('commands/remove', () => {
       throw new ExitError(code)
     }) as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
+    vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>)
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
 
     removeAction = getRemoveAction()
@@ -633,7 +633,7 @@ describe('commands/remove', () => {
         info: vi.fn(),
         text: '',
       }
-      vi.mocked(outputModule.createSpinner).mockReturnValue(mockSpinner as never)
+      vi.mocked(outputModule.createSpinner).mockReturnValue(mockSpinner as unknown as ReturnType<typeof outputModule.createSpinner>)
 
       await removeAction('my-skill', { global: true })
 
