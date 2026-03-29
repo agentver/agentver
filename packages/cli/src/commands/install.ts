@@ -29,6 +29,11 @@ import type { Command } from 'commander'
 import type ora from 'ora'
 import prompts from 'prompts'
 import { installBundleFromFiles } from '../bundle/index.js'
+import {
+  enforceConflicts,
+  enforceDependencies,
+  extractDependencyMetadata,
+} from '../dependency-check.js'
 import { fetchFiles, parseGitSource, resolveRef } from '../git/index.js'
 import type { FetchedFile, ResolvedRef } from '../git/types.js'
 import {
@@ -252,6 +257,12 @@ async function installFromWellKnown(
     let installedWkEntryFile: string | undefined
     const scope = options.global ? 'global' : 'project'
 
+    // Enforce dependsOn / conflictsWith before installing
+    const depMeta = extractDependencyMetadata(fetchResult.files)
+    const currentManifest = readManifest(projectRoot, scope)
+    enforceDependencies(depMeta.dependsOn, currentManifest, selectedEntry.name)
+    enforceConflicts(depMeta.conflictsWith, currentManifest, selectedEntry.name)
+
     if (options.path) {
       await installToCustomPath(selectedEntry.name, fetchResult.files, options, spinner)
       agents = requestedAgents
@@ -362,6 +373,8 @@ async function installFromWellKnown(
       ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND'
         ? { packageType: detectedWkType, entryFile: installedWkEntryFile }
         : {}),
+      ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
+      ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -542,6 +555,12 @@ async function installFromPlatform(
     let detectedPlatformType: string | undefined
     let installedPlatformEntryFile: string | undefined
 
+    // Enforce dependsOn / conflictsWith before installing
+    const depMeta = extractDependencyMetadata(files)
+    const currentManifestForChecks = readManifest(projectRoot, scope)
+    enforceDependencies(depMeta.dependsOn, currentManifestForChecks, shortName)
+    enforceConflicts(depMeta.conflictsWith, currentManifestForChecks, shortName)
+
     if (options.path) {
       await installToCustomPath(shortName, files, options, spinner)
       agents = requestedAgents
@@ -649,6 +668,8 @@ async function installFromPlatform(
       ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND'
         ? { packageType: detectedPlatformType, entryFile: installedPlatformEntryFile }
         : {}),
+      ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
+      ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 
@@ -845,6 +866,12 @@ export async function installPackage(
     let detectedType: string | undefined
     let installedEntryFile: string | undefined
 
+    // Enforce dependsOn / conflictsWith before installing
+    const depMeta = extractDependencyMetadata(result.files)
+    const currentManifestForChecks = readManifest(projectRoot, scope)
+    enforceDependencies(depMeta.dependsOn, currentManifestForChecks, shortName)
+    enforceConflicts(depMeta.conflictsWith, currentManifestForChecks, shortName)
+
     if (options.path) {
       await installToCustomPath(shortName, result.files, options, spinner)
       agents = requestedAgents
@@ -952,6 +979,8 @@ export async function installPackage(
       ...(detectedType === 'AGENT' || detectedType === 'COMMAND'
         ? { packageType: detectedType, entryFile: installedEntryFile }
         : {}),
+      ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
+      ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
     writeManifest(projectRoot, manifest, scope)
 

@@ -9,6 +9,7 @@ import type { RemoveResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
+import { findReverseDependencies } from '../dependency-check.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { reportRemoval } from '../registry/reporter.js'
 import {
@@ -288,6 +289,9 @@ export function registerRemoveCommand(program: Command): void {
           return
         }
 
+        // Check for reverse dependencies — other packages that depend on this one
+        const reverseDeps = findReverseDependencies(manifestKey, manifest)
+
         // Show bundle context warnings before confirmation
         if (!jsonMode) {
           if (isBundle && constituents.length > 0) {
@@ -306,6 +310,16 @@ export function registerRemoveCommand(program: Command): void {
                 `\n"${name}" was installed as part of bundle "${pkg.bundle}". Removing it individually.`
               )
             )
+          }
+
+          if (reverseDeps.length > 0) {
+            console.log(
+              chalk.yellow(`\nWarning: the following installed packages depend on "${name}":`)
+            )
+            for (const dep of reverseDeps) {
+              console.log(`  ${chalk.dim('•')} ${dep.name}`)
+            }
+            console.log(chalk.dim('  Removing it may break these packages.\n'))
           }
         }
 
@@ -366,13 +380,23 @@ export function registerRemoveCommand(program: Command): void {
 
         const allRemovedPaths = [...removedPaths, ...Object.values(constituentPaths).flat()]
 
+        const reverseDepWarnings =
+          reverseDeps.length > 0
+            ? [
+                `Warning: ${reverseDeps.map((d) => d.name).join(', ')} depend(s) on "${name}" — they may be broken now.`,
+              ]
+            : []
+
         if (jsonMode) {
-          outputSuccess<RemoveResult>({
-            name,
-            removed: true,
-            paths: allRemovedPaths,
-            bundleConstituents: constituents.length > 0 ? constituents : undefined,
-          })
+          outputSuccess<RemoveResult>(
+            {
+              name,
+              removed: true,
+              paths: allRemovedPaths,
+              bundleConstituents: constituents.length > 0 ? constituents : undefined,
+            },
+            reverseDepWarnings.length > 0 ? reverseDepWarnings : undefined
+          )
         } else {
           const scopeLabel = scope === 'global' ? 'user' : 'project'
           let msg = `Removed ${chalk.green(name)} ${chalk.dim(`(${scopeLabel})`)}`

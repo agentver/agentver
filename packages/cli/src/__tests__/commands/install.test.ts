@@ -2785,4 +2785,275 @@ describe('commands/install', () => {
       expect(result!.commitSha).toBe(expected)
     })
   })
+
+  // -------------------------------------------------------------------------
+  // dependsOn / conflictsWith enforcement
+  // -------------------------------------------------------------------------
+
+  describe('dependsOn enforcement', () => {
+    it('throws DEPENDENCY_MISSING when a dependency is not installed', async () => {
+      const gitSource = createGitSource()
+      const skillContent = createSkillMd({
+        name: 'test-skill',
+        description: 'A test skill with deps',
+        dependsOn: ['base-skill'],
+      })
+      const files: FetchedFile[] = [
+        { path: 'SKILL.md', content: skillContent, size: skillContent.length },
+      ]
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const fetchResult: FetchResult = { files, commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(fetchResult)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
+
+      try {
+        await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+      } catch (error) {
+        expect((error as AgentverError).code).toBe('DEPENDENCY_MISSING')
+        expect((error as AgentverError).message).toContain('base-skill')
+      }
+    })
+
+    it('succeeds when all dependencies are already installed', async () => {
+      const gitSource = createGitSource()
+      const skillContent = createSkillMd({
+        name: 'test-skill',
+        description: 'A test skill with deps',
+        dependsOn: ['base-skill'],
+      })
+      const files: FetchedFile[] = [
+        { path: 'SKILL.md', content: skillContent, size: skillContent.length },
+      ]
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const fetchResult: FetchResult = { files, commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(fetchResult)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'base-skill': {
+              source: {
+                type: 'git',
+                uri: 'github.com/test/base',
+                path: '',
+                ref: 'main',
+                commit: 'abc1234567',
+              },
+              agents: ['claude-code'],
+              installedAt: '2025-01-15T10:30:00.000Z',
+              modified: false,
+            },
+          },
+        })
+      )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        `/project/.agents/skills/${DERIVED_NAME}`
+      )
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+      vi.mocked(agentDefs.getConfigFilePath).mockReturnValue('CLAUDE.md')
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+    })
+
+    it('stores dependsOn in the manifest entry', async () => {
+      const gitSource = createGitSource()
+      const skillContent = createSkillMd({
+        name: 'test-skill',
+        description: 'A test skill with deps',
+        dependsOn: ['base-skill'],
+      })
+      const files: FetchedFile[] = [
+        { path: 'SKILL.md', content: skillContent, size: skillContent.length },
+      ]
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const fetchResult: FetchResult = { files, commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(fetchResult)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'base-skill': {
+              source: {
+                type: 'git',
+                uri: 'github.com/test/base',
+                path: '',
+                ref: 'main',
+                commit: 'abc1234567',
+              },
+              agents: ['claude-code'],
+              installedAt: '2025-01-15T10:30:00.000Z',
+              modified: false,
+            },
+          },
+        })
+      )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        `/project/.agents/skills/${DERIVED_NAME}`
+      )
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+      vi.mocked(agentDefs.getConfigFilePath).mockReturnValue('CLAUDE.md')
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(manifest.packages[DERIVED_NAME]!.dependsOn).toEqual(['base-skill'])
+    })
+  })
+
+  describe('conflictsWith enforcement', () => {
+    it('throws CONFLICT_DETECTED when a conflicting package is installed', async () => {
+      const gitSource = createGitSource()
+      const skillContent = createSkillMd({
+        name: 'test-skill',
+        description: 'A test skill with conflicts',
+        conflictsWith: ['rival-skill'],
+      })
+      const files: FetchedFile[] = [
+        { path: 'SKILL.md', content: skillContent, size: skillContent.length },
+      ]
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const fetchResult: FetchResult = { files, commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(fetchResult)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'rival-skill': {
+              source: {
+                type: 'git',
+                uri: 'github.com/test/rival',
+                path: '',
+                ref: 'main',
+                commit: 'abc1234567',
+              },
+              agents: ['claude-code'],
+              installedAt: '2025-01-15T10:30:00.000Z',
+              modified: false,
+            },
+          },
+        })
+      )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toThrow(
+        AgentverError
+      )
+
+      try {
+        await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+      } catch (error) {
+        expect((error as AgentverError).code).toBe('CONFLICT_DETECTED')
+        expect((error as AgentverError).message).toContain('rival-skill')
+      }
+    })
+
+    it('succeeds when no conflicting packages are installed', async () => {
+      const gitSource = createGitSource()
+      const skillContent = createSkillMd({
+        name: 'test-skill',
+        description: 'A test skill with conflicts',
+        conflictsWith: ['rival-skill'],
+      })
+      const files: FetchedFile[] = [
+        { path: 'SKILL.md', content: skillContent, size: skillContent.length },
+      ]
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const fetchResult: FetchResult = { files, commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(fetchResult)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        `/project/.agents/skills/${DERIVED_NAME}`
+      )
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+      vi.mocked(agentDefs.getConfigFilePath).mockReturnValue('CLAUDE.md')
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+    })
+
+    it('stores conflictsWith in the manifest entry', async () => {
+      const gitSource = createGitSource()
+      const skillContent = createSkillMd({
+        name: 'test-skill',
+        description: 'A test skill with conflicts',
+        conflictsWith: ['rival-skill'],
+      })
+      const files: FetchedFile[] = [
+        { path: 'SKILL.md', content: skillContent, size: skillContent.length },
+      ]
+      const resolved: ResolvedRef = { source: gitSource, commitSha: RESOLVED_SHA }
+      const fetchResult: FetchResult = { files, commitSha: RESOLVED_SHA, source: gitSource }
+
+      vi.mocked(gitIndex.parseGitSource).mockReturnValue(gitSource)
+      vi.mocked(gitIndex.resolveRef).mockResolvedValue(resolved)
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue(fetchResult)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(INTEGRITY_HASH)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        `/project/.agents/skills/${DERIVED_NAME}`
+      )
+      vi.mocked(configModule.readConfig).mockReturnValue({})
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
+        { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
+      ])
+      vi.mocked(agentDefs.getConfigFilePath).mockReturnValue('CLAUDE.md')
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(manifest.packages[DERIVED_NAME]!.conflictsWith).toEqual(['rival-skill'])
+    })
+  })
 })

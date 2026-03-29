@@ -945,4 +945,111 @@ describe('commands/remove', () => {
       expect(reporterModule.reportRemoval).toHaveBeenCalledWith('my-bundle')
     })
   })
+
+  // -------------------------------------------------------------------------
+  // Reverse dependency warnings
+  // -------------------------------------------------------------------------
+
+  describe('reverse dependency warnings', () => {
+    it('warns when removing a package that other packages depend on', async () => {
+      const source = createSharedGitSource()
+
+      const manifest = createManifest({
+        packages: {
+          'base-skill': createManifestPackage({ source, agents: ['claude-code'] }),
+          'dependent-skill': createManifestPackage({
+            source,
+            agents: ['claude-code'],
+            dependsOn: ['base-skill'],
+          }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          'base-skill': createLockfilePackage({ source, agents: ['claude-code'] }),
+          'dependent-skill': createLockfilePackage({ source, agents: ['claude-code'] }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(true)
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        '/project/.agents/skills/base-skill'
+      )
+      vi.mocked(agentDefs.getSkillPlacementPath).mockImplementation(
+        (_id: string, skillName: string) => `.claude-code/skills/${skillName}`
+      )
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const consoleErrSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await removeAction('base-skill', { yes: true })
+
+      // The package should still be removed (it's a warning, not a block)
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, updatedManifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(updatedManifest.packages).not.toHaveProperty('base-skill')
+
+      consoleSpy.mockRestore()
+      consoleErrSpy.mockRestore()
+    })
+
+    it('includes reverse dependency warning in JSON mode output', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const source = createSharedGitSource()
+
+      const manifest = createManifest({
+        packages: {
+          'base-skill': createManifestPackage({ source, agents: ['claude-code'] }),
+          'dependent-skill': createManifestPackage({
+            source,
+            agents: ['claude-code'],
+            dependsOn: ['base-skill'],
+          }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          'base-skill': createLockfilePackage({ source, agents: ['claude-code'] }),
+          'dependent-skill': createLockfilePackage({ source, agents: ['claude-code'] }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(true)
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        '/project/.agents/skills/base-skill'
+      )
+      vi.mocked(agentDefs.getSkillPlacementPath).mockImplementation(
+        (_id: string, skillName: string) => `.claude-code/skills/${skillName}`
+      )
+
+      await removeAction('base-skill', { yes: true })
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'base-skill', removed: true }),
+        expect.arrayContaining([expect.stringContaining('dependent-skill')])
+      )
+    })
+
+    it('does not warn when no packages depend on the removed one', async () => {
+      setupInstalledPackage('my-skill')
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      await removeAction('my-skill', { yes: true })
+
+      const warningCalls = consoleSpy.mock.calls.filter(
+        (call) => typeof call[0] === 'string' && call[0].includes('depend')
+      )
+      expect(warningCalls).toHaveLength(0)
+
+      consoleSpy.mockRestore()
+    })
+  })
 })
