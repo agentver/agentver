@@ -149,7 +149,10 @@ export function readLockfileFile(lockfilePath: string): LockfileV2 | null {
   }
 
   if (result.data.version === 1) {
-    return migrateLockfileV1ToV2(result.data)
+    core.info('Migrating v1 lockfile to v2 format')
+    const migrated = migrateLockfileV1ToV2(result.data)
+    writeFileSync(lockfilePath, JSON.stringify(migrated, null, 2), 'utf-8')
+    return migrated
   }
 
   return result.data
@@ -482,8 +485,8 @@ function resolveVersionFromSource(pkg: ManifestV2['packages'][string]): string {
   if (pkg.source.type === 'git') {
     const ref = pkg.source.ref
     if (ref === 'unknown') return 'latest'
-    // Strip git ref prefixes to extract semver (refs/tags/v1.0.0 -> 1.0.0)
-    const stripped = ref.replace(/^refs\/tags\/v?/, '')
+    // Strip git ref prefixes to extract semver (refs/tags/v1.0.0 -> 1.0.0, v1.0.0 -> 1.0.0)
+    const stripped = ref.replace(/^(refs\/tags\/)?v?/, '')
     return /^\d+\.\d+\.\d+/.test(stripped) ? stripped : 'latest'
   }
   return 'latest'

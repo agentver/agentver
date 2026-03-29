@@ -166,10 +166,10 @@ export function migrateManifestV1ToV2(v1: Manifest): ManifestV2 {
     packages[name] = {
       source: {
         type: 'git',
-        uri: 'migrated',
+        uri: 'unknown',
         path: '',
         ref: pkg.version,
-        commit: 'migrated',
+        commit: 'unknown',
       },
       agents: pkg.agents,
       installedAt: pkg.installedAt,
@@ -187,10 +187,10 @@ export function migrateLockfileV1ToV2(v1: Lockfile): LockfileV2 {
     packages[name] = {
       source: {
         type: 'git',
-        uri: 'migrated',
+        uri: 'unknown',
         path: '',
         ref: pkg.version,
-        commit: 'migrated',
+        commit: 'unknown',
       },
       integrity: pkg.integrity,
       agents: pkg.agents,
