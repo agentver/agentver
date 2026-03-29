@@ -983,8 +983,19 @@ async function installAgentConfig(
     if (!fullConfigPath) continue
 
     // Guard against path traversal (e.g. malicious package name containing ../)
+    // Derive trusted base from a probe with a fixed dummy name, so the base
+    // is never influenced by the untrusted package name.
+    const probePath = options.global
+      ? getGlobalConfigFilePath(
+          agentId as Parameters<typeof getGlobalConfigFilePath>[0],
+          '__probe__'
+        )
+      : getConfigFilePath(agentId as Parameters<typeof getConfigFilePath>[0], '__probe__')
+    if (!probePath) continue
     const resolvedBase = resolve(
-      options.global ? dirname(configPath.replace(/^~/, homedir())) : join(projectRoot, dirname(configPath))
+      options.global
+        ? dirname(probePath.replace(/^~/, homedir()))
+        : join(projectRoot, dirname(probePath))
     )
     const resolvedTarget = resolve(fullConfigPath)
     const relativeToBase = relative(resolvedBase, resolvedTarget)
