@@ -73,7 +73,7 @@ jobs:
             --wait
 
       - name: Deploy to Cloud Run
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: agentver-platform
           region: ${{ env.REGION }}
@@ -164,7 +164,7 @@ jobs:
           docker push ${{ env.IMAGE_REPO }}/${{ secrets.GCP_PROJECT_ID }}/agentver/website:latest
 
       - name: Deploy to Cloud Run
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: agentver-website
           region: ${{ env.REGION }}
