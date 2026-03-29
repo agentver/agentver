@@ -175,7 +175,7 @@ Sources:
             process.exit(1)
           }
         } else {
-          source = connected ? 'platform' : 'community'
+          source = 'all'
         }
 
         // Well-known search is a separate flow — query is treated as a domain name
@@ -213,6 +213,7 @@ Sources:
         try {
           let platformResults: PlatformSearchResult[] = []
           let platformTotal = 0
+          let platformError: Error | undefined
           let communityResults: SkillsShResult[] = []
 
           const searchPlatform = source === 'platform' || source === 'all'
@@ -223,19 +224,24 @@ Sources:
           if (searchPlatform && connected) {
             promises.push(
               (async () => {
-                const params = new URLSearchParams({ q: query })
-                if (options.type) params.set('type', options.type.toUpperCase())
-                if (options.category) params.set('category', options.category)
+                try {
+                  const params = new URLSearchParams({ q: query })
+                  if (options.type) params.set('type', options.type.toUpperCase())
+                  if (options.category) params.set('category', options.category)
 
-                const data = await registryFetch<PlatformSearchResponse>(
-                  `/search?${params.toString()}`
-                )
-                platformResults = data.results
-                platformTotal = data.total
+                  const data = await registryFetch<PlatformSearchResponse>(
+                    `/search?${params.toString()}`
+                  )
+                  platformResults = data.results
+                  platformTotal = data.total
+                } catch (error) {
+                  platformError = error instanceof Error ? error : new Error(String(error))
+                }
               })()
             )
           }
 
+          // searchSkillsSh never rejects — it returns [] on any failure
           if (searchCommunity) {
             promises.push(
               (async () => {
@@ -245,6 +251,12 @@ Sources:
           }
 
           await Promise.all(promises)
+
+          // When only the platform was attempted and it failed, surface the error.
+          // Community search (searchSkillsSh) never throws — it silently returns [].
+          if (searchPlatform && !searchCommunity && platformError) {
+            throw platformError
+          }
 
           spinner.stop()
 
