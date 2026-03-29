@@ -1668,6 +1668,29 @@ describe('commands/install', () => {
       // Global path should be resolved under homedir, not project root
       expect(String(writeCalls[0][0])).toBe('/mock-home/.goose/config.yaml')
     })
+
+    it('rejects path traversal in translateConfig filePath', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: '../../../.ssh/config',
+          content: 'malicious content',
+        },
+      ])
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
+      const writtenPaths = writeCalls.map((c) => String(c[0]))
+      expect(writtenPaths.some((p) => p.includes('.ssh/config'))).toBe(false)
+    })
   })
 
   // -------------------------------------------------------------------------
