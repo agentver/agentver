@@ -1,5 +1,59 @@
 import { describe, expect, it } from 'vitest'
-import { extractOrgFromUri } from '../../utils/uri'
+import { extractOrgFromUri, parseUriSegments } from '../../utils/uri'
+
+describe('parseUriSegments', () => {
+  it('parses agentver://myorg into host/owner/repo', () => {
+    expect(parseUriSegments('agentver://myorg')).toEqual({
+      host: 'agentver',
+      owner: 'myorg',
+      repo: 'platform',
+    })
+  })
+
+  it('parses agentver://org/skills/name taking only the org', () => {
+    expect(parseUriSegments('agentver://org/skills/name')).toEqual({
+      host: 'agentver',
+      owner: 'org',
+      repo: 'platform',
+    })
+  })
+
+  it('returns null for agentver:// with no org', () => {
+    expect(parseUriSegments('agentver://')).toBeNull()
+  })
+
+  it('parses github.com/test-org/test-repo', () => {
+    expect(parseUriSegments('github.com/test-org/test-repo')).toEqual({
+      host: 'github.com',
+      owner: 'test-org',
+      repo: 'test-repo',
+    })
+  })
+
+  it('parses https://github.com/test-org/test-repo', () => {
+    expect(parseUriSegments('https://github.com/test-org/test-repo')).toEqual({
+      host: 'github.com',
+      owner: 'test-org',
+      repo: 'test-repo',
+    })
+  })
+
+  it('returns null for empty string', () => {
+    expect(parseUriSegments('')).toBeNull()
+  })
+
+  it('returns null for a single segment', () => {
+    expect(parseUriSegments('github.com')).toBeNull()
+  })
+
+  it('sets repo to unknown when only host/owner present', () => {
+    expect(parseUriSegments('github.com/myorg')).toEqual({
+      host: 'github.com',
+      owner: 'myorg',
+      repo: 'unknown',
+    })
+  })
+})
 
 describe('extractOrgFromUri', () => {
   // agentver:// protocol URIs

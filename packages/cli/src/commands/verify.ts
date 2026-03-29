@@ -12,7 +12,7 @@ import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
-import { extractOrgFromUri } from '../utils/uri.js'
+import { parseUriSegments } from '../utils/uri.js'
 
 type VerifyOptions = {
   json?: boolean
@@ -54,24 +54,12 @@ function buildSourceFromManifest(pkg: ManifestV2Package | undefined): GitSource 
   }
 
   const { source } = pkg
+  const segments = parseUriSegments(source.uri)
 
-  if (source.uri.startsWith('agentver://')) {
-    return {
-      host: 'agentver' as GitSource['host'],
-      owner: extractOrgFromUri(source.uri) ?? 'unknown',
-      repo: 'platform',
-      path: source.path,
-      ref: source.ref,
-      commit: source.commit,
-    }
-  }
-
-  const parts = source.uri.split('/')
-  const meaningful = parts.filter((p) => p !== '' && !p.endsWith(':'))
   return {
-    host: (meaningful[0] ?? 'github.com') as GitSource['host'],
-    owner: meaningful[1] ?? 'unknown',
-    repo: meaningful[2] ?? 'unknown',
+    host: (segments?.host ?? 'github.com') as GitSource['host'],
+    owner: segments?.owner ?? 'unknown',
+    repo: segments?.repo ?? 'unknown',
     path: source.path,
     ref: source.ref,
     commit: source.commit,
