@@ -15,6 +15,7 @@ export function getStorageProvider(): StorageProvider {
       cachedProvider = new S3StorageProvider()
       break
     }
+    case 'local':
     default: {
       const { LocalStorageProvider } =
         require('./providers/local') as typeof import('./providers/local')
