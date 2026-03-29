@@ -417,78 +417,51 @@ describe('validateSkillName', () => {
     expect(validateSkillName('abc').valid).toBe(true)
   })
 
-  it('should return valid: false with error for empty string', () => {
+  it('should return valid: false with exact error for empty string', () => {
     const result = validateSkillName('')
     expect(result.valid).toBe(false)
-    expect(result.error).toContain('empty')
+    expect(result.error).toBe('Name must not be empty.')
   })
 
-  it('should return valid: false with error for name > 64 chars', () => {
+  it('should return valid: false with exact error for name > 64 chars', () => {
     const result = validateSkillName('a'.repeat(65))
     expect(result.valid).toBe(false)
-    expect(result.error).toContain('64')
-    expect(result.error).toContain('65')
+    expect(result.error).toBe('Name must be at most 64 characters (got 65).')
   })
 
-  it('should return valid: false with error for uppercase', () => {
+  it('should return valid: false with exact error for uppercase', () => {
     const result = validateSkillName('MySkill')
     expect(result.valid).toBe(false)
-    expect(result.error).toContain('lowercase')
+    expect(result.error).toBe('Name must be lowercase.')
   })
 
-  it('should return valid: false with error for leading hyphen', () => {
+  it('should return valid: false with exact error for leading hyphen', () => {
     const result = validateSkillName('-my-skill')
     expect(result.valid).toBe(false)
-    expect(result.error).toContain('hyphen')
+    expect(result.error).toBe('Name must not start or end with a hyphen.')
   })
 
-  it('should return valid: false with error for trailing hyphen', () => {
+  it('should return valid: false with exact error for trailing hyphen', () => {
     const result = validateSkillName('my-skill-')
     expect(result.valid).toBe(false)
-    expect(result.error).toContain('hyphen')
+    expect(result.error).toBe('Name must not start or end with a hyphen.')
   })
 
-  it('should return valid: false with error for consecutive hyphens', () => {
+  it('should return valid: false with exact error for consecutive hyphens', () => {
     const result = validateSkillName('my--skill')
     expect(result.valid).toBe(false)
-    expect(result.error).toContain('consecutive')
+    expect(result.error).toBe('Name must not contain consecutive hyphens.')
   })
 
-  it('should return valid: false with error for special characters', () => {
+  it('should return valid: false with exact error for special characters', () => {
     const result = validateSkillName('my_skill')
     expect(result.valid).toBe(false)
-    expect(result.error).toBeDefined()
-
-    const dotResult = validateSkillName('my.skill')
-    expect(dotResult.valid).toBe(false)
-
-    const spaceResult = validateSkillName('my skill')
-    expect(spaceResult.valid).toBe(false)
-  })
-
-  it('should return specific error messages for each violation type', () => {
-    const empty = validateSkillName('')
-    expect(empty.error).toBe('Name must not be empty.')
-
-    const tooLong = validateSkillName('a'.repeat(65))
-    expect(tooLong.error).toBe('Name must be at most 64 characters (got 65).')
-
-    const upper = validateSkillName('ABC')
-    expect(upper.error).toBe('Name must be lowercase.')
-
-    const leadHyphen = validateSkillName('-abc')
-    expect(leadHyphen.error).toBe('Name must not start or end with a hyphen.')
-
-    const trailHyphen = validateSkillName('abc-')
-    expect(trailHyphen.error).toBe('Name must not start or end with a hyphen.')
-
-    const consecutive = validateSkillName('a--b')
-    expect(consecutive.error).toBe('Name must not contain consecutive hyphens.')
-
-    const special = validateSkillName('a_b')
-    expect(special.error).toBe(
+    expect(result.error).toBe(
       'Name must contain only lowercase alphanumeric characters and hyphens.'
     )
+
+    expect(validateSkillName('my.skill').valid).toBe(false)
+    expect(validateSkillName('my skill').valid).toBe(false)
   })
 })
 

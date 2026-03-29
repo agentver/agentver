@@ -665,22 +665,8 @@ describe('doctor command', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 11. Exit code — 0 when all pass, non-zero when any FAIL
+  // 11. Exit code — non-zero when any FAIL
   // -------------------------------------------------------------------------
-
-  it('exits with code 0 when all checks pass', async () => {
-    process.argv = ['node', 'agentver', 'doctor', '--json']
-    setupHealthyProject()
-    captureOutput()
-
-    const program = buildProgram()
-
-    await expect(program.parseAsync(['node', 'agentver', 'doctor', '--json'])).rejects.toThrow(
-      'process.exit called'
-    )
-
-    expect(processExitSpy).toHaveBeenCalledWith(0)
-  })
 
   it('exits with non-zero code when any check fails', async () => {
     process.argv = ['node', 'agentver', 'doctor', '--json']

@@ -34,20 +34,6 @@ describe('AGENT_IDS', () => {
   })
 })
 
-describe('AGENT_ALIASES (tested via resolveAgentId)', () => {
-  it('should map "gemini" to "gemini-cli"', () => {
-    expect(resolveAgentId('gemini')).toBe('gemini-cli')
-  })
-
-  it('should map "roo-code" to "roo"', () => {
-    expect(resolveAgentId('roo-code')).toBe('roo')
-  })
-
-  it('should map "github-copilot" to "copilot"', () => {
-    expect(resolveAgentId('github-copilot')).toBe('copilot')
-  })
-})
-
 describe('resolveAgentId', () => {
   it('should resolve all 43 primary IDs', () => {
     for (const id of AGENT_IDS) {
@@ -55,15 +41,9 @@ describe('resolveAgentId', () => {
     }
   })
 
-  it('should resolve alias "gemini" to "gemini-cli"', () => {
+  it('should resolve known aliases to their canonical IDs', () => {
     expect(resolveAgentId('gemini')).toBe('gemini-cli')
-  })
-
-  it('should resolve alias "roo-code" to "roo"', () => {
     expect(resolveAgentId('roo-code')).toBe('roo')
-  })
-
-  it('should resolve alias "github-copilot" to "copilot"', () => {
     expect(resolveAgentId('github-copilot')).toBe('copilot')
   })
 
