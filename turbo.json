@@ -61,6 +61,11 @@
       "outputs": [],
       "env": ["DATABASE_URL", "TEST_DATABASE_URL"]
     },
+    "test:integration": {
+      "dependsOn": ["build"],
+      "outputs": [],
+      "cache": false
+    },
     "db:studio": {
       "cache": false,
       "persistent": true,

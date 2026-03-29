@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import chalk from 'chalk'
-import { Command } from 'commander'
+import { Command, CommanderError } from 'commander'
 import updateNotifier from 'update-notifier'
 import { registerAdoptCommand } from '../src/commands/adopt'
 import { registerAgentsCommand } from '../src/commands/agents'
@@ -35,6 +35,7 @@ import { registerValidateCommand } from '../src/commands/validate'
 import { registerVerifyCommand } from '../src/commands/verify'
 import { registerVersionCommand } from '../src/commands/version'
 import { registerWhoamiCommand } from '../src/commands/whoami'
+import { isJSONMode, outputError } from '../src/output'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -52,6 +53,19 @@ program
   .option('--json', 'Output results as structured JSON')
   .option('--verbose', 'Show detailed debug output')
   .option('--quiet', 'Suppress all non-essential output')
+  .exitOverride()
+  .configureOutput({
+    writeErr: (str) => {
+      if (!isJSONMode()) {
+        process.stderr.write(str)
+      }
+    },
+    writeOut: (str) => {
+      if (!isJSONMode()) {
+        process.stdout.write(str)
+      }
+    },
+  })
 
 registerAdoptCommand(program)
 registerAgentsCommand(program)
@@ -86,4 +100,16 @@ registerVerifyCommand(program)
 registerVersionCommand(program)
 registerWhoamiCommand(program)
 
-program.parse()
+try {
+  program.parse()
+} catch (err: unknown) {
+  if (err instanceof CommanderError) {
+    // --help and --version exit with code 0 — let them through silently
+    if (err.exitCode !== 0 && isJSONMode()) {
+      const code = err.code === 'commander.unknownCommand' ? 'UNKNOWN_COMMAND' : 'VALIDATION_ERROR'
+      outputError(code, err.message)
+    }
+    process.exit(err.exitCode)
+  }
+  throw err
+}

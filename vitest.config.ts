@@ -29,7 +29,7 @@ export default defineConfig({
           environment: 'node',
           globals: true,
           include: ['src/**/*.test.ts'],
-          exclude: ['src/__tests__/e2e/**'],
+          exclude: ['src/__tests__/e2e/**', 'src/__tests__/json-output.test.ts'],
           testTimeout: 30_000,
         },
       },

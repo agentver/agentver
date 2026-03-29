@@ -4,8 +4,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
-    exclude: ['src/__tests__/e2e/**', 'src/__tests__/json-output.test.ts'],
+    include: ['src/__tests__/json-output.test.ts'],
     testTimeout: 30_000,
+    fileParallelism: false,
+    sequence: { concurrent: false },
   },
 })
