@@ -19844,7 +19844,11 @@ var AGENT_DEFINITIONS = [
     category: "agent-specific",
     mcpConfigPath: ".claude/mcp.json",
     globalMcpConfigPath: "~/.claude/mcp.json",
-    mcpConfigFormat: "mcp-servers"
+    mcpConfigFormat: "mcp-servers",
+    agentsPath: ".claude/agents",
+    globalAgentsPath: "~/.claude/agents",
+    commandsPath: ".claude/commands",
+    globalCommandsPath: "~/.claude/commands"
   },
   {
     id: "claude-cowork",
@@ -19856,7 +19860,11 @@ var AGENT_DEFINITIONS = [
     category: "agent-specific",
     mcpConfigPath: ".claude/mcp.json",
     globalMcpConfigPath: "~/.claude/mcp.json",
-    mcpConfigFormat: "mcp-servers"
+    mcpConfigFormat: "mcp-servers",
+    agentsPath: ".claude/agents",
+    globalAgentsPath: "~/.claude/agents",
+    commandsPath: ".claude/commands",
+    globalCommandsPath: "~/.claude/commands"
   },
   {
     id: "cursor",
@@ -34280,7 +34288,16 @@ var skillMetadataSchema = external_exports.object({
   name: external_exports.string().min(1).max(100),
   description: external_exports.string().max(500).optional(),
   version: external_exports.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, "Must be valid semver"),
-  type: external_exports.enum(["SKILL", "AGENT_CONFIG", "PLUGIN", "SCRIPT", "PROMPT", "BUNDLE"]),
+  type: external_exports.enum([
+    "SKILL",
+    "AGENT_CONFIG",
+    "PLUGIN",
+    "SCRIPT",
+    "PROMPT",
+    "BUNDLE",
+    "SUB_AGENT",
+    "COMMAND"
+  ]),
   tags: external_exports.array(external_exports.string().max(50)).max(20).default([]),
   agents: external_exports.array(agentIdEnum).default([])
 });
@@ -34327,7 +34344,9 @@ var manifestV2PackageSchema = external_exports.object({
   installedAt: external_exports.string().datetime(),
   modified: external_exports.boolean().default(false),
   pinned: external_exports.boolean().optional(),
-  path: external_exports.string().optional()
+  path: external_exports.string().optional(),
+  bundle: external_exports.string().optional(),
+  packageType: external_exports.enum(["SKILL", "AGENT_CONFIG", "PLUGIN", "SCRIPT", "PROMPT", "BUNDLE"]).optional()
 });
 var manifestV2Schema = external_exports.object({
   version: external_exports.literal(2),
@@ -34380,7 +34399,16 @@ function migrateLockfileV1ToV2(v1) {
   return { version: 2, packages };
 }
 var packageStructureSchema = external_exports.object({
-  type: external_exports.enum(["SKILL", "AGENT_CONFIG", "PLUGIN", "SCRIPT", "PROMPT", "BUNDLE"]),
+  type: external_exports.enum([
+    "SKILL",
+    "AGENT_CONFIG",
+    "PLUGIN",
+    "SCRIPT",
+    "PROMPT",
+    "BUNDLE",
+    "SUB_AGENT",
+    "COMMAND"
+  ]),
   entryFile: external_exports.string(),
   requiredFiles: external_exports.array(external_exports.string()).default([]),
   optionalDirs: external_exports.array(external_exports.string()).default([])
@@ -34448,7 +34476,16 @@ var fileManifestSchema = external_exports.object({
   files: external_exports.array(fileManifestEntrySchema),
   totalSize: external_exports.number().int().nonnegative(),
   entryFile: external_exports.string(),
-  packageType: external_exports.enum(["SKILL", "AGENT_CONFIG", "PLUGIN", "SCRIPT", "PROMPT", "BUNDLE"])
+  packageType: external_exports.enum([
+    "SKILL",
+    "AGENT_CONFIG",
+    "PLUGIN",
+    "SCRIPT",
+    "PROMPT",
+    "BUNDLE",
+    "SUB_AGENT",
+    "COMMAND"
+  ])
 });
 var agentConfigSchema = external_exports.object({
   name: external_exports.string().min(1),
@@ -34504,7 +34541,26 @@ var installResultSchema = external_exports.object({
 var removeResultSchema = external_exports.object({
   name: external_exports.string(),
   removed: external_exports.boolean(),
-  paths: external_exports.array(external_exports.string())
+  paths: external_exports.array(external_exports.string()),
+  bundleConstituents: external_exports.array(external_exports.string()).optional()
+});
+var bundleInstallResultSchema = external_exports.object({
+  bundleName: external_exports.string(),
+  bundleVersion: external_exports.string(),
+  installed: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    type: external_exports.string(),
+    source: external_exports.object({ type: external_exports.string(), uri: external_exports.string().optional() })
+  })),
+  skipped: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    type: external_exports.string(),
+    reason: external_exports.string()
+  })),
+  mcpServers: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    configured: external_exports.boolean()
+  }))
 });
 var updateResultSchema = external_exports.object({
   updated: external_exports.array(external_exports.object({

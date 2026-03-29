@@ -988,7 +988,7 @@ describe('commands/update', () => {
       // Force updates to exist so the confirmation prompt is reached
       setupResolveToNewSha()
       // Make prompts reject — this is inside the try block and not per-package caught
-      vi.mocked(prompts).mockRejectedValue(new Error('Terminal closed'))
+      vi.mocked(prompts).mockRejectedValueOnce(new Error('Terminal closed'))
 
       await expect(updateAction(undefined, {})).rejects.toThrow(ExitError)
 
@@ -1186,6 +1186,52 @@ describe('commands/update', () => {
       expect(installPackage).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ path: '/custom/skill/path' })
+      )
+    })
+  })
+
+  describe('manifest path validation', () => {
+    it('discards relative paths from manifest and does not pass path to installPackage', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: 'relative/path',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      const opts = vi.mocked(installPackage).mock.calls[0]![1]
+      expect(opts).not.toHaveProperty('path')
+    })
+
+    it('discards paths with traversal segments from manifest', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: '/safe/../../etc/passwd',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      const opts = vi.mocked(installPackage).mock.calls[0]![1]
+      expect(opts).not.toHaveProperty('path')
+    })
+
+    it('passes valid absolute paths from manifest to installPackage', async () => {
+      setupSinglePackage('test-skill', OLD_SHA, {
+        path: '/valid/absolute/path',
+      })
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      await updateAction('test-skill', {})
+
+      expect(installPackage).toHaveBeenCalledTimes(1)
+      expect(installPackage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ path: '/valid/absolute/path' })
       )
     })
   })

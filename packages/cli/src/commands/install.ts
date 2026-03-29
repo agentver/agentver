@@ -229,15 +229,14 @@ async function installFromWellKnown(
     const integrity = computeSha256FromFiles(fetchResult.files)
 
     const projectRoot = process.cwd()
+    const requestedAgents = toAgentList(options.agent)
     let agents: string[] = []
     const scope = options.global ? 'global' : 'project'
 
     if (options.path) {
       await installToCustomPath(selectedEntry.name, fetchResult.files, options, spinner)
-      agents = toAgentList(options.agent)
+      agents = requestedAgents
     } else {
-      const requestedAgents = toAgentList(options.agent)
-
       if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
@@ -491,16 +490,15 @@ async function installFromPlatform(
 
     const integrity = computeSha256FromFiles(files)
     const projectRoot = process.cwd()
+    const requestedAgents = toAgentList(options.agent)
     const scope = options.global ? 'global' : 'project'
     const sourceUri = `agentver://${parsed.org}`
     let agents: string[] = []
 
     if (options.path) {
       await installToCustomPath(shortName, files, options, spinner)
-      agents = toAgentList(options.agent)
+      agents = requestedAgents
     } else {
-      const requestedAgents = toAgentList(options.agent)
-
       if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
@@ -767,16 +765,15 @@ export async function installPackage(
     const integrity = computeSha256FromFiles(result.files)
 
     const projectRoot = process.cwd()
+    const requestedAgents = toAgentList(options.agent)
     const scope = options.global ? 'global' : 'project'
     const gitUri = `${gitSource.host}/${gitSource.owner}/${gitSource.repo}`
     let agents: string[] = []
 
     if (options.path) {
       await installToCustomPath(shortName, result.files, options, spinner)
-      agents = toAgentList(options.agent)
+      agents = requestedAgents
     } else {
-      const requestedAgents = toAgentList(options.agent)
-
       if (options.detect === false && requestedAgents.length === 0) {
         const msg = 'Use --agent to specify a target agent when --no-detect is enabled'
         if (!jsonMode) spinner.fail(msg)
