@@ -50,7 +50,7 @@ const now = new Date().toISOString()
 // ---------------------------------------------------------------------------
 
 describe('AGENT_IDS sync', () => {
-  it('schemas.ts agentIdEnum should derive from the canonical AGENT_IDS', () => {
+  it('schemas.ts agentIdEnum should match the canonical AGENT_IDS from agent-definitions', () => {
     expect([...agentIdEnum.options]).toEqual([...AGENT_IDS])
   })
 })

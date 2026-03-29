@@ -1,7 +1,55 @@
-import { AGENT_IDS } from '@agentver/agent-definitions/types'
 import { z } from 'zod'
 
-export const agentIdEnum = z.enum(AGENT_IDS)
+// Canonical list lives in @agentver/agent-definitions/types.ts — kept in sync by a test.
+// Not imported directly because @agentver/shared is published to npm and
+// @agentver/agent-definitions is a private workspace-only package.
+const AGENT_IDS_FOR_SCHEMA = [
+  'adal',
+  'aider',
+  'amp',
+  'antigravity',
+  'augment',
+  'claude-code',
+  'claude-cowork',
+  'cline',
+  'codebuddy',
+  'codex',
+  'command-code',
+  'continue',
+  'copilot',
+  'cortex',
+  'crush',
+  'cursor',
+  'droid',
+  'gemini-cli',
+  'goose',
+  'iflow-cli',
+  'junie',
+  'kilo',
+  'kimi-cli',
+  'kiro-cli',
+  'kode',
+  'mcpjam',
+  'mistral-vibe',
+  'mux',
+  'neovate',
+  'openclaw',
+  'opencode',
+  'openhands',
+  'pi',
+  'pochi',
+  'qoder',
+  'qwen-code',
+  'replit',
+  'roo',
+  'trae',
+  'trae-cn',
+  'universal',
+  'windsurf',
+  'zencoder',
+] as const
+
+export const agentIdEnum = z.enum(AGENT_IDS_FOR_SCHEMA)
 
 export const skillMetadataSchema = z.object({
   name: z.string().min(1).max(100),
