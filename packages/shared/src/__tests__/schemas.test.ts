@@ -135,8 +135,17 @@ describe('skillMetadataSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('should accept all 6 package types', () => {
-    for (const type of ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE'] as const) {
+  it('should accept all 8 package types', () => {
+    for (const type of [
+      'SKILL',
+      'AGENT_CONFIG',
+      'PLUGIN',
+      'SCRIPT',
+      'PROMPT',
+      'BUNDLE',
+      'SUB_AGENT',
+      'COMMAND',
+    ] as const) {
       skillMetadataSchema.parse({ name: 'ok', version: '1.0.0', type })
     }
   })
@@ -579,7 +588,16 @@ describe('lockfileAnySchema (discriminated union)', () => {
 
 describe('packageStructureSchema', () => {
   it('should accept valid package structure for each type', () => {
-    for (const type of ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'] as const) {
+    for (const type of [
+      'SKILL',
+      'AGENT_CONFIG',
+      'PLUGIN',
+      'SCRIPT',
+      'PROMPT',
+      'BUNDLE',
+      'SUB_AGENT',
+      'COMMAND',
+    ] as const) {
       packageStructureSchema.parse({ type, entryFile: 'entry.md' })
     }
   })
@@ -605,11 +623,20 @@ describe('packageStructureSchema', () => {
 // ---------------------------------------------------------------------------
 
 describe('PACKAGE_STRUCTURES constant', () => {
-  it('should have structure for all 6 package types', () => {
+  it('should have structure for all 8 package types', () => {
     expect(Object.keys(PACKAGE_STRUCTURES)).toEqual(
-      expect.arrayContaining(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'BUNDLE'])
+      expect.arrayContaining([
+        'SKILL',
+        'AGENT_CONFIG',
+        'PLUGIN',
+        'SCRIPT',
+        'PROMPT',
+        'BUNDLE',
+        'SUB_AGENT',
+        'COMMAND',
+      ])
     )
-    expect(Object.keys(PACKAGE_STRUCTURES)).toHaveLength(6)
+    expect(Object.keys(PACKAGE_STRUCTURES)).toHaveLength(8)
   })
 
   it('should set SKILL entryFile to SKILL.md', () => {
@@ -630,6 +657,18 @@ describe('PACKAGE_STRUCTURES constant', () => {
 
   it('should set PROMPT entryFile to PROMPT.md', () => {
     expect(PACKAGE_STRUCTURES.PROMPT!.entryFile).toBe('PROMPT.md')
+  })
+
+  it('should set BUNDLE entryFile to agentver.bundle.yaml', () => {
+    expect(PACKAGE_STRUCTURES.BUNDLE!.entryFile).toBe('agentver.bundle.yaml')
+  })
+
+  it('should set SUB_AGENT entryFile to AGENT.md', () => {
+    expect(PACKAGE_STRUCTURES.SUB_AGENT!.entryFile).toBe('AGENT.md')
+  })
+
+  it('should set COMMAND entryFile to COMMAND.md', () => {
+    expect(PACKAGE_STRUCTURES.COMMAND!.entryFile).toBe('COMMAND.md')
   })
 })
 

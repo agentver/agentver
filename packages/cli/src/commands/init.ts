@@ -179,6 +179,57 @@ You are an expert on \${topic}. Respond in a \${tone} tone.
 <!-- Additional context or guidance for prompt usage. -->
 `
 
+const SUB_AGENT_TEMPLATE = `---
+name: {{name}}
+description: {{description}}
+version: 1.0.0
+compatibility:
+  agents:
+    - claude-code
+---
+
+# {{name}}
+
+{{description}}
+
+## Instructions
+
+<!-- Instructions for the sub-agent. Describe what this agent does, when to use it, and how it should behave. -->
+
+1. First, do this
+2. Then, do that
+3. Finally, verify the result
+`
+
+const COMMAND_TEMPLATE = `---
+name: {{name}}
+description: {{description}}
+version: 1.0.0
+---
+
+# {{name}}
+
+{{description}}
+
+## Command
+
+<!-- Define what this slash command does when invoked. -->
+
+When the user invokes this command:
+
+1. First, do this
+2. Then, do that
+3. Finally, verify the result
+`
+
+const BUNDLE_TEMPLATE = `name: {{name}}
+version: 1.0.0
+description: {{description}}
+includes:
+  skills: []
+  prompts: []
+`
+
 const SCRIPT_ENTRY_TEMPLATE = `#!/usr/bin/env node
 // {{name}} — entry point
 `
@@ -287,7 +338,11 @@ export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description('Scaffold a new package')
-    .option('--type <type>', 'Package type: skill, agent, plugin, script, prompt', 'skill')
+    .option(
+      '--type <type>',
+      'Package type: skill, agent, plugin, script, prompt, sub-agent, command, bundle',
+      'skill'
+    )
     .option('--repo', 'Scaffold in a Git-repo-friendly structure')
     .option('--name <name>', 'Package name (required in JSON mode)')
     .option('--description <desc>', 'Package description')
@@ -295,11 +350,14 @@ export function registerInitCommand(program: Command): void {
       'after',
       `
 Types:
-  skill     SKILL.md with frontmatter and instructions (default)
-  agent     Agent config (CLAUDE.md / .cursorrules / etc.)
-  plugin    Plugin with plugin.json manifest
-  script    Automation script with script.json manifest
-  prompt    PROMPT.md template with variants`
+  skill      SKILL.md with frontmatter and instructions (default)
+  agent      Agent config (CLAUDE.md / .cursorrules / etc.)
+  plugin     Plugin with plugin.json manifest
+  script     Automation script with script.json manifest
+  prompt     PROMPT.md template with variants
+  sub-agent  Sub-agent definition (AGENT.md with frontmatter)
+  command    Slash command definition (COMMAND.md with frontmatter)
+  bundle     Bundle manifest (agentver.bundle.yaml)`
     )
     .action(
       async (options: { type: string; repo?: boolean; name?: string; description?: string }) => {
@@ -458,6 +516,34 @@ Types:
             }
             if (!isJSONMode()) {
               warnIfOverBudget(fileName, content)
+            }
+            break
+          }
+
+          case 'sub-agent': {
+            fileName = 'AGENT.md'
+            const content = applyReplacements(SUB_AGENT_TEMPLATE)
+            writeFileSync(join(dir, fileName), content, 'utf-8')
+            createdFiles.push(fileName)
+            break
+          }
+
+          case 'command': {
+            fileName = 'COMMAND.md'
+            const content = applyReplacements(COMMAND_TEMPLATE)
+            writeFileSync(join(dir, fileName), content, 'utf-8')
+            createdFiles.push(fileName)
+            break
+          }
+
+          case 'bundle': {
+            fileName = 'agentver.bundle.yaml'
+            writeFileSync(join(dir, fileName), applyReplacements(BUNDLE_TEMPLATE), 'utf-8')
+            createdFiles.push(fileName)
+            if (!options.repo) {
+              for (const subDir of ['skills', 'prompts']) {
+                mkdirSync(join(dir, subDir), { recursive: true })
+              }
             }
             break
           }

@@ -193,7 +193,83 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 6. --name flag
+  // 6. Sub-agent type
+  // -------------------------------------------------------------------------
+
+  describe('sub-agent type', () => {
+    it('creates directory with AGENT.md containing correct frontmatter', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'init', '--json']
+
+      await runInit(['init', '--name', 'my-sub-agent', '--type', 'sub-agent'])
+
+      const writeFileCalls = vi.mocked(writeFileSync).mock.calls
+      const agentMdCall = writeFileCalls.find((call) => String(call[0]).endsWith('AGENT.md'))
+      expect(agentMdCall).toBeDefined()
+
+      const content = agentMdCall![1] as string
+      expect(content).toContain('name: my-sub-agent')
+      expect(content).toContain('compatibility:')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 7. Command type
+  // -------------------------------------------------------------------------
+
+  describe('command type', () => {
+    it('creates directory with COMMAND.md containing correct frontmatter', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'init', '--json']
+
+      await runInit(['init', '--name', 'my-command', '--type', 'command'])
+
+      const writeFileCalls = vi.mocked(writeFileSync).mock.calls
+      const commandMdCall = writeFileCalls.find((call) => String(call[0]).endsWith('COMMAND.md'))
+      expect(commandMdCall).toBeDefined()
+
+      const content = commandMdCall![1] as string
+      expect(content).toContain('name: my-command')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 8. Bundle type
+  // -------------------------------------------------------------------------
+
+  describe('bundle type', () => {
+    it('creates directory with agentver.bundle.yaml', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'init', '--json']
+
+      await runInit(['init', '--name', 'my-bundle', '--type', 'bundle'])
+
+      const writeFileCalls = vi.mocked(writeFileSync).mock.calls
+      const bundleCall = writeFileCalls.find((call) =>
+        String(call[0]).endsWith('agentver.bundle.yaml')
+      )
+      expect(bundleCall).toBeDefined()
+
+      const content = bundleCall![1] as string
+      expect(content).toContain('name: my-bundle')
+      expect(content).toContain('includes:')
+    })
+
+    it('creates skills/ and prompts/ subdirectories when not in repo mode', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'init', '--json']
+
+      await runInit(['init', '--name', 'my-bundle', '--type', 'bundle'])
+
+      const mkdirCalls = vi.mocked(mkdirSync).mock.calls
+      const createdDirs = mkdirCalls.map((call) => String(call[0]))
+      expect(createdDirs.some((d) => d.endsWith(join('my-bundle', 'skills')))).toBe(true)
+      expect(createdDirs.some((d) => d.endsWith(join('my-bundle', 'prompts')))).toBe(true)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 9. --name flag
   // -------------------------------------------------------------------------
 
   describe('--name flag', () => {
@@ -213,7 +289,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 7. --description flag
+  // 10. --description flag
   // -------------------------------------------------------------------------
 
   describe('--description flag', () => {
@@ -241,7 +317,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 8. --repo flag
+  // 11. --repo flag
   // -------------------------------------------------------------------------
 
   describe('--repo flag', () => {
@@ -274,7 +350,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 9. --json output validates against initResultSchema
+  // 12. --json output validates against initResultSchema
   // -------------------------------------------------------------------------
 
   describe('--json output', () => {
@@ -305,10 +381,46 @@ describe('commands/init', () => {
       expect(typed.path).toBe(join('/project', 'test-pkg'))
       expect(typed.files).toContain('plugin.json')
     })
+
+    it('includes correct type for sub-agent in JSON output', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'init', '--json']
+
+      await runInit(['init', '--name', 'test-sub-agent', '--type', 'sub-agent'])
+
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typed = data as Record<string, unknown>
+      expect(typed.type).toBe('sub-agent')
+      expect(typed.files).toContain('AGENT.md')
+    })
+
+    it('includes correct type for command in JSON output', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'init', '--json']
+
+      await runInit(['init', '--name', 'test-command', '--type', 'command'])
+
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typed = data as Record<string, unknown>
+      expect(typed.type).toBe('command')
+      expect(typed.files).toContain('COMMAND.md')
+    })
+
+    it('includes correct type for bundle in JSON output', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'init', '--json']
+
+      await runInit(['init', '--name', 'test-bundle', '--type', 'bundle'])
+
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typed = data as Record<string, unknown>
+      expect(typed.type).toBe('bundle')
+      expect(typed.files).toContain('agentver.bundle.yaml')
+    })
   })
 
   // -------------------------------------------------------------------------
-  // 10. Directory already exists
+  // 13. Directory already exists
   // -------------------------------------------------------------------------
 
   describe('directory already exists', () => {
@@ -339,7 +451,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 11. Generated SKILL.md contains valid structure
+  // 14. Generated SKILL.md contains valid structure
   // -------------------------------------------------------------------------
 
   describe('generated SKILL.md structure', () => {
