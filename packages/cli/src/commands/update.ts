@@ -1,6 +1,11 @@
-import { isAbsolute, normalize } from 'node:path'
-import type { AgentId } from '@agentver/agent-definitions'
-import { getSkillPlacementPath } from '@agentver/agent-definitions'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, isAbsolute, normalize } from 'node:path'
+import {
+  type AgentId,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+  getSkillPlacementPath,
+} from '@agentver/agent-definitions'
 import type { UpdateResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -68,13 +73,37 @@ async function checkLocalModifications(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: Scope = 'project'
+  scope: Scope = 'project',
+  packageType?: string,
+  entryFile?: string
 ): Promise<boolean> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[packageName]
   if (!lockEntry) return false
 
   const shortName = packageName.split('/').pop()!
+
+  if (packageType === 'AGENT' || packageType === 'COMMAND') {
+    const getPlacementPath =
+      packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+    const fileName = entryFile ?? `${shortName}.md`
+    for (const agentId of agents) {
+      const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+      if (!placementPath) continue
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath) continue
+      if (existsSync(fullPath)) {
+        try {
+          const content = readFileSync(fullPath, 'utf-8')
+          const localIntegrity = computeSha256FromFiles([{ path: fileName, content }])
+          if (localIntegrity !== lockEntry.integrity) return true
+        } catch {
+          // Read error for this placement — continue checking others
+        }
+      }
+    }
+    return false
+  }
 
   const readPath = resolveReadPath(projectRoot, shortName, agents, scope)
   if (readPath) {
@@ -117,7 +146,9 @@ async function handlePatchUpdate(
   agents: string[],
   spinner: SpinnerLike,
   scope: Scope = 'project',
-  installedPath?: string
+  installedPath?: string,
+  packageType?: string,
+  entryFile?: string
 ): Promise<{ commitSha: string } | null> {
   const lockfile = readLockfile(projectRoot, scope)
   const lockEntry = lockfile.packages[update.name]
@@ -152,13 +183,33 @@ async function handlePatchUpdate(
   }
 
   const localFileArrays: Array<{ path: string; content: string }> = []
-  const readPath = resolveReadPath(projectRoot, shortName, agents, scope)
-  if (readPath) {
-    try {
-      const files = await readFilesFromDirectory(readPath)
-      localFileArrays.push(...files.map((f) => ({ path: f.path, content: f.content })))
-    } catch {
-      // Best-effort read
+  if (packageType === 'AGENT' || packageType === 'COMMAND') {
+    const getPlacement = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+    const fileName = entryFile ?? `${shortName}.md`
+    for (const agentId of agents) {
+      const placement = getPlacement(agentId as AgentId, fileName, scope)
+      if (!placement) continue
+      const fullPath = resolvePlacementPath(placement, projectRoot, scope)
+      if (!fullPath) continue
+      if (existsSync(fullPath)) {
+        try {
+          const content = readFileSync(fullPath, 'utf-8')
+          localFileArrays.push({ path: fileName, content })
+          break
+        } catch {
+          // Best-effort read
+        }
+      }
+    }
+  } else {
+    const readPath = resolveReadPath(projectRoot, shortName, agents, scope)
+    if (readPath) {
+      try {
+        const files = await readFilesFromDirectory(readPath)
+        localFileArrays.push(...files.map((f) => ({ path: f.path, content: f.content })))
+      } catch {
+        // Best-effort read
+      }
     }
   }
 
@@ -182,10 +233,16 @@ async function handlePatchUpdate(
     ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
     : `${update.sourceUri}@${update.ref}`
 
+  const patchTypeOption =
+    packageType === 'AGENT' || packageType === 'COMMAND'
+      ? { type: packageType.toLowerCase() as 'agent' | 'command' }
+      : {}
+
   const result = await installPackage(sourceUrl, {
     ...(agents.length > 0 ? { agent: agents } : {}),
     ...(scope === 'global' ? { global: true } : {}),
     ...(installedPath ? { path: installedPath } : {}),
+    ...patchTypeOption,
   })
 
   spinner.text = `Reapplying local patch for ${update.name}...`
@@ -305,7 +362,9 @@ export function registerUpdateCommand(program: Command): void {
                 projectRoot,
                 pkgName,
                 pkg.agents,
-                scope
+                scope,
+                pkg.packageType,
+                pkg.entryFile
               )
 
               updates.push({
@@ -413,7 +472,9 @@ export function registerUpdateCommand(program: Command): void {
                   agents,
                   updateSpinner,
                   scope,
-                  installedPath
+                  installedPath,
+                  installedPkg?.packageType,
+                  installedPkg?.entryFile
                 )
 
                 if (patchResult) {
@@ -449,27 +510,50 @@ export function registerUpdateCommand(program: Command): void {
           }
 
           const shortName = update.name.split('/').pop()!
-          const placementPath = agents[0]
-            ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
-            : null
-          const fallbackDir = placementPath
-            ? resolvePlacementPath(placementPath, projectRoot, scope)
-            : null
-          const skillDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
+          const pkgType = installedPkg?.packageType
+          const isSingleFileUpdate = pkgType === 'AGENT' || pkgType === 'COMMAND'
+
+          let backupDir: string | null = null
+          if (isSingleFileUpdate) {
+            // Single-file packages: back up the parent directory containing the placed file
+            const getPlacement =
+              pkgType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+            const entryFileName = installedPkg?.entryFile ?? `${shortName}.md`
+            if (agents[0]) {
+              const placement = getPlacement(agents[0] as AgentId, entryFileName, scope)
+              const resolvedPlacement = placement
+                ? resolvePlacementPath(placement, projectRoot, scope)
+                : null
+              backupDir = resolvedPlacement ? dirname(resolvedPlacement) : null
+            }
+          } else {
+            const placementPath = agents[0]
+              ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
+              : null
+            const fallbackDir = placementPath
+              ? resolvePlacementPath(placementPath, projectRoot, scope)
+              : null
+            backupDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
+          }
 
           let backup: BackupState | null = null
 
           try {
-            backup = createBackup(update.name, projectRoot, skillDir, scope)
+            backup = createBackup(update.name, projectRoot, backupDir, scope)
 
             const sourceUrl = update.sourcePath
               ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
               : `${update.sourceUri}@${update.ref}`
 
+            const typeOption = isSingleFileUpdate
+              ? { type: pkgType.toLowerCase() as 'agent' | 'command' }
+              : {}
+
             const result = await installPackage(sourceUrl, {
               ...(agents.length > 0 ? { agent: agents } : {}),
               ...(scope === 'global' ? { global: true } : {}),
               ...(installedPath ? { path: installedPath } : {}),
+              ...typeOption,
             })
 
             cleanupBackup(backup)

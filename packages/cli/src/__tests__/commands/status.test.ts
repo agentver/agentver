@@ -37,6 +37,20 @@ vi.mock('../../git/index.js', () => ({
   resolveRef: vi.fn(),
 }))
 
+vi.mock('@agentver/agent-definitions', () => ({
+  getAgentPlacementPath: vi.fn(),
+  getCommandPlacementPath: vi.fn(),
+}))
+
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn().mockReturnValue(false),
+  readFileSync: vi.fn(),
+}))
+
+vi.mock('../../utils/paths', () => ({
+  resolvePlacementPath: vi.fn(),
+}))
+
 vi.mock('../../output', () => ({
   isJSONMode: vi.fn(),
   outputSuccess: vi.fn(),
@@ -60,6 +74,8 @@ import { registerStatusCommand } from '../../commands/status'
 // Mock module imports (typed references)
 // ---------------------------------------------------------------------------
 
+import * as nodeFs from 'node:fs'
+import * as agentDefs from '@agentver/agent-definitions'
 import * as fetcherModule from '../../git/fetcher.js'
 import * as gitModule from '../../git/index.js'
 import * as outputModule from '../../output'
@@ -67,6 +83,7 @@ import * as canonicalModule from '../../storage/canonical.js'
 import * as integrityModule from '../../storage/integrity.js'
 import * as lockfileModule from '../../storage/lockfile.js'
 import * as manifestModule from '../../storage/manifest.js'
+import * as pathsModule from '../../utils/paths'
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -691,6 +708,172 @@ describe('status command', () => {
 
       expect(data.packages).toHaveLength(2)
       expect(data.summary.total).toBe(2)
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // AGENT/COMMAND single-file packages
+  // ---------------------------------------------------------------------------
+
+  describe('AGENT/COMMAND single-file packages', () => {
+    it('reads AGENT package from agent placement path using entryFile', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'deep-research': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+              packageType: 'AGENT',
+              entryFile: 'deep-research.md',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'deep-research': createLockfilePackage({
+              integrity: 'sha256-agent-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/deep-research.md')
+      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue(
+        '/tmp/project/.claude/agents/deep-research.md'
+      )
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true)
+      vi.mocked(nodeFs.readFileSync).mockReturnValue('# Deep Research Agent')
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-agent-hash')
+      vi.mocked(gitModule.resolveRef).mockResolvedValue({ source: createGitSource(), commitSha })
+
+      await runStatus('--offline')
+
+      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'deep-research.md',
+        'project'
+      )
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string; status: string; modified: boolean }>
+      }
+      expect(data.packages[0]!.status).toBe('up-to-date')
+      expect(data.packages[0]!.modified).toBe(false)
+    })
+
+    it('detects modification for COMMAND package', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'pr-commenter': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+              packageType: 'COMMAND',
+              entryFile: 'pr-commenter.md',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'pr-commenter': createLockfilePackage({
+              integrity: 'sha256-original-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue(
+        '.claude/commands/pr-commenter.md'
+      )
+      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue(
+        '/tmp/project/.claude/commands/pr-commenter.md'
+      )
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true)
+      vi.mocked(nodeFs.readFileSync).mockReturnValue('# Modified command')
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different-hash')
+      vi.mocked(gitModule.resolveRef).mockResolvedValue({ source: createGitSource(), commitSha })
+
+      await runStatus('--offline')
+
+      expect(agentDefs.getCommandPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'pr-commenter.md',
+        'project'
+      )
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Array<{ name: string; status: string; modified: boolean }>
+      }
+      expect(data.packages[0]!.status).toBe('modified')
+      expect(data.packages[0]!.modified).toBe(true)
+    })
+
+    it('falls back to shortName.md when entryFile is not set', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const commitSha = 'abc1234567890abcdef1234567890abcdef1234567'
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'my-agent': createManifestPackage({
+              source: createSharedGitSource({
+                uri: 'github.com/org/repo',
+                ref: 'main',
+                commit: commitSha,
+              }),
+              packageType: 'AGENT',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'my-agent': createLockfilePackage({
+              integrity: 'sha256-hash',
+            }),
+          },
+        })
+      )
+
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/my-agent.md')
+      vi.mocked(pathsModule.resolvePlacementPath).mockReturnValue(
+        '/tmp/project/.claude/agents/my-agent.md'
+      )
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true)
+      vi.mocked(nodeFs.readFileSync).mockReturnValue('# Agent content')
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-hash')
+      vi.mocked(gitModule.resolveRef).mockResolvedValue({ source: createGitSource(), commitSha })
+
+      await runStatus('--offline')
+
+      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'my-agent.md',
+        'project'
+      )
     })
   })
 })

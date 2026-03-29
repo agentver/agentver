@@ -3,7 +3,14 @@ import { join } from 'node:path'
 import { AGENT_DEFINITIONS } from './agents/definitions'
 import type { AgentId } from './types'
 
-export type DetectedFileType = 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT'
+export type DetectedFileType =
+  | 'SKILL'
+  | 'AGENT_CONFIG'
+  | 'PLUGIN'
+  | 'SCRIPT'
+  | 'PROMPT'
+  | 'AGENT'
+  | 'COMMAND'
 
 export type DetectedAgent = {
   id: AgentId
@@ -249,6 +256,8 @@ export function inferDetectedType(fileName: string): DetectedFileType {
   const lower = fileName.toLowerCase()
 
   if (lower === 'skill.md') return 'SKILL'
+  if (lower === 'agent.md') return 'AGENT'
+  if (lower === 'command.md') return 'COMMAND'
   if (lower === 'prompt.md') return 'PROMPT'
   if (lower === 'plugin.json') return 'PLUGIN'
   if (lower === 'script.json') return 'SCRIPT'
@@ -284,4 +293,30 @@ export function getSkillPlacementPath(
 
   const basePath = scope === 'project' ? agent.projectSkillPath : agent.globalSkillPath
   return join(basePath, skillName)
+}
+
+export function getAgentPlacementPath(
+  agentId: AgentId,
+  fileName: string,
+  scope: 'project' | 'global'
+): string | null {
+  const agent = AGENT_DEFINITIONS.find((a) => a.id === agentId)
+  if (!agent) return null
+
+  const basePath = scope === 'project' ? agent.agentsPath : agent.globalAgentsPath
+  if (!basePath) return null
+  return join(basePath, fileName)
+}
+
+export function getCommandPlacementPath(
+  agentId: AgentId,
+  fileName: string,
+  scope: 'project' | 'global'
+): string | null {
+  const agent = AGENT_DEFINITIONS.find((a) => a.id === agentId)
+  if (!agent) return null
+
+  const basePath = scope === 'project' ? agent.commandsPath : agent.globalCommandsPath
+  if (!basePath) return null
+  return join(basePath, fileName)
 }

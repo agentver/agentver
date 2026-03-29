@@ -7,6 +7,7 @@ import {
   createGitSource,
   createLockfile,
   createManifest,
+  createSkillMd,
 } from '../helpers/fixtures'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
@@ -81,6 +82,8 @@ vi.mock('@agentver/agent-definitions', () => ({
   getConfigFilePath: vi.fn(),
   getGlobalConfigFilePath: vi.fn(),
   getSkillPlacementPath: vi.fn(),
+  getAgentPlacementPath: vi.fn(),
+  getCommandPlacementPath: vi.fn(),
   composeConfigs: vi.fn(),
   isComposedConfig: vi.fn(),
   parseComposedSections: vi.fn(),
@@ -2419,6 +2422,228 @@ describe('commands/install', () => {
 
       expect(outputModule.outputError).toHaveBeenCalledWith('VALIDATION_ERROR', 'test error')
       expect(process.exit).toHaveBeenCalledWith(1)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // AGENT package type (--type agent)
+  // -------------------------------------------------------------------------
+
+  describe('AGENT package type install (--type agent)', () => {
+    function setupAgentTypeMocks() {
+      const mocks = setupHappyPathMocks()
+
+      // Override files to contain an .md file (the single-file package content)
+      const agentContent = '# My Agent\n\nDoes agent things.\n'
+      const files: FetchedFile[] = [
+        { path: 'AGENT.md', content: agentContent, size: agentContent.length },
+      ]
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files,
+        commitSha: RESOLVED_SHA,
+        source: mocks.gitSource,
+      })
+
+      // Mock getAgentPlacementPath to return a project-relative path
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/AGENT.md')
+
+      return { ...mocks, files }
+    }
+
+    it('writes the .md file via writeFileSync at the agent placement path', async () => {
+      setupAgentTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      expect(nodeFs.writeFileSync).toHaveBeenCalledWith(
+        '/project/.claude/agents/AGENT.md',
+        '# My Agent\n\nDoes agent things.\n',
+        'utf-8'
+      )
+    })
+
+    it('stores packageType AGENT and entryFile in manifest', async () => {
+      setupAgentTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const pkg = manifest.packages[DERIVED_NAME]!
+      expect(pkg.packageType).toBe('AGENT')
+      expect(pkg.entryFile).toBe('AGENT.md')
+    })
+
+    it('does not create canonical symlinks for agent-type packages', async () => {
+      setupAgentTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
+    })
+
+    it('calls getAgentPlacementPath with the correct agentId and fileName', async () => {
+      setupAgentTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'AGENT.md',
+        'project'
+      )
+    })
+
+    it('creates parent directory if it does not exist', async () => {
+      setupAgentTypeMocks()
+      vi.mocked(nodeFs.existsSync).mockReturnValue(false)
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      expect(nodeFs.mkdirSync).toHaveBeenCalledWith('/project/.claude/agents', { recursive: true })
+    })
+
+    it('does not write files in dry-run mode', async () => {
+      setupAgentTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent', dryRun: true })
+
+      expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
+      expect(manifestModule.writeManifest).not.toHaveBeenCalled()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // COMMAND package type (--type command)
+  // -------------------------------------------------------------------------
+
+  describe('COMMAND package type install (--type command)', () => {
+    function setupCommandTypeMocks() {
+      const mocks = setupHappyPathMocks()
+
+      const commandContent = '# My Command\n\nDoes command things.\n'
+      const files: FetchedFile[] = [
+        { path: 'COMMAND.md', content: commandContent, size: commandContent.length },
+      ]
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files,
+        commitSha: RESOLVED_SHA,
+        source: mocks.gitSource,
+      })
+
+      vi.mocked(agentDefs.getCommandPlacementPath).mockReturnValue('.claude/commands/COMMAND.md')
+
+      return { ...mocks, files }
+    }
+
+    it('writes the .md file via writeFileSync at the command placement path', async () => {
+      setupCommandTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
+
+      expect(nodeFs.writeFileSync).toHaveBeenCalledWith(
+        '/project/.claude/commands/COMMAND.md',
+        '# My Command\n\nDoes command things.\n',
+        'utf-8'
+      )
+    })
+
+    it('stores packageType COMMAND and entryFile in manifest', async () => {
+      setupCommandTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const pkg = manifest.packages[DERIVED_NAME]!
+      expect(pkg.packageType).toBe('COMMAND')
+      expect(pkg.entryFile).toBe('COMMAND.md')
+    })
+
+    it('calls getCommandPlacementPath with the correct agentId and fileName', async () => {
+      setupCommandTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
+
+      expect(agentDefs.getCommandPlacementPath).toHaveBeenCalledWith(
+        'claude-code',
+        'COMMAND.md',
+        'project'
+      )
+    })
+
+    it('does not create canonical symlinks for command-type packages', async () => {
+      setupCommandTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
+
+      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // detectPackageType — type override vs auto-detection
+  // -------------------------------------------------------------------------
+
+  describe('detectPackageType type override behaviour', () => {
+    it('overrides to AGENT when type flag is set', async () => {
+      setupHappyPathMocks()
+
+      const agentContent = '# My Agent\n\nAgent content.\n'
+      const gitSource = createGitSource()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: [{ path: 'deep-research.md', content: agentContent, size: agentContent.length }],
+        commitSha: RESOLVED_SHA,
+        source: gitSource,
+      })
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/deep-research.md')
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(manifest.packages[DERIVED_NAME]!.packageType).toBe('AGENT')
+    })
+
+    it('rejects multi-markdown packages for AGENT type', async () => {
+      setupHappyPathMocks()
+
+      const gitSource = createGitSource()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: [
+          { path: 'README.md', content: '# Readme', size: 10 },
+          { path: 'agent.md', content: '# Agent', size: 10 },
+        ],
+        commitSha: RESOLVED_SHA,
+        source: gitSource,
+      })
+
+      await expect(
+        installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+      ).rejects.toThrow('Expected exactly one markdown file')
+    })
+
+    it('falls through to SKILL when AGENT.md is present but no type override', async () => {
+      // AGENT.md is in PACKAGE_STRUCTURES but detectPackageType skips it
+      // without a type override, so it should fall through to SKILL
+      setupHappyPathMocks()
+
+      const agentMdContent = '# Agent\n\nSome content.\n'
+      const skillContent = createSkillMd()
+      const gitSource = createGitSource()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: [
+          { path: 'AGENT.md', content: agentMdContent, size: agentMdContent.length },
+          { path: 'SKILL.md', content: skillContent, size: skillContent.length },
+        ],
+        commitSha: RESOLVED_SHA,
+        source: gitSource,
+      })
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      // Without type override, SKILL.md should be detected as a SKILL
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(manifest.packages[DERIVED_NAME]!.packageType).toBeUndefined()
     })
   })
 })

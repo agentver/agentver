@@ -97,6 +97,16 @@ export async function scanRepoForSkills(
     '.opencode/skills',
   ]
 
+  // Agent/command directories (currently only Claude Code supports these)
+  const agentCommandPaths: Array<{
+    path: string
+    agentId: string
+    detectedType: DetectedFileType
+  }> = [
+    { path: '.claude/agents', agentId: 'claude-code', detectedType: 'AGENT' },
+    { path: '.claude/commands', agentId: 'claude-code', detectedType: 'COMMAND' },
+  ]
+
   type ConfigFileEntry = {
     path: string
     agentId: string
@@ -232,6 +242,35 @@ export async function scanRepoForSkills(
     } catch (error) {
       if (isGitHubApiError(error)) throw error
       logger.error(`Failed to scan skill directory ${skillPath}`, { error })
+    }
+  }
+
+  // Scan agent/command directories
+  for (const { path: acPath, agentId, detectedType } of agentCommandPaths) {
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/contents/${acPath}`,
+        { headers }
+      )
+
+      if (response.ok) {
+        const entries = (await response.json()) as GitHubContentResponse[]
+        for (const entry of entries) {
+          if (entry.name.endsWith('.md')) {
+            foundFiles.push({
+              path: entry.path,
+              name: entry.name.replace(/\.md$/, ''),
+              type: 'skill',
+              detectedType,
+              agentId,
+              downloadUrl: entry.download_url,
+            })
+          }
+        }
+      }
+    } catch (error) {
+      if (isGitHubApiError(error)) throw error
+      logger.error(`Failed to scan ${acPath} directory`, { error })
     }
   }
 

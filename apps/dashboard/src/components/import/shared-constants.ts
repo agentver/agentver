@@ -6,6 +6,8 @@ export const DETECTED_TYPE_LABELS: Record<DetectedFileType, string> = {
   PLUGIN: 'Plugin',
   SCRIPT: 'Script',
   PROMPT: 'Prompt',
+  AGENT: 'Agent',
+  COMMAND: 'Command',
 }
 
 export const DETECTED_TYPE_COLOURS: Record<DetectedFileType, string> = {
@@ -14,6 +16,8 @@ export const DETECTED_TYPE_COLOURS: Record<DetectedFileType, string> = {
   PLUGIN: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200',
   SCRIPT: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200',
   PROMPT: 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200',
+  AGENT: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+  COMMAND: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
 }
 
 export const AGENT_COLOURS: Record<string, string> = {

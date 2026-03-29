@@ -18,6 +18,8 @@ const TYPE_FILTERS: TypeFilter[] = [
   { value: 'PLUGIN', label: 'Plugins' },
   { value: 'SCRIPT', label: 'Scripts' },
   { value: 'PROMPT', label: 'Prompts' },
+  { value: 'AGENT', label: 'Agents' },
+  { value: 'COMMAND', label: 'Commands' },
 ]
 
 type SkillFiltersProps = {

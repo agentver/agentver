@@ -219,6 +219,15 @@ export async function scanBitbucketRepo(
     '.opencode/skills',
   ]
 
+  const agentCommandPaths: Array<{
+    path: string
+    agentId: string
+    detectedType: DetectedFileType
+  }> = [
+    { path: '.claude/agents', agentId: 'claude-code', detectedType: 'AGENT' },
+    { path: '.claude/commands', agentId: 'claude-code', detectedType: 'COMMAND' },
+  ]
+
   type ConfigFileEntry = {
     path: string
     agentId: string
@@ -328,6 +337,29 @@ export async function scanBitbucketRepo(
       }
     } catch (error) {
       logger.error(`Failed to scan skill directory ${skillPath}`, { error })
+    }
+  }
+
+  // Scan agent/command directories
+  for (const { path: acPath, agentId, detectedType } of agentCommandPaths) {
+    try {
+      const entries = await listDirectoryContents(accessToken, workspace, repoSlug, commit, acPath)
+
+      for (const entry of entries) {
+        if (entry.type === 'commit_file' && entry.path.endsWith('.md')) {
+          const name = entry.path.split('/').pop() ?? entry.path
+          foundFiles.push({
+            path: entry.path,
+            name: name.replace(/\.md$/, ''),
+            type: 'skill',
+            detectedType,
+            agentId,
+            downloadUrl: '',
+          })
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to scan ${acPath} directory`, { error })
     }
   }
 

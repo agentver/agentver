@@ -46,6 +46,8 @@ vi.mock('../../output.js', () => ({
 
 vi.mock('@agentver/agent-definitions', () => ({
   getSkillPlacementPath: vi.fn(),
+  getAgentPlacementPath: vi.fn(),
+  getCommandPlacementPath: vi.fn(),
   detectInstalledAgents: vi.fn(),
   getConfigFilePath: vi.fn(),
 }))

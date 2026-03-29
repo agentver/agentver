@@ -1,6 +1,6 @@
 import type { PackageStatus, Prisma } from '@agentver/database'
 import { prisma } from '@agentver/database'
-import { createLogger, parseFrontmatter } from '@agentver/shared'
+import { createLogger, PACKAGE_TYPES, type PackageType, parseFrontmatter } from '@agentver/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit/logger'
@@ -573,7 +573,9 @@ export const skillsRouter = router({
     .input(
       z.object({
         organisationId: z.string().optional(),
-        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']).optional(),
+        type: z
+          .enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'])
+          .optional(),
         status: z.enum(['ACTIVE', 'ARCHIVED', 'DEPRECATED']).optional(),
         search: z.string().optional(),
         compatibility: z.string().optional(),
@@ -740,10 +742,8 @@ export const skillsRouter = router({
       const description = typeof rawData.description === 'string' ? rawData.description : undefined
 
       const rawType = typeof rawData.type === 'string' ? rawData.type.toUpperCase() : 'SKILL'
-      const VALID_TYPES = new Set(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'])
-      const type = VALID_TYPES.has(rawType)
-        ? (rawType as 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT')
-        : 'SKILL'
+      const VALID_TYPES = new Set<string>(PACKAGE_TYPES)
+      const type = VALID_TYPES.has(rawType) ? (rawType as PackageType) : 'SKILL'
 
       const tags = Array.isArray(rawData.tags)
         ? rawData.tags.filter((t): t is string => typeof t === 'string')

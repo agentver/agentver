@@ -1,5 +1,10 @@
 import { existsSync, rmSync } from 'node:fs'
-import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
+import {
+  type AgentId,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+  getSkillPlacementPath,
+} from '@agentver/agent-definitions'
 import type { RemoveResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -99,6 +104,60 @@ function removePackageFiles(
   delete lockfile.packages[manifestKey]
 }
 
+/**
+ * Collect removal paths for single-file AGENT/COMMAND packages.
+ */
+function collectSingleFileRemovalPaths(
+  projectRoot: string,
+  shortName: string,
+  pkg: { agents: string[]; packageType?: string; entryFile?: string },
+  scope: Scope
+): string[] {
+  const removedPaths: string[] = []
+  const isSingleFile = pkg.packageType === 'AGENT' || pkg.packageType === 'COMMAND'
+  if (!isSingleFile) return removedPaths
+
+  const getPlacementPath =
+    pkg.packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+  const fileName = pkg.entryFile ?? `${shortName}.md`
+
+  for (const agentId of pkg.agents) {
+    const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+    if (!placementPath) continue
+    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!fullPath) continue
+    if (existsSync(fullPath)) {
+      removedPaths.push(fullPath)
+    }
+  }
+
+  return removedPaths
+}
+
+/**
+ * Remove a single-file AGENT/COMMAND package from disk.
+ */
+function removeSingleFilePackage(
+  projectRoot: string,
+  shortName: string,
+  pkg: { agents: string[]; packageType?: string; entryFile?: string },
+  scope: Scope
+): void {
+  const getPlacementPath =
+    pkg.packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+  const fileName = pkg.entryFile ?? `${shortName}.md`
+
+  for (const agentId of pkg.agents) {
+    const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+    if (!placementPath) continue
+    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!fullPath) continue
+    if (existsSync(fullPath)) {
+      rmSync(fullPath, { force: true })
+    }
+  }
+}
+
 export function registerRemoveCommand(program: Command): void {
   program
     .command('remove <name>')
@@ -159,6 +218,7 @@ export function registerRemoveCommand(program: Command): void {
         }
 
         const pkg = manifest.packages[manifestKey]!
+        const isSingleFile = pkg.packageType === 'AGENT' || pkg.packageType === 'COMMAND'
         const isBundle = pkg.packageType === 'BUNDLE'
         const isConstituent = Boolean(pkg.bundle)
 
@@ -166,7 +226,9 @@ export function registerRemoveCommand(program: Command): void {
         const constituents = isBundle ? findBundleConstituents(manifest, manifestKey) : []
 
         // Collect removal paths
-        const removedPaths = collectRemovalPaths(projectRoot, shortName, pkg, scope)
+        const removedPaths = isSingleFile
+          ? collectSingleFileRemovalPaths(projectRoot, shortName, pkg, scope)
+          : collectRemovalPaths(projectRoot, shortName, pkg, scope)
 
         // Also collect constituent paths for dry-run display
         const constituentPaths: Record<string, string[]> = {}
@@ -289,7 +351,13 @@ export function registerRemoveCommand(program: Command): void {
         }
 
         // Remove the package itself
-        removePackageFiles(projectRoot, manifestKey, shortName, pkg, scope, manifest, lockfile)
+        if (isSingleFile) {
+          removeSingleFilePackage(projectRoot, shortName, pkg, scope)
+          delete manifest.packages[manifestKey]
+          delete lockfile.packages[manifestKey]
+        } else {
+          removePackageFiles(projectRoot, manifestKey, shortName, pkg, scope, manifest, lockfile)
+        }
 
         writeManifest(projectRoot, manifest, scope)
         writeLockfile(projectRoot, lockfile, scope)

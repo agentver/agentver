@@ -143,7 +143,7 @@ describe('skillMetadataSchema', () => {
       'SCRIPT',
       'PROMPT',
       'BUNDLE',
-      'SUB_AGENT',
+      'AGENT',
       'COMMAND',
     ] as const) {
       skillMetadataSchema.parse({ name: 'ok', version: '1.0.0', type })
@@ -595,7 +595,7 @@ describe('packageStructureSchema', () => {
       'SCRIPT',
       'PROMPT',
       'BUNDLE',
-      'SUB_AGENT',
+      'AGENT',
       'COMMAND',
     ] as const) {
       packageStructureSchema.parse({ type, entryFile: 'entry.md' })
@@ -632,7 +632,7 @@ describe('PACKAGE_STRUCTURES constant', () => {
         'SCRIPT',
         'PROMPT',
         'BUNDLE',
-        'SUB_AGENT',
+        'AGENT',
         'COMMAND',
       ])
     )
@@ -663,8 +663,8 @@ describe('PACKAGE_STRUCTURES constant', () => {
     expect(PACKAGE_STRUCTURES.BUNDLE!.entryFile).toBe('agentver.bundle.yaml')
   })
 
-  it('should set SUB_AGENT entryFile to AGENT.md', () => {
-    expect(PACKAGE_STRUCTURES.SUB_AGENT!.entryFile).toBe('AGENT.md')
+  it('should set AGENT entryFile to AGENT.md', () => {
+    expect(PACKAGE_STRUCTURES.AGENT!.entryFile).toBe('AGENT.md')
   })
 
   it('should set COMMAND entryFile to COMMAND.md', () => {

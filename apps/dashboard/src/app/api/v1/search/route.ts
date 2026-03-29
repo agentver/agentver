@@ -6,7 +6,15 @@ import { z } from 'zod'
 
 const logger = createLogger('api:search')
 
-const packageTypeSchema = z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'])
+const packageTypeSchema = z.enum([
+  'SKILL',
+  'AGENT_CONFIG',
+  'PLUGIN',
+  'SCRIPT',
+  'PROMPT',
+  'AGENT',
+  'COMMAND',
+])
 const sortSchema = z.enum(['relevance', 'stars', 'installs', 'recent'])
 
 type SortOption = z.infer<typeof sortSchema>
@@ -68,8 +76,7 @@ export async function GET(request: Request) {
     if (!typeResult.success) {
       return NextResponse.json(
         {
-          error:
-            'Invalid type parameter. Must be one of: SKILL, AGENT_CONFIG, PLUGIN, SCRIPT, PROMPT',
+          error: `Invalid type parameter. Must be one of: ${packageTypeSchema.options.join(', ')}`,
         },
         { status: 400 }
       )

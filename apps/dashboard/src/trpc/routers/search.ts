@@ -96,7 +96,9 @@ export const searchRouter = router({
     .input(
       z.object({
         query: z.string().min(1).max(200),
-        type: z.enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT']).optional(),
+        type: z
+          .enum(['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT', 'AGENT', 'COMMAND'])
+          .optional(),
         category: z.string().optional(),
         agent: z.string().optional(),
         sort: sortSchema.default('relevance'),

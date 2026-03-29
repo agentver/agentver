@@ -47,7 +47,15 @@ import { PackageManagerTabs } from '@/components/ui/package-manager-tabs'
 import { useOrgContext } from '@/hooks/use-org-context'
 import { trpc } from '@/trpc/client'
 
-const VALID_TYPES = ['SKILL', 'AGENT_CONFIG', 'PLUGIN', 'SCRIPT', 'PROMPT'] as const
+const VALID_TYPES = [
+  'SKILL',
+  'AGENT_CONFIG',
+  'PLUGIN',
+  'SCRIPT',
+  'PROMPT',
+  'AGENT',
+  'COMMAND',
+] as const
 
 export default function SkillsPage() {
   return (
@@ -761,10 +769,7 @@ function SkillsPageContent() {
 
   const { data, isLoading } = trpc.skills.list.useQuery({
     search: search || undefined,
-    type:
-      type !== 'all'
-        ? (type as 'SKILL' | 'AGENT_CONFIG' | 'PLUGIN' | 'SCRIPT' | 'PROMPT')
-        : undefined,
+    type: type !== 'all' ? (type as (typeof VALID_TYPES)[number]) : undefined,
   })
 
   // Fetch unfiltered list for type counts (only when a type filter is active)
