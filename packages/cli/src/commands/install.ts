@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { AgentId } from '@agentver/agent-definitions'
 import {
   composeConfigs,
   detectInstalledAgents,
+  getConfigFilePath,
   getGlobalConfigFilePath,
   isComposedConfig,
   parseComposedSections,
@@ -986,11 +987,8 @@ async function installAgentConfig(
     // Derive trusted base from a probe with a fixed dummy name, so the base
     // is never influenced by the untrusted package name.
     const probePath = options.global
-      ? getGlobalConfigFilePath(
-          agentId as Parameters<typeof getGlobalConfigFilePath>[0],
-          '__probe__'
-        )
-      : getConfigFilePath(agentId as Parameters<typeof getConfigFilePath>[0], '__probe__')
+      ? getGlobalConfigFilePath(translation.agentId, '__probe__')
+      : getConfigFilePath(translation.agentId, '__probe__')
     if (!probePath) continue
     const resolvedBase = resolve(
       options.global

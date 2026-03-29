@@ -172,6 +172,9 @@ function setupHappyPathMocks() {
   vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([
     { id: 'claude-code', name: 'Claude Code', configPath: '/project/.claude' },
   ])
+  // Default probe path for path-traversal guard — tests that need specific
+  // behaviour can override this after calling setupHappyPathMocks().
+  vi.mocked(agentDefs.getConfigFilePath).mockReturnValue('CLAUDE.md')
 
   return { gitSource, files, resolved, fetchResult }
 }
