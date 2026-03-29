@@ -7,6 +7,7 @@ import { readFilesFromDirectory } from '../git/fetcher.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile, writeLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractOrgFromUri } from '../utils/uri.js'
 
 type SaveOptions = {
   path?: string
@@ -65,10 +66,7 @@ function findNamespace(
     return null
   }
 
-  // Source URI format: host/org/repo or just org from platform
-  const parts = entry.source.uri.split('/')
-  // The org is typically the second segment (host/org/repo)
-  const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+  const org = extractOrgFromUri(entry.source.uri)
   if (!org) return null
 
   return { org, name: skillName }

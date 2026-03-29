@@ -388,6 +388,44 @@ describe('save command', () => {
   })
 
   // -------------------------------------------------------------------------
+  // agentver:// URI support
+  // -------------------------------------------------------------------------
+
+  it('correctly extracts org from agentver:// URI and calls the right endpoint', async () => {
+    const agentverSource = createSharedGitSource({
+      uri: 'agentver://myorg',
+    })
+
+    vi.mocked(existsSync).mockReturnValue(true)
+    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    vi.mocked(readManifest).mockReturnValue(
+      createManifest({
+        packages: {
+          'test-skill': createManifestPackage({ source: agentverSource }),
+        },
+      })
+    )
+    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    vi.mocked(readLockfile).mockReturnValue(
+      createLockfile({
+        packages: {
+          'test-skill': createLockfilePackage({ source: agentverSource }),
+        },
+      })
+    )
+    vi.mocked(writeLockfile).mockReturnValue(undefined)
+    vi.mocked(platformFetch).mockResolvedValue({ commitSha: 'abc1234567' })
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'save'])
+
+    expect(platformFetch).toHaveBeenCalledWith(
+      '/skills/@myorg/test-skill/save',
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
+
+  // -------------------------------------------------------------------------
   // Additional: skill not in manifest
   // -------------------------------------------------------------------------
 

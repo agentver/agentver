@@ -6,6 +6,7 @@ import ora from 'ora'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile, writeLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractOrgFromUri } from '../utils/uri.js'
 
 type DraftInfo = {
   name: string
@@ -50,8 +51,7 @@ function resolveSkillIdentity(): { org: string; name: string } | null {
   const entry = manifest.packages[skillName]
 
   if (entry?.source.type === 'git') {
-    const parts = entry.source.uri.split('/')
-    const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+    const org = extractOrgFromUri(entry.source.uri)
     if (org) {
       return { org, name: skillName }
     }

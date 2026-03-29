@@ -5,6 +5,7 @@ import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readManifest } from '../storage/manifest.js'
+import { extractOrgFromUri } from '../utils/uri.js'
 
 type CommitEntry = {
   sha: string
@@ -29,8 +30,7 @@ function resolveSkillIdentity(nameArg?: string): { org: string; name: string } |
   if (nameArg) {
     const entry = manifest.packages[nameArg]
     if (entry?.source.type === 'git') {
-      const parts = entry.source.uri.split('/')
-      const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+      const org = extractOrgFromUri(entry.source.uri)
       if (org) {
         return { org, name: nameArg }
       }
@@ -54,8 +54,7 @@ function resolveSkillIdentity(nameArg?: string): { org: string; name: string } |
 
   const entry = manifest.packages[skillName]
   if (entry?.source.type === 'git') {
-    const parts = entry.source.uri.split('/')
-    const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+    const org = extractOrgFromUri(entry.source.uri)
     if (org) {
       return { org, name: skillName }
     }

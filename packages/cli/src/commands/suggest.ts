@@ -12,6 +12,7 @@ import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
 import { extractError } from '../utils.js'
+import { extractOrgFromUri } from '../utils/uri.js'
 
 const HTTP_TIMEOUT_MS = 15_000
 
@@ -110,7 +111,7 @@ async function postToPlatform<T>(path: string, body: unknown): Promise<T> {
 
 function buildEndpoint(manifestEntry: ManifestV2Package, packageName: string): string {
   if (manifestEntry.source.type !== 'git') return ''
-  const orgSlug = manifestEntry.source.uri.split('/')[1] ?? ''
+  const orgSlug = extractOrgFromUri(manifestEntry.source.uri) ?? ''
   return `/skills/@${orgSlug}/${packageName}/suggestions`
 }
 
