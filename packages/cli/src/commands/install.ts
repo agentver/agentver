@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { AgentId } from '@agentver/agent-definitions'
 import {
   composeConfigs,
@@ -906,9 +906,19 @@ async function installAgentConfig(
   const translations = translateConfig(configContent, name, agents as AgentId[])
 
   for (const translation of translations) {
-    const fullConfigPath = options.global
-      ? join(homedir(), translation.filePath)
-      : join(projectRoot, translation.filePath)
+    const installRoot = getConfigInstallRoot(projectRoot, translation.agentId, options.global)
+    const translatedPath = translation.filePath.startsWith('~')
+      ? translation.filePath.replace(/^~(?=\/|$)/, homedir())
+      : translation.filePath
+    const fullConfigPath = resolve(installRoot, translatedPath)
+    const relativePath = relative(installRoot, fullConfigPath)
+
+    if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+      throw new AgentverError(
+        'VALIDATION_ERROR',
+        `Refusing to install config outside ${installRoot}`
+      )
+    }
 
     const configDir = dirname(fullConfigPath)
     if (!existsSync(configDir)) {
@@ -948,6 +958,14 @@ async function installAgentConfig(
 
     writeFileSync(fullConfigPath, finalContent, 'utf-8')
   }
+}
+
+function getConfigInstallRoot(
+  projectRoot: string,
+  _agentId: AgentId,
+  global: boolean | undefined
+): string {
+  return global ? homedir() : projectRoot
 }
 
 async function installToCustomPath(

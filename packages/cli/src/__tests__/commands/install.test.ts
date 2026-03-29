@@ -76,15 +76,22 @@ vi.mock('../../output.js', () => ({
   createSpinner: vi.fn(),
 }))
 
-vi.mock('@agentver/agent-definitions', () => ({
-  detectInstalledAgents: vi.fn(),
-  getConfigFilePath: vi.fn(),
-  getSkillPlacementPath: vi.fn(),
-  composeConfigs: vi.fn(),
-  isComposedConfig: vi.fn(),
-  parseComposedSections: vi.fn(),
-  translateConfig: vi.fn(),
-}))
+vi.mock('@agentver/agent-definitions', async () => {
+  const actual = await vi.importActual<typeof import('@agentver/agent-definitions')>(
+    '@agentver/agent-definitions'
+  )
+
+  return {
+    ...actual,
+    detectInstalledAgents: vi.fn(),
+    getConfigFilePath: vi.fn(actual.getConfigFilePath),
+    getSkillPlacementPath: vi.fn(),
+    composeConfigs: vi.fn(actual.composeConfigs),
+    isComposedConfig: vi.fn(actual.isComposedConfig),
+    parseComposedSections: vi.fn(actual.parseComposedSections),
+    translateConfig: vi.fn(actual.translateConfig),
+  }
+})
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn().mockReturnValue(false),
@@ -111,6 +118,7 @@ import { installPackage, parseAgentverUri, registerInstallCommand } from '../../
 // ---------------------------------------------------------------------------
 
 import * as nodeFs from 'node:fs'
+import * as nodeOs from 'node:os'
 import * as agentDefs from '@agentver/agent-definitions'
 import promptsDefault from 'prompts'
 import * as gitIndex from '../../git/index.js'
@@ -182,8 +190,12 @@ describe('commands/install', () => {
   const originalArgv = process.argv
   const originalExit = process.exit
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+
+    const actualAgentDefs = await vi.importActual<typeof import('@agentver/agent-definitions')>(
+      '@agentver/agent-definitions'
+    )
 
     process.cwd = vi.fn().mockReturnValue('/project')
     process.argv = ['node', 'agentver', 'install']
@@ -195,6 +207,14 @@ describe('commands/install', () => {
     vi.mocked(outputModule.createSpinner).mockReturnValue(createNoopSpinner() as never)
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
     vi.mocked(wellknownModule.looksLikeWellKnownUrl).mockReturnValue(false)
+    vi.mocked(nodeFs.existsSync).mockReturnValue(false)
+    vi.mocked(nodeFs.readFileSync).mockReset()
+    vi.mocked(nodeOs.homedir).mockReturnValue('/mock-home')
+    vi.mocked(agentDefs.getConfigFilePath).mockImplementation(actualAgentDefs.getConfigFilePath)
+    vi.mocked(agentDefs.composeConfigs).mockImplementation(actualAgentDefs.composeConfigs)
+    vi.mocked(agentDefs.isComposedConfig).mockImplementation(actualAgentDefs.isComposedConfig)
+    vi.mocked(agentDefs.parseComposedSections).mockImplementation(actualAgentDefs.parseComposedSections)
+    vi.mocked(agentDefs.translateConfig).mockImplementation(actualAgentDefs.translateConfig)
   })
 
   afterEach(() => {
@@ -1392,13 +1412,6 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.translateConfig).mockReturnValue([
-        {
-          agentId: 'claude-code',
-          filePath: 'CLAUDE.md',
-          content: '# My Config\n\nRules for the agent.\n',
-        },
-      ])
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
@@ -1447,21 +1460,19 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      const yamlContent = 'instructions: "# My Config\\n\\nRules for the agent.\\n"\n'
-      vi.mocked(agentDefs.translateConfig).mockReturnValue([
-        {
-          agentId: 'goose',
-          filePath: '.goose/config.yaml',
-          content: yamlContent,
-        },
-      ])
 
       await installPackage(TEST_SOURCE, { agent: 'goose' })
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain('.goose/config.yaml')
-      expect(writeCalls[0][1]).toBe(yamlContent)
+      expect(writeCalls[0]).toBeDefined()
+      const [filePath, writtenContent] = writeCalls[0]!
+      expect(String(filePath)).toContain('.goose/config.yaml')
+      expect(writtenContent).toBe(`instructions: "# My Config
+
+Rules for the agent.
+"
+`)
     })
 
     it('writes read redirect for aider', async () => {
@@ -1472,21 +1483,15 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      const redirectContent = 'read:\n  - AGENTS.md\n'
-      vi.mocked(agentDefs.translateConfig).mockReturnValue([
-        {
-          agentId: 'aider',
-          filePath: '.aider.conf.yml',
-          content: redirectContent,
-        },
-      ])
 
       await installPackage(TEST_SOURCE, { agent: 'aider' })
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain('.aider.conf.yml')
-      expect(writeCalls[0][1]).toBe(redirectContent)
+      expect(writeCalls[0]).toBeDefined()
+      const [filePath, writtenContent] = writeCalls[0]!
+      expect(String(filePath)).toContain('.aider.conf.yml')
+      expect(writtenContent).toBe('read:\n  - AGENTS.md\n')
     })
 
     it('writes to dynamic path for roo', async () => {
@@ -1497,19 +1502,13 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.translateConfig).mockReturnValue([
-        {
-          agentId: 'roo',
-          filePath: `.roo/rules/${DERIVED_NAME}.md`,
-          content: '# My Config\n\nRules for the agent.\n',
-        },
-      ])
 
       await installPackage(TEST_SOURCE, { agent: 'roo' })
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain(`.roo/rules/${DERIVED_NAME}.md`)
+      expect(writeCalls[0]).toBeDefined()
+      expect(String(writeCalls[0]![0])).toContain(`.roo/rules/${DERIVED_NAME}.md`)
     })
 
     it('writes to dynamic path for cline', async () => {
@@ -1520,19 +1519,13 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.translateConfig).mockReturnValue([
-        {
-          agentId: 'cline',
-          filePath: `.clinerules/${DERIVED_NAME}.md`,
-          content: '# My Config\n\nRules for the agent.\n',
-        },
-      ])
 
       await installPackage(TEST_SOURCE, { agent: 'cline' })
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(String(writeCalls[0][0])).toContain(`.clinerules/${DERIVED_NAME}.md`)
+      expect(writeCalls[0]).toBeDefined()
+      expect(String(writeCalls[0]![0])).toContain(`.clinerules/${DERIVED_NAME}.md`)
     })
 
     it('passes raw markdown for claude-code (passthrough)', async () => {
@@ -1544,19 +1537,13 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.translateConfig).mockReturnValue([
-        {
-          agentId: 'claude-code',
-          filePath: 'CLAUDE.md',
-          content: rawContent,
-        },
-      ])
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(writeCalls[0][1]).toBe(rawContent)
+      expect(writeCalls[0]).toBeDefined()
+      expect(writeCalls[0]![1]).toBe(rawContent)
     })
 
     it('composes translated content into existing composed config', async () => {
@@ -1584,9 +1571,17 @@ describe('commands/install', () => {
       vi.mocked(agentDefs.parseComposedSections).mockReturnValue([
         { packageName: 'existing-pkg', content: 'Existing rules.\n' },
       ])
-      const composedOutput =
-        '## From: existing-pkg\n\nExisting rules.\n\n## From: test-skill\n\n# My Config\n\nRules for the agent.\n'
-      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: composedOutput })
+      const composedOutput = `## From: existing-pkg
+
+Existing rules.
+
+## From: test-skill
+
+# My Config
+
+Rules for the agent.
+`
+      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: composedOutput, sources: [] })
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
@@ -1598,7 +1593,8 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(writeCalls[0][1]).toBe(composedOutput)
+      expect(writeCalls[0]).toBeDefined()
+      expect(writeCalls[0]![1]).toBe(composedOutput)
     })
 
     it('updates existing section when reinstalling into a composed config', async () => {
@@ -1628,9 +1624,17 @@ describe('commands/install', () => {
         { packageName: DERIVED_NAME, content: 'Old rules.\n' },
         { packageName: 'other-pkg', content: 'Other rules.\n' },
       ])
-      const recomposedOutput =
-        '## From: test-skill\n\n# Updated Config\n\nNew rules.\n\n## From: other-pkg\n\nOther rules.\n'
-      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: recomposedOutput })
+      const recomposedOutput = `## From: test-skill
+
+# Updated Config
+
+New rules.
+
+## From: other-pkg
+
+Other rules.
+`
+      vi.mocked(agentDefs.composeConfigs).mockReturnValue({ content: recomposedOutput, sources: [] })
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
@@ -1642,7 +1646,8 @@ describe('commands/install', () => {
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
-      expect(writeCalls[0][1]).toBe(recomposedOutput)
+      expect(writeCalls[0]).toBeDefined()
+      expect(writeCalls[0]![1]).toBe(recomposedOutput)
     })
 
     it('resolves config path under homedir for global installs', async () => {
@@ -1653,20 +1658,37 @@ describe('commands/install', () => {
         commitSha: RESOLVED_SHA,
         source: createGitSource(),
       })
-      vi.mocked(agentDefs.translateConfig).mockReturnValue([
-        {
-          agentId: 'goose',
-          filePath: '.goose/config.yaml',
-          content: 'instructions: "rules"\n',
-        },
-      ])
 
       await installPackage(TEST_SOURCE, { agent: 'goose', global: true })
 
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       expect(writeCalls).toHaveLength(1)
       // Global path should be resolved under homedir, not project root
-      expect(String(writeCalls[0][0])).toBe('/mock-home/.goose/config.yaml')
+      expect(writeCalls[0]).toBeDefined()
+      expect(String(writeCalls[0]![0])).toBe('/mock-home/.goose/config.yaml')
+    })
+
+    it('rejects translated config paths that escape the install root', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: '../../../.ssh/config',
+          content: 'malicious',
+        },
+      ])
+
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+      })
+      expect(nodeFs.mkdirSync).not.toHaveBeenCalled()
+      expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
     })
   })
 
