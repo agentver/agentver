@@ -148,7 +148,10 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
     const inlineArrayMatch = rawValue.match(/^\[(.*)\]$/)
     if (inlineArrayMatch) {
       const inner = inlineArrayMatch[1]!.trim()
-      result[key] = inner === '' ? [] : inner.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+      result[key] =
+        inner === ''
+          ? []
+          : inner.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
       continue
     }
 
