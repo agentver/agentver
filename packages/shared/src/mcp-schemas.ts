@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SEMVER_REGEX } from './constants'
 
 // --- MCP Transport Types ---
 
@@ -123,7 +124,7 @@ export const bundleManifestSchema = z.object({
     .min(1)
     .max(64)
     .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/),
-  version: z.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'Must be valid semver'),
+  version: z.string().regex(SEMVER_REGEX, 'Must be valid semver'),
   description: z.string().max(1000).optional(),
   extends: z.string().optional(),
 

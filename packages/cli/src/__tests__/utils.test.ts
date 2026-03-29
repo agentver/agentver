@@ -36,18 +36,8 @@ describe('extractError', () => {
 })
 
 describe('SEMVER_REGEX', () => {
-  it('matches valid semver versions', () => {
+  it('re-exports SEMVER_REGEX from @agentver/shared', () => {
+    expect(SEMVER_REGEX).toBeInstanceOf(RegExp)
     expect(SEMVER_REGEX.test('1.0.0')).toBe(true)
-    expect(SEMVER_REGEX.test('0.1.0')).toBe(true)
-    expect(SEMVER_REGEX.test('12.34.56')).toBe(true)
-    expect(SEMVER_REGEX.test('1.0.0-beta.1')).toBe(true)
-    expect(SEMVER_REGEX.test('1.0.0-rc1')).toBe(true)
-  })
-
-  it('rejects invalid versions', () => {
-    expect(SEMVER_REGEX.test('1.0')).toBe(false)
-    expect(SEMVER_REGEX.test('v1.0.0')).toBe(false)
-    expect(SEMVER_REGEX.test('abc')).toBe(false)
-    expect(SEMVER_REGEX.test('')).toBe(false)
   })
 })

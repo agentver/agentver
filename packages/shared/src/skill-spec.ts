@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { WARNING_NO_LICENCE } from './constants'
+import { SEMVER_REGEX, WARNING_NO_LICENCE } from './constants'
 import { parseFrontmatter } from './validation'
 
 // --- Agent Skills spec name validation ---
@@ -68,10 +68,7 @@ export type AgentSkillsSpec = z.infer<typeof agentSkillsSpecSchema>
  */
 export const agentverSkillSchema = agentSkillsSpecSchema.extend({
   /** Agentver requires semver for registry publishing */
-  version: z
-    .string()
-    .regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'Must be valid semver')
-    .optional(),
+  version: z.string().regex(SEMVER_REGEX, 'Must be valid semver').optional(),
   /** Agent compatibility — which agents this skill is designed for */
   'agentver-compatibility': z
     .object({
