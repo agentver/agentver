@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import * as core from '@actions/core'
 import {
   detectInstalledAgents,
@@ -368,15 +368,11 @@ export function placeFiles(
     }
 
     for (const file of files) {
-      if (file.path.includes('..')) {
-        core.warning(`Skipping file with path traversal segment: '${file.path}'`)
-        continue
-      }
-
       const filePath = resolve(fullPath, file.path)
       const resolvedBase = resolve(fullPath)
+      const rel = relative(resolvedBase, filePath)
 
-      if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) {
+      if (rel.startsWith('..') || isAbsolute(rel)) {
         core.warning(`Skipping file that escapes target directory: '${file.path}'`)
         continue
       }

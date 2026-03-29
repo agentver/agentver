@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   type AgentId,
   detectInstalledAgents,
@@ -40,7 +40,8 @@ const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-
 function assertPathWithin(filePath: string, baseDir: string): void {
   const resolved = resolve(filePath)
   const resolvedBase = resolve(baseDir)
-  if (!resolved.startsWith(`${resolvedBase}/`) && resolved !== resolvedBase) {
+  const rel = relative(resolvedBase, resolved)
+  if (rel.startsWith('..') || isAbsolute(rel)) {
     throw new AgentverError(
       'VALIDATION_ERROR',
       `Path traversal detected: "${filePath}" escapes base directory`
@@ -200,13 +201,9 @@ export function registerInstallTool(server: McpServer): void {
         const resolvedBase = resolve(fullPath)
 
         for (const file of files) {
-          if (file.path.includes('..')) {
-            console.warn(`Skipping file with path traversal segment: '${file.path}'`)
-            continue
-          }
-
           const filePath = resolve(fullPath, file.path)
-          if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) {
+          const rel = relative(resolvedBase, filePath)
+          if (rel.startsWith('..') || isAbsolute(rel)) {
             console.warn(`Skipping file that escapes target directory: '${file.path}'`)
             continue
           }
