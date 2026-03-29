@@ -1,6 +1,6 @@
 import type { PackageStatus, Prisma } from '@agentver/database'
 import { prisma } from '@agentver/database'
-import { createLogger, parseFrontmatter } from '@agentver/shared'
+import { createLogger, PACKAGE_TYPES, type PackageType, parseFrontmatter } from '@agentver/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit/logger'
@@ -742,25 +742,8 @@ export const skillsRouter = router({
       const description = typeof rawData.description === 'string' ? rawData.description : undefined
 
       const rawType = typeof rawData.type === 'string' ? rawData.type.toUpperCase() : 'SKILL'
-      const VALID_TYPES = new Set([
-        'SKILL',
-        'AGENT_CONFIG',
-        'PLUGIN',
-        'SCRIPT',
-        'PROMPT',
-        'AGENT',
-        'COMMAND',
-      ])
-      const type = VALID_TYPES.has(rawType)
-        ? (rawType as
-            | 'SKILL'
-            | 'AGENT_CONFIG'
-            | 'PLUGIN'
-            | 'SCRIPT'
-            | 'PROMPT'
-            | 'AGENT'
-            | 'COMMAND')
-        : 'SKILL'
+      const VALID_TYPES = new Set<string>(PACKAGE_TYPES)
+      const type = VALID_TYPES.has(rawType) ? (rawType as PackageType) : 'SKILL'
 
       const tags = Array.isArray(rawData.tags)
         ? rawData.tags.filter((t): t is string => typeof t === 'string')

@@ -76,8 +76,7 @@ export async function GET(request: Request) {
     if (!typeResult.success) {
       return NextResponse.json(
         {
-          error:
-            'Invalid type parameter. Must be one of: SKILL, AGENT_CONFIG, PLUGIN, SCRIPT, PROMPT',
+          error: `Invalid type parameter. Must be one of: ${packageTypeSchema.options.join(', ')}`,
         },
         { status: 400 }
       )
