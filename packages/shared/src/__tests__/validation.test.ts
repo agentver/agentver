@@ -162,7 +162,7 @@ disabled: false
     })
   })
 
-  it('should parse numeric values (integer and float)', () => {
+  it('should parse integer values as numbers and keep decimals as strings', () => {
     const content = `---
 name: test
 count: 42
@@ -174,7 +174,7 @@ ratio: 3.14
     expect(result.rawData).toEqual({
       name: 'test',
       count: 42,
-      ratio: 3.14,
+      ratio: '3.14',
     })
   })
 
@@ -239,6 +239,130 @@ metadata:
         category: 'testing',
       },
     })
+  })
+
+  it('should parse keys containing digits', () => {
+    const content = `---
+format2: something
+v2-compat: true
+item_3: value
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      format2: 'something',
+      'v2-compat': true,
+      item_3: 'value',
+    })
+  })
+
+  it('should parse empty inline arrays', () => {
+    const content = `---
+name: test
+tags: []
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      tags: [],
+    })
+  })
+
+  it('should keep version-like decimal values as strings', () => {
+    const content = `---
+name: test
+version: 1.0
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      version: '1.0',
+    })
+  })
+
+  it('should parse literal block scalar (|)', () => {
+    const content = `---
+name: test
+description: |
+  Line one
+  Line two
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      description: 'Line one\nLine two',
+    })
+  })
+
+  it('should parse folded block scalar (>)', () => {
+    const content = `---
+name: test
+description: >
+  Line one
+  Line two
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      description: 'Line one Line two',
+    })
+  })
+
+  it('should parse block scalar followed by another key', () => {
+    const content = `---
+description: |
+  Multi
+  line
+name: test
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      description: 'Multi\nline',
+      name: 'test',
+    })
+  })
+
+  it('should flush trailing empty-value key as empty array', () => {
+    const content = `---
+name: test
+tags:
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      tags: [],
+    })
+  })
+
+  it('should handle empty-value key consistently in middle and end', () => {
+    const middleContent = `---
+tags:
+name: test
+---`
+
+    const endContent = `---
+name: test
+tags:
+---`
+
+    const middleResult = parseFrontmatter(middleContent)
+    const endResult = parseFrontmatter(endContent)
+
+    expect(middleResult.rawData.tags).toEqual([])
+    expect(endResult.rawData.tags).toEqual([])
   })
 })
 

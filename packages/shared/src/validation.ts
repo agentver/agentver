@@ -30,11 +30,42 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
   let currentKey: string | null = null
   let currentArray: string[] | null = null
   let currentRecord: Record<string, string> | null = null
+  let currentBlockScalarLines: string[] | null = null
+  let currentBlockScalarStyle: '|' | '>' | null = null
+  let currentBlockScalarIndent: number | null = null
 
   for (const line of lines) {
-    // Skip empty lines and comments
+    // Skip empty lines and comments (but empty lines are valid inside block scalars)
     if (line.trim() === '' || line.trim().startsWith('#')) {
+      if (currentKey && currentBlockScalarLines !== null && line.trim() === '') {
+        currentBlockScalarLines.push('')
+        continue
+      }
       continue
+    }
+
+    // Block scalar continuation — indented lines are part of the block
+    if (currentKey && currentBlockScalarLines !== null) {
+      if (/^\s+/.test(line)) {
+        if (currentBlockScalarIndent === null) {
+          currentBlockScalarIndent = line.match(/^(\s+)/)![1]!.length
+        }
+        currentBlockScalarLines.push(line.slice(currentBlockScalarIndent))
+        continue
+      }
+      // Non-indented line — flush the block scalar
+      const trimmedLines = [...currentBlockScalarLines]
+      while (trimmedLines.length > 0 && trimmedLines[trimmedLines.length - 1] === '') {
+        trimmedLines.pop()
+      }
+      result[currentKey] = currentBlockScalarStyle === '|'
+        ? trimmedLines.join('\n')
+        : trimmedLines.join(' ').replace(/\s+/g, ' ').trim()
+      currentKey = null
+      currentBlockScalarLines = null
+      currentBlockScalarStyle = null
+      currentBlockScalarIndent = null
+      // Fall through to process current line as a new key
     }
 
     // Array item continuation (e.g. `  - value`)
@@ -51,20 +82,20 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
       continue
     }
 
-    // If we were collecting an array or record, flush it
-    if (currentKey && currentArray) {
-      result[currentKey] = currentArray
+    // If we were collecting an array or record, flush it (prefer record if it has entries)
+    if (currentKey) {
+      if (currentRecord && Object.keys(currentRecord).length > 0) {
+        result[currentKey] = currentRecord
+      } else if (currentArray !== null) {
+        result[currentKey] = currentArray
+      }
       currentArray = null
-      currentKey = null
-    }
-    if (currentKey && currentRecord) {
-      result[currentKey] = currentRecord
       currentRecord = null
       currentKey = null
     }
 
     // Top-level key: value
-    const kvMatch = line.match(/^([a-zA-Z_-]+):\s*(.*)$/)
+    const kvMatch = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/)
     if (!kvMatch) continue
 
     const key = kvMatch[1]!
@@ -78,10 +109,20 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
       continue
     }
 
-    // Inline array: [a, b, c]
-    const inlineArrayMatch = rawValue.match(/^\[(.+)\]$/)
+    // Block scalar indicators: | (literal) or > (folded)
+    if (rawValue === '|' || rawValue === '>') {
+      currentKey = key
+      currentBlockScalarStyle = rawValue
+      currentBlockScalarLines = []
+      currentBlockScalarIndent = null
+      continue
+    }
+
+    // Inline array: [a, b, c] or []
+    const inlineArrayMatch = rawValue.match(/^\[(.*)\]$/)
     if (inlineArrayMatch) {
-      result[key] = inlineArrayMatch[1]!.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+      const inner = inlineArrayMatch[1]!.trim()
+      result[key] = inner === '' ? [] : inner.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
       continue
     }
 
@@ -91,8 +132,8 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
       continue
     }
 
-    // Number
-    if (/^\d+(\.\d+)?$/.test(rawValue)) {
+    // Number (integers only — decimals like 1.0 stay as strings to avoid lossy coercion)
+    if (/^\d+$/.test(rawValue)) {
       result[key] = Number(rawValue)
       continue
     }
@@ -101,11 +142,21 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
     result[key] = rawValue.replace(/^['"]|['"]$/g, '')
   }
 
-  // Flush any trailing collection
-  if (currentKey && currentArray && currentArray.length > 0) {
-    result[currentKey] = currentArray
-  } else if (currentKey && currentRecord && Object.keys(currentRecord).length > 0) {
-    result[currentKey] = currentRecord
+  // Flush any trailing block scalar
+  if (currentKey && currentBlockScalarLines !== null) {
+    const trimmedLines = [...currentBlockScalarLines]
+    while (trimmedLines.length > 0 && trimmedLines[trimmedLines.length - 1] === '') {
+      trimmedLines.pop()
+    }
+    result[currentKey] = currentBlockScalarStyle === '|'
+      ? trimmedLines.join('\n')
+      : trimmedLines.join(' ').replace(/\s+/g, ' ').trim()
+  } else if (currentKey) {
+    if (currentRecord && Object.keys(currentRecord).length > 0) {
+      result[currentKey] = currentRecord
+    } else if (currentArray !== null) {
+      result[currentKey] = currentArray
+    }
   }
 
   return result
