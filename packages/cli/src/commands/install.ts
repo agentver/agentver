@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
+import type { AgentId } from '@agentver/agent-definitions'
 import {
   composeConfigs,
   detectInstalledAgents,
@@ -8,7 +9,6 @@ import {
   parseComposedSections,
   translateConfig,
 } from '@agentver/agent-definitions'
-import type { AgentId } from '@agentver/agent-definitions'
 import type { InstallResult as InstallResultJSON } from '@agentver/shared'
 import {
   AGENT_CONFIG_FILES,
@@ -907,7 +907,7 @@ async function installAgentConfig(
 
   for (const translation of translations) {
     const fullConfigPath = options.global
-      ? translation.filePath.replace('~', homedir())
+      ? join(homedir(), translation.filePath)
       : join(projectRoot, translation.filePath)
 
     const configDir = dirname(fullConfigPath)
@@ -923,22 +923,26 @@ async function installAgentConfig(
         const existingSections = parseComposedSections(existingContent)
         const alreadyPresent = existingSections.some((s) => s.packageName === name)
 
-        if (!alreadyPresent) {
-          const allConfigs = [
-            ...existingSections.map((s, idx) => ({
+        const allConfigs = alreadyPresent
+          ? existingSections.map((s, idx) => ({
               packageName: s.packageName,
-              content: s.content,
+              content: s.packageName === name ? translation.content : s.content,
               order: idx,
-            })),
-            {
-              packageName: name,
-              content: translation.content,
-              order: existingSections.length,
-            },
-          ]
-          const composed = composeConfigs(allConfigs)
-          finalContent = composed.content
-        }
+            }))
+          : [
+              ...existingSections.map((s, idx) => ({
+                packageName: s.packageName,
+                content: s.content,
+                order: idx,
+              })),
+              {
+                packageName: name,
+                content: translation.content,
+                order: existingSections.length,
+              },
+            ]
+        const composed = composeConfigs(allConfigs)
+        finalContent = composed.content
       }
     }
 
