@@ -289,7 +289,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 7. --description flag
+  // 10. --description flag
   // -------------------------------------------------------------------------
 
   describe('--description flag', () => {
@@ -317,7 +317,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 8. --repo flag
+  // 11. --repo flag
   // -------------------------------------------------------------------------
 
   describe('--repo flag', () => {
@@ -350,7 +350,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 9. --json output validates against initResultSchema
+  // 12. --json output validates against initResultSchema
   // -------------------------------------------------------------------------
 
   describe('--json output', () => {
@@ -420,7 +420,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 10. Directory already exists
+  // 13. Directory already exists
   // -------------------------------------------------------------------------
 
   describe('directory already exists', () => {
@@ -451,7 +451,7 @@ describe('commands/init', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 11. Generated SKILL.md contains valid structure
+  // 14. Generated SKILL.md contains valid structure
   // -------------------------------------------------------------------------
 
   describe('generated SKILL.md structure', () => {
