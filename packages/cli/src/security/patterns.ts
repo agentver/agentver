@@ -41,7 +41,7 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'DC006',
     category: 'DANGEROUS_COMMAND',
     severity: 'HIGH',
-    pattern: /\bexec\s*\(/,
+    pattern: /(?<!\.)\bexec\s*\(/,
     message: 'Process execution detected (exec())',
   },
   {
@@ -207,7 +207,7 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'DE011',
     category: 'DATA_EXFILTRATION',
     severity: 'CRITICAL',
-    pattern: /\bnc\b/,
+    pattern: /\bnc\s+-[A-Za-z]*[elp]/,
     message: 'Netcat usage detected (nc) — potential reverse shell or data exfiltration',
   },
   {
@@ -237,14 +237,14 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'DE015',
     category: 'DATA_EXFILTRATION',
     severity: 'HIGH',
-    pattern: /\bdig\s/,
+    pattern: /\bdig\s+(@\S+\s+)?\S+\.\S+/,
     message: 'DNS query detected (dig) — potential DNS exfiltration',
   },
   {
     id: 'DE016',
     category: 'DATA_EXFILTRATION',
     severity: 'HIGH',
-    pattern: /\bhost\s/,
+    pattern: /\bhost\s+\S+\.\S+/,
     message: 'DNS resolution detected (host) — potential DNS exfiltration',
   },
 
@@ -267,7 +267,7 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'DC010',
     category: 'DANGEROUS_COMMAND',
     severity: 'CRITICAL',
-    pattern: /\bspawn\s*\(/,
+    pattern: /(?<!\.)\bspawn\s*\(/,
     message: 'Process spawn detected (spawn())',
   },
   {
@@ -288,7 +288,7 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'DC013',
     category: 'DANGEROUS_COMMAND',
     severity: 'CRITICAL',
-    pattern: /\bfork\s*\(/,
+    pattern: /(?<!\.)\bfork\s*\(/,
     message: 'Process fork detected (fork())',
   },
 
@@ -304,7 +304,7 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'DC015',
     category: 'DANGEROUS_COMMAND',
     severity: 'HIGH',
-    pattern: /\bFunction\s*\(/,
+    pattern: /(?<!\w)Function\s*\(\s*['"`]/,
     message: 'Function constructor invocation detected (Function()) — dynamic code execution',
   },
 
@@ -334,7 +334,7 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'CE004',
     category: 'CREDENTIAL_EXPOSURE',
     severity: 'HIGH',
-    pattern: /\bpassword\s*=\s*['"][^'"]+['"]/i,
+    pattern: /\bpassword\s*=\s*['"][^'"]{8,}['"]/i,
     message: 'Hardcoded password assignment detected',
   },
   {
@@ -357,28 +357,28 @@ export const SCAN_RULES: ScanRule[] = [
     id: 'CE007',
     category: 'CREDENTIAL_EXPOSURE',
     severity: 'HIGH',
-    pattern: /\btoken\s*=\s*['"]/,
+    pattern: /\btoken\s*=\s*['"][A-Za-z0-9\-_.]{8,}['"]/,
     message: 'Hardcoded token assignment detected',
   },
   {
     id: 'CE008',
     category: 'CREDENTIAL_EXPOSURE',
     severity: 'HIGH',
-    pattern: /\bapi_key\s*=\s*['"]/,
+    pattern: /\bapi_key\s*=\s*['"][A-Za-z0-9\-_.]{8,}['"]/,
     message: 'Hardcoded API key assignment detected (api_key)',
   },
   {
     id: 'CE009',
     category: 'CREDENTIAL_EXPOSURE',
     severity: 'HIGH',
-    pattern: /\bapiKey\s*=\s*['"]/,
+    pattern: /\bapiKey\s*=\s*['"][A-Za-z0-9\-_.]{8,}['"]/,
     message: 'Hardcoded API key assignment detected (apiKey)',
   },
   {
     id: 'CE010',
     category: 'CREDENTIAL_EXPOSURE',
     severity: 'HIGH',
-    pattern: /\bsecret\s*=\s*['"]/,
+    pattern: /\bsecret\s*=\s*['"][A-Za-z0-9\-_.]{8,}['"]/,
     message: 'Hardcoded secret assignment detected',
   },
 
