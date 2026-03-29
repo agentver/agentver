@@ -256,6 +256,8 @@ export function inferDetectedType(fileName: string): DetectedFileType {
   const lower = fileName.toLowerCase()
 
   if (lower === 'skill.md') return 'SKILL'
+  if (lower === 'agent.md') return 'AGENT'
+  if (lower === 'command.md') return 'COMMAND'
   if (lower === 'prompt.md') return 'PROMPT'
   if (lower === 'plugin.json') return 'PLUGIN'
   if (lower === 'script.json') return 'SCRIPT'

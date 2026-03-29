@@ -161,6 +161,15 @@ export async function scanGitLabRepo(
     '.opencode/skills',
   ]
 
+  const agentCommandPaths: Array<{
+    path: string
+    agentId: string
+    detectedType: DetectedFileType
+  }> = [
+    { path: '.claude/agents', agentId: 'claude-code', detectedType: 'AGENT' },
+    { path: '.claude/commands', agentId: 'claude-code', detectedType: 'COMMAND' },
+  ]
+
   type ConfigFileEntry = {
     path: string
     agentId: string
@@ -279,6 +288,34 @@ export async function scanGitLabRepo(
       }
     } catch (error) {
       logger.error(`Failed to scan skill directory ${skillPath}`, { error })
+    }
+  }
+
+  // Scan agent/command directories
+  for (const { path: acPath, agentId, detectedType } of agentCommandPaths) {
+    try {
+      const entries = await gitlabFetchOptional<GitLabTreeEntry[]>(
+        accessToken,
+        `/projects/${projectId}/repository/tree?path=${encodeURIComponent(acPath)}&ref=${ref}&per_page=100`
+      )
+
+      if (entries) {
+        for (const entry of entries) {
+          if (entry.type === 'blob' && entry.name.endsWith('.md')) {
+            foundFiles.push({
+              path: entry.path,
+              name: entry.name.replace(/\.md$/, ''),
+              type: 'skill',
+              detectedType,
+              agentId,
+              projectId,
+              ref,
+            })
+          }
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to scan ${acPath} directory`, { error })
     }
   }
 

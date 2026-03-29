@@ -426,6 +426,8 @@ const PACKAGE_TYPE_MAP: Record<string, PackageType> = {
   PLUGIN: 'PLUGIN',
   SCRIPT: 'SCRIPT',
   PROMPT: 'PROMPT',
+  AGENT: 'AGENT',
+  COMMAND: 'COMMAND',
 }
 
 function deriveBaseName(fileName: string): string {
@@ -536,7 +538,9 @@ async function adoptFile(
   }
 
   // COPY or MIRROR: commit file(s) to the org's skills repo
-  const targetPath = `skills/${baseName}`
+  const typeDir =
+    packageType === 'AGENT' ? 'agents' : packageType === 'COMMAND' ? 'commands' : 'skills'
+  const targetPath = `${typeDir}/${baseName}`
   const commitMessage = `Adopt ${file.name} from ${ctx.sourceProvider}`
 
   // Build the full list of files to commit
