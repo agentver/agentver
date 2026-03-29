@@ -120,7 +120,10 @@ export function readManifestFile(manifestPath: string): ManifestV2 {
   }
 
   if (result.data.version === 1) {
-    return migrateManifestV1ToV2(result.data)
+    core.info('Migrating v1 manifest to v2 format')
+    const migrated = migrateManifestV1ToV2(result.data)
+    writeFileSync(manifestPath, JSON.stringify(migrated, null, 2), 'utf-8')
+    return migrated
   }
 
   return result.data
@@ -477,7 +480,11 @@ async function installPackageWithData(
 
 function resolveVersionFromSource(pkg: ManifestV2['packages'][string]): string {
   if (pkg.source.type === 'git') {
-    return pkg.source.ref === 'unknown' ? 'latest' : pkg.source.ref
+    const ref = pkg.source.ref
+    if (ref === 'unknown') return 'latest'
+    // Strip git ref prefixes to extract semver (refs/tags/v1.0.0 -> 1.0.0)
+    const stripped = ref.replace(/^refs\/tags\/v?/, '')
+    return /^\d+\.\d+\.\d+/.test(stripped) ? stripped : 'latest'
   }
   return 'latest'
 }

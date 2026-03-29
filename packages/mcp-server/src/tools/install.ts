@@ -7,6 +7,7 @@ import {
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
 import { AgentverError } from '@agentver/shared'
+import type { GitSource } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
@@ -208,17 +209,20 @@ export function registerInstallTool(server: McpServer): void {
         installedTo.push(agentId)
       }
 
+      // Shared source for both manifest and lockfile v2 entries
+      const source: GitSource = {
+        type: 'git',
+        uri: data.gitUri,
+        path: data.gitPath ?? '',
+        ref: data.gitRef,
+        commit: data.gitCommitSha,
+      }
+
       // Update manifest
       const root = isGlobal ? homedir() : projectRoot
       const manifest = readManifest(root)
       manifest.packages[packageName] = {
-        source: {
-          type: 'git',
-          uri: data.gitUri,
-          path: data.gitPath ?? '',
-          ref: data.gitRef,
-          commit: data.gitCommitSha,
-        },
+        source,
         agents: installedTo,
         installedAt: new Date().toISOString(),
         modified: false,
@@ -228,13 +232,7 @@ export function registerInstallTool(server: McpServer): void {
       // Update lockfile
       const lockfile = readLockfile(root)
       lockfile.packages[packageName] = {
-        source: {
-          type: 'git',
-          uri: data.gitUri,
-          path: data.gitPath ?? '',
-          ref: data.gitRef,
-          commit: data.gitCommitSha,
-        },
+        source,
         integrity: `sha256-${data.sha256}`,
         agents: installedTo,
       }

@@ -7,6 +7,7 @@ import {
   migrateLockfileV1ToV2,
   migrateManifestV1ToV2,
 } from '@agentver/shared'
+import { logDebug } from './shared/context'
 
 const AGENTVER_DIR = '.agentver'
 const MANIFEST_FILE = 'manifest.json'
@@ -36,10 +37,12 @@ export function readManifest(projectRoot: string): ManifestV2 {
 
   const result = manifestAnySchema.safeParse(parsed)
   if (!result.success) {
+    logDebug(`Manifest at ${manifestPath} failed schema validation, treating as empty`)
     return { version: 2, packages: {} }
   }
 
   if (result.data.version === 1) {
+    logDebug(`Migrating v1 manifest at ${manifestPath} to v2`)
     const migrated = migrateManifestV1ToV2(result.data)
     writeManifest(projectRoot, migrated)
     return migrated
@@ -82,10 +85,12 @@ export function readLockfile(projectRoot: string): LockfileV2 {
 
   const result = lockfileAnySchema.safeParse(parsed)
   if (!result.success) {
+    logDebug(`Lockfile at ${lockfilePath} failed schema validation, treating as empty`)
     return { version: 2, packages: {} }
   }
 
   if (result.data.version === 1) {
+    logDebug(`Migrating v1 lockfile at ${lockfilePath} to v2`)
     const migrated = migrateLockfileV1ToV2(result.data)
     writeLockfile(projectRoot, migrated)
     return migrated
