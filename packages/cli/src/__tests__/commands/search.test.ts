@@ -136,11 +136,11 @@ describe('search command', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // Platform only results
+  // Default source behaviour
   // ---------------------------------------------------------------------------
 
-  describe('platform only results', () => {
-    it('returns only platform results when skills.sh returns empty', async () => {
+  describe('default source', () => {
+    it('searches both platform and community by default when connected', async () => {
       vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
       vi.mocked(clientModule.registryFetch).mockResolvedValue({
@@ -164,43 +164,40 @@ describe('search command', () => {
         offset: 0,
       })
 
-      // Default source when connected is 'platform', so skills.sh is not called
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([])
+
       await runSearch('testing')
 
       const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
       expect(output).toContain('platform-skill')
-      expect(skillsShModule.searchSkillsSh).not.toHaveBeenCalled()
+      expect(clientModule.registryFetch).toHaveBeenCalledOnce()
+      expect(skillsShModule.searchSkillsSh).toHaveBeenCalledOnce()
     })
-  })
 
-  // ---------------------------------------------------------------------------
-  // Skills.sh only (no platform connected)
-  // ---------------------------------------------------------------------------
-
-  describe('skills.sh only', () => {
-    it('returns skills.sh results when no platform is connected', async () => {
+    it('searches only community by default when disconnected', async () => {
       vi.mocked(configModule.isConnected).mockResolvedValue(false)
 
       vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([
         {
           id: 'c1',
-          name: 'test-skill',
-          description: 'A test skill',
-          installCount: 75,
+          name: 'community-skill',
+          description: 'A community skill',
+          installCount: 40,
           source: 'owner/repo',
           url: 'https://skills.sh/c1',
         },
       ])
 
       vi.mocked(skillsShModule.toGitInstallSource).mockReturnValue(
-        'github.com/owner/repo/test-skill'
+        'github.com/owner/repo/community-skill'
       )
 
       await runSearch('test')
 
       const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
-      expect(output).toContain('test-skill')
+      expect(output).toContain('community-skill')
       expect(clientModule.registryFetch).not.toHaveBeenCalled()
+      expect(skillsShModule.searchSkillsSh).toHaveBeenCalledOnce()
     })
   })
 
@@ -242,6 +239,8 @@ describe('search command', () => {
         limit: 20,
         offset: 0,
       })
+
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([])
 
       await runSearch('testing', '--type', 'skill')
 
@@ -297,11 +296,11 @@ describe('search command', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // Skills.sh network error
+  // Skills.sh returns empty
   // ---------------------------------------------------------------------------
 
-  describe('skills.sh network error', () => {
-    it('gracefully returns platform results when skills.sh fails', async () => {
+  describe('skills.sh returns empty', () => {
+    it('gracefully returns platform results when skills.sh returns no matches', async () => {
       vi.mocked(configModule.isConnected).mockResolvedValue(true)
 
       vi.mocked(clientModule.registryFetch).mockResolvedValue({
@@ -360,8 +359,32 @@ describe('search command', () => {
         'github.com/owner/repo/community-skill'
       )
 
-      // When platform throws, Promise.all rejects, so the whole search fails
-      await expect(runSearch('testing', '--source', 'all')).rejects.toThrow()
+      await runSearch('testing', '--source', 'all')
+
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
+      expect(output).toContain('community-skill')
+    })
+
+    it('shows no results when platform fails and skills.sh returns empty', async () => {
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
+
+      vi.mocked(clientModule.registryFetch).mockRejectedValue(new Error('Platform down'))
+      // searchSkillsSh never rejects — returns [] on failure
+      vi.mocked(skillsShModule.searchSkillsSh).mockResolvedValue([])
+
+      await runSearch('testing', '--source', 'all')
+
+      const output = stdoutWriteSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('')
+      expect(output).toContain('No results')
+    })
+
+    it('fails when only platform is searched and it errors', async () => {
+      vi.mocked(configModule.isConnected).mockResolvedValue(true)
+
+      vi.mocked(clientModule.registryFetch).mockRejectedValue(new Error('Platform down'))
+
+      await expect(runSearch('testing', '--source', 'platform')).rejects.toThrow()
+      expect(exitSpy).toHaveBeenCalledWith(1)
     })
   })
 
