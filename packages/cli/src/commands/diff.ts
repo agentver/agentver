@@ -8,6 +8,7 @@ import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output
 import { resolveReadPath } from '../storage/canonical.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import type { Scope } from '../utils/paths.js'
 
 const CONTEXT_LINES = 3
 
@@ -41,10 +42,11 @@ function parseManifestUri(uri: string): CliGitSource | null {
 async function readLocalFiles(
   projectRoot: string,
   packageName: string,
-  agents: string[]
+  agents: string[],
+  scope: Scope = 'project'
 ): Promise<Array<{ path: string; content: string }>> {
   // Try canonical path first, fall back to agent-specific paths
-  const readPath = resolveReadPath(projectRoot, packageName, agents)
+  const readPath = resolveReadPath(projectRoot, packageName, agents, scope)
   if (readPath) {
     const files = await readFilesFromDirectory(readPath)
     return files.map((f) => ({ path: f.path, content: f.content }))
@@ -297,19 +299,37 @@ export function registerDiffCommand(program: Command): void {
   program
     .command('diff <name>')
     .description('Show diff between local and upstream version of a skill')
-    .action(async (name: string) => {
+    .option('--global', 'Diff a globally installed package')
+    .action(async (name: string, options: { global?: boolean }) => {
       const jsonMode = isJSONMode()
+      const scope: Scope = options.global ? 'global' : 'project'
       const projectRoot = process.cwd()
-      const manifest = readManifest(projectRoot)
-      const lockfile = readLockfile(projectRoot)
+      const manifest = readManifest(projectRoot, scope)
+      const lockfile = readLockfile(projectRoot, scope)
 
       const manifestEntry = manifest.packages[name]
       if (!manifestEntry) {
+        const otherScope: Scope = scope === 'project' ? 'global' : 'project'
+        const otherManifest = readManifest(projectRoot, otherScope)
+        const foundInOther = name in otherManifest.packages
+
+        const hint = foundInOther
+          ? otherScope === 'global'
+            ? `Found in global scope — try: agentver diff ${name} --global`
+            : 'Found in project scope — try without --global'
+          : undefined
+
         if (jsonMode) {
-          outputError('NOT_INSTALLED', `Package "${name}" is not installed.`)
+          const msg = hint
+            ? `Package "${name}" is not installed. ${hint}`
+            : `Package "${name}" is not installed.`
+          outputError('NOT_FOUND', msg)
           process.exit(1)
         }
         console.error(chalk.red(`Package "${name}" is not installed.`))
+        if (hint) {
+          console.error(chalk.dim(hint))
+        }
         process.exit(1)
       }
 
@@ -377,7 +397,7 @@ export function registerDiffCommand(program: Command): void {
         const fetchResult = await fetchFiles(resolved)
         spinner.text = 'Comparing files...'
 
-        const localFiles = await readLocalFiles(projectRoot, name, agents)
+        const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
 
         const upstreamMap = new Map<string, string>()
         for (const file of fetchResult.files) {

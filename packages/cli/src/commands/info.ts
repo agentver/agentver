@@ -10,6 +10,7 @@ import { resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import type { Scope } from '../utils/paths.js'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -22,24 +23,42 @@ export function registerInfoCommand(program: Command): void {
     .command('info <name>')
     .description('Show detailed information about an installed package')
     .option('--json', 'Output as JSON')
-    .action(async (name: string, options: { json?: boolean }) => {
+    .option('--global', 'Show info for a globally installed package')
+    .action(async (name: string, options: { json?: boolean; global?: boolean }) => {
       const jsonMode = isJSONMode() || options.json === true
+      const scope: Scope = options.global ? 'global' : 'project'
       const projectRoot = process.cwd()
-      const manifest = readManifest(projectRoot)
+      const manifest = readManifest(projectRoot, scope)
 
       const pkg = manifest.packages[name]
       if (!pkg) {
+        const otherScope: Scope = scope === 'project' ? 'global' : 'project'
+        const otherManifest = readManifest(projectRoot, otherScope)
+        const foundInOther = name in otherManifest.packages
+
+        const hint = foundInOther
+          ? otherScope === 'global'
+            ? `Found in global scope — try: agentver info ${name} --global`
+            : 'Found in project scope — try without --global'
+          : undefined
+
         if (jsonMode) {
-          outputError('NOT_FOUND', `Package "${name}" is not installed.`)
+          const msg = hint
+            ? `Package "${name}" is not installed. ${hint}`
+            : `Package "${name}" is not installed.`
+          outputError('NOT_FOUND', msg)
           process.exit(1)
         }
         console.error(chalk.red(`Package "${name}" is not installed.`))
+        if (hint) {
+          console.error(chalk.dim(hint))
+        }
         process.exit(1)
       }
 
       const spinner = createSpinner('Reading package information...').start()
 
-      const lockfile = readLockfile(projectRoot)
+      const lockfile = readLockfile(projectRoot, scope)
       const lockfileEntry = lockfile.packages[name]
       const shortName = name.split('/').pop()!
 
@@ -49,7 +68,7 @@ export function registerInfoCommand(program: Command): void {
       let skillTitle: string | undefined
       let skillDescription: string | undefined
 
-      const readPath = resolveReadPath(projectRoot, shortName, pkg.agents)
+      const readPath = resolveReadPath(projectRoot, shortName, pkg.agents, scope)
 
       if (readPath) {
         try {
