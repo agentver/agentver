@@ -9,8 +9,9 @@ type CompletionOptions = {
   install?: boolean
 }
 
-const TOP_LEVEL_COMMANDS = [
+const TOP_LEVEL_COMMANDS: readonly string[] = [
   'adopt',
+  'agents',
   'audit',
   'completion',
   'config',
@@ -24,6 +25,7 @@ const TOP_LEVEL_COMMANDS = [
   'log',
   'login',
   'logout',
+  'pin',
   'publish',
   'remove',
   'save',
@@ -33,21 +35,23 @@ const TOP_LEVEL_COMMANDS = [
   'suggest',
   'suggestions',
   'sync',
+  'unpin',
   'update',
   'upgrade',
+  'validate',
   'verify',
   'version',
   'whoami',
 ]
 
-const SUBCOMMANDS: Record<string, string[]> = {
+const SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
   draft: ['create', 'list', 'switch', 'publish', 'discard'],
   version: ['create', 'list'],
   config: ['list', 'get', 'set', 'unset', 'path'],
   completion: ['bash', 'zsh', 'fish'],
 }
 
-const COMMON_FLAGS = ['--json', '--global', '--dry-run', '--help']
+const COMMON_FLAGS: readonly string[] = ['--json', '--global', '--dry-run', '--help']
 
 function generateBashScript(): string {
   const subcmdCases = Object.entries(SUBCOMMANDS)
