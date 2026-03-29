@@ -7,6 +7,7 @@ import * as outputModule from '../../output'
 import * as canonicalModule from '../../storage/canonical.js'
 import * as lockfileModule from '../../storage/lockfile.js'
 import * as manifestModule from '../../storage/manifest.js'
+import * as wellKnownModule from '../../wellknown/index.js'
 import {
   createGitSource,
   createLockfile,
@@ -35,6 +36,11 @@ vi.mock('../../git/fetcher.js', () => ({
 
 vi.mock('../../git/index.js', () => ({
   fetchFiles: vi.fn(),
+}))
+
+vi.mock('../../wellknown/index.js', () => ({
+  fetchWellKnownIndex: vi.fn(),
+  fetchWellKnownSkill: vi.fn(),
 }))
 
 vi.mock('../../output', () => ({
@@ -542,27 +548,186 @@ describe('diff command', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // Well-known source (unsupported)
+  // Well-known source
   // ---------------------------------------------------------------------------
 
   describe('well-known source', () => {
-    it('errors for well-known source packages', async () => {
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
-
+    function setupWellKnownPackage(
+      name: string,
+      source?: ReturnType<typeof createWellKnownSource>
+    ): void {
       vi.mocked(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
-            'wk-skill': createManifestPackage({
-              source: createWellKnownSource(),
+            [name]: createManifestPackage({
+              source: source ?? createWellKnownSource({ skillName: name }),
+              agents: ['claude-code'],
             }),
           },
         })
       )
       vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+    }
+
+    it('shows unified diff when local files differ from well-known upstream', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      setupWellKnownPackage('wk-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/wk-skill'
+      )
+
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockResolvedValue({
+        skills: [{ name: 'wk-skill', description: 'A well-known skill', files: ['SKILL.md'] }],
+      })
+
+      vi.mocked(wellKnownModule.fetchWellKnownSkill).mockResolvedValue({
+        name: 'wk-skill',
+        description: 'A well-known skill',
+        files: [{ path: 'SKILL.md', content: 'line 1\nline 2\nline 3\n', size: 20 }],
+        sourceUrl: 'https://skills.example.com/.well-known/skills/wk-skill',
+        hostname: 'skills.example.com',
+      })
+
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: 'line 1\nline 2 modified\nline 3\n', size: 25 },
+      ])
+
+      await runDiff('wk-skill')
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('SKILL.md')
+      expect(output).toContain('-line 2')
+      expect(output).toContain('+line 2 modified')
+    })
+
+    it('shows no differences when local matches well-known upstream', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      setupWellKnownPackage('wk-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/wk-skill'
+      )
+
+      const content = 'line 1\nline 2\nline 3\n'
+
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockResolvedValue({
+        skills: [{ name: 'wk-skill', description: 'A well-known skill', files: ['SKILL.md'] }],
+      })
+
+      vi.mocked(wellKnownModule.fetchWellKnownSkill).mockResolvedValue({
+        name: 'wk-skill',
+        description: 'A well-known skill',
+        files: [{ path: 'SKILL.md', content, size: content.length }],
+        sourceUrl: 'https://skills.example.com/.well-known/skills/wk-skill',
+        hostname: 'skills.example.com',
+      })
+
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content, size: content.length },
+      ])
+
+      await runDiff('wk-skill')
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('No differences')
+    })
+
+    it('errors when skill no longer exists in well-known index', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      setupWellKnownPackage('wk-skill')
+
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockResolvedValue({
+        skills: [{ name: 'other-skill', description: 'Different skill', files: ['SKILL.md'] }],
+      })
 
       await expect(runDiff('wk-skill')).rejects.toThrow()
 
       expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('outputs JSON error when skill is missing from well-known index', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      setupWellKnownPackage('wk-skill')
+
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockResolvedValue({
+        skills: [{ name: 'other-skill', description: 'Different skill', files: ['SKILL.md'] }],
+      })
+
+      await expect(runDiff('wk-skill')).rejects.toThrow()
+
+      expect(vi.mocked(outputModule.outputError)).toHaveBeenCalledWith(
+        'NOT_FOUND',
+        expect.stringContaining('no longer exists')
+      )
+    })
+
+    it('outputs JSON diff result for well-known sources', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      setupWellKnownPackage('wk-skill')
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/tmp/project/.agents/skills/wk-skill'
+      )
+
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockResolvedValue({
+        skills: [{ name: 'wk-skill', description: 'A well-known skill', files: ['SKILL.md'] }],
+      })
+
+      vi.mocked(wellKnownModule.fetchWellKnownSkill).mockResolvedValue({
+        name: 'wk-skill',
+        description: 'A well-known skill',
+        files: [{ path: 'SKILL.md', content: 'line 1\nline 2\n', size: 13 }],
+        sourceUrl: 'https://skills.example.com/.well-known/skills/wk-skill',
+        hostname: 'skills.example.com',
+      })
+
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: 'line 1\nline 2 changed\n', size: 20 },
+      ])
+
+      await runDiff('wk-skill')
+
+      expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        name: string
+        hunks: Array<{ file: string; additions: number; deletions: number; content: string }>
+      }
+
+      expect(data.name).toBe('wk-skill')
+      expect(data.hunks).toHaveLength(1)
+      expect(data.hunks[0]!.file).toBe('SKILL.md')
+      expect(data.hunks[0]!.additions).toBeGreaterThan(0)
+      expect(data.hunks[0]!.deletions).toBeGreaterThan(0)
+    })
+
+    it('handles fetch failure gracefully', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      setupWellKnownPackage('wk-skill')
+
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockRejectedValue(new Error('Network timeout'))
+
+      await expect(runDiff('wk-skill')).rejects.toThrow()
+
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('outputs JSON error on fetch failure', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      setupWellKnownPackage('wk-skill')
+
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockRejectedValue(new Error('Network timeout'))
+
+      await expect(runDiff('wk-skill')).rejects.toThrow()
+
+      expect(vi.mocked(outputModule.outputError)).toHaveBeenCalledWith(
+        'DIFF_FAILED',
+        expect.stringContaining('Network timeout')
+      )
     })
   })
 })

@@ -9,6 +9,7 @@ import { resolveReadPath } from '../storage/canonical.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
 import type { Scope } from '../utils/paths.js'
+import { fetchWellKnownIndex, fetchWellKnownSkill } from '../wellknown/index.js'
 
 const CONTEXT_LINES = 3
 
@@ -336,17 +337,75 @@ export function registerDiffCommand(program: Command): void {
       const { source, agents } = manifestEntry
 
       if (source.type === 'well-known') {
-        if (jsonMode) {
-          outputError('WELL_KNOWN_UNSUPPORTED', `Diff is not yet supported for well-known sources.`)
+        const spinner = createSpinner(`Fetching upstream files from ${source.hostname}...`).start()
+
+        try {
+          const index = await fetchWellKnownIndex(source.baseUrl)
+          const entry = index.skills.find((s) => s.name === source.skillName)
+
+          if (!entry) {
+            const message = `Skill "${source.skillName}" no longer exists at ${source.hostname}`
+            if (jsonMode) {
+              spinner.stop()
+              outputError('NOT_FOUND', message)
+              process.exit(1)
+            }
+            spinner.fail(message)
+            process.exit(1)
+          }
+
+          const fetchResult = await fetchWellKnownSkill(source.baseUrl, entry)
+          spinner.text = 'Comparing files...'
+
+          const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
+
+          const upstreamMap = new Map<string, string>()
+          for (const file of fetchResult.files) {
+            upstreamMap.set(file.path, file.content)
+          }
+
+          const localMap = new Map<string, string>()
+          for (const file of localFiles) {
+            localMap.set(file.path, file.content)
+          }
+
+          const diffs = diffFiles(upstreamMap, localMap)
+          spinner.stop()
+
+          if (jsonMode) {
+            const diffResult: DiffResult = {
+              name,
+              hunks: diffs.flatMap((d) =>
+                d.hunks.map((h) => ({
+                  file: d.path,
+                  additions: h.lines.filter((l) => l.startsWith('+')).length,
+                  deletions: h.lines.filter((l) => l.startsWith('-')).length,
+                  content: h.lines.join('\n'),
+                }))
+              ),
+            }
+            outputSuccess(diffResult)
+            return
+          }
+
+          if (diffs.length === 0) {
+            console.log(chalk.green('No differences found.'))
+            return
+          }
+
+          console.log(formatDiff(diffs))
+        } catch (error) {
+          const message = `Failed to generate diff: ${error instanceof Error ? error.message : String(error)}`
+          if (jsonMode) {
+            spinner.stop()
+            outputError('DIFF_FAILED', message)
+            process.exit(1)
+          }
+          spinner.fail(message)
           process.exit(1)
         }
-        console.error(
-          chalk.red(
-            `Package "${name}" was installed from a well-known source (${source.hostname}).`
-          )
-        )
-        console.error(chalk.dim('Diff is not yet supported for well-known sources.'))
-        process.exit(1)
+
+        return
       }
 
       if (source.uri === 'unknown') {
