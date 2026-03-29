@@ -202,9 +202,10 @@ describe('E2E: install (in-process, real filesystem)', () => {
 describe('E2E: install --global (in-process, real filesystem)', () => {
   it('creates files under home directory paths', async () => {
     const fakeHome = createTempDir()
-    fakeHomePath = fakeHome
 
     try {
+      fakeHomePath = fakeHome
+
       const result = await installPackage('github.com/test-owner/test-repo', {
         skipAudit: true,
         global: true,
@@ -267,5 +268,41 @@ describe('E2E: install AGENT_CONFIG (in-process, real filesystem)', () => {
     const lockfileRaw = readFileSync(lockfilePath, 'utf-8')
     const lockfileResult = lockfileV2Schema.safeParse(JSON.parse(lockfileRaw) as unknown)
     expect(lockfileResult.success).toBe(true)
+  })
+
+  it('writes to agent-specific config paths when multiple agents detected', async () => {
+    const configContent = '# Shared coding standards\n\nUse strict mode.\n'
+
+    // Create config dirs for cursor and copilot so detectInstalledAgents picks them up
+    mkdirSync(join(tempDir, '.cursor'), { recursive: true })
+    mkdirSync(join(tempDir, '.github'), { recursive: true })
+
+    setupGitMocks([{ path: 'CLAUDE.md', content: configContent, size: configContent.length }])
+
+    const result = await installPackage('github.com/test-owner/test-repo', {
+      skipAudit: true,
+    })
+
+    expect(result.name).toBe('test-repo')
+
+    // Claude writes to CLAUDE.md (getConfigFilePath returns 'CLAUDE.md')
+    const claudePath = join(tempDir, 'CLAUDE.md')
+    expect(existsSync(claudePath)).toBe(true)
+    expect(readFileSync(claudePath, 'utf-8')).toContain('Use strict mode')
+
+    // Cursor writes to .cursorrules (getConfigFilePath returns '.cursorrules')
+    const cursorPath = join(tempDir, '.cursorrules')
+    expect(existsSync(cursorPath)).toBe(true)
+    expect(readFileSync(cursorPath, 'utf-8')).toContain('Use strict mode')
+
+    // Copilot writes to .github/copilot-instructions.md
+    const copilotPath = join(tempDir, '.github/copilot-instructions.md')
+    expect(existsSync(copilotPath)).toBe(true)
+    expect(readFileSync(copilotPath, 'utf-8')).toContain('Use strict mode')
+
+    // All three should have the same content (markdown passthrough)
+    const claudeContent = readFileSync(claudePath, 'utf-8')
+    const cursorContent = readFileSync(cursorPath, 'utf-8')
+    expect(cursorContent).toBe(claudeContent)
   })
 })
