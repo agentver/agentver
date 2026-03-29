@@ -356,4 +356,92 @@ describe('list command', () => {
       expect(output).toContain('global-skill')
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // Bundle-aware grouping
+  // ---------------------------------------------------------------------------
+
+  describe('bundle grouping', () => {
+    it('groups constituents under their parent bundle', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'my-bundle': createManifestPackage({
+              source: createSharedGitSource({ ref: 'main', commit: 'abc1234567' }),
+              packageType: 'BUNDLE',
+            }),
+            'skill-a': createManifestPackage({
+              source: createSharedGitSource({ ref: 'main', commit: 'def5678901' }),
+              bundle: 'my-bundle',
+            }),
+            'skill-b': createManifestPackage({
+              source: createSharedGitSource({ ref: 'main', commit: 'ghi2345678' }),
+              bundle: 'my-bundle',
+            }),
+            'standalone-skill': createManifestPackage({
+              source: createSharedGitSource({ ref: 'main', commit: 'jkl3456789' }),
+            }),
+          },
+        })
+      )
+
+      await runList()
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('my-bundle')
+      expect(output).toContain('bundle')
+      expect(output).toContain('skill-a')
+      expect(output).toContain('skill-b')
+      expect(output).toContain('standalone-skill')
+    })
+
+    it('renders orphaned constituent when bundle entry is absent', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'orphan-skill': createManifestPackage({
+              source: createSharedGitSource({ ref: 'main', commit: 'abc1234567' }),
+              bundle: 'removed-bundle',
+            }),
+          },
+        })
+      )
+
+      await runList()
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('removed-bundle')
+      expect(output).toContain('orphan-skill')
+    })
+
+    it('includes bundle field in JSON output', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'my-bundle': createManifestPackage({
+              packageType: 'BUNDLE',
+            }),
+            'skill-a': createManifestPackage({
+              bundle: 'my-bundle',
+            }),
+          },
+        })
+      )
+
+      await runList()
+
+      expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
+      const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        packages: Record<string, { bundle?: string; packageType?: string }>
+      }
+      expect(data.packages['my-bundle']!.packageType).toBe('BUNDLE')
+      expect(data.packages['skill-a']!.bundle).toBe('my-bundle')
+    })
+  })
 })

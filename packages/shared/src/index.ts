@@ -3,6 +3,8 @@ export {
   type AuditResult,
   adoptResultSchema,
   auditResultSchema,
+  type BundleInstallResult,
+  bundleInstallResultSchema,
   type CLIError,
   type CLIOutput,
   cliErrorSchema,

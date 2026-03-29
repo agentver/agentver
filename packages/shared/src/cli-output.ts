@@ -83,9 +83,37 @@ export const removeResultSchema = z.object({
   name: z.string(),
   removed: z.boolean(),
   paths: z.array(z.string()),
+  bundleConstituents: z.array(z.string()).optional(),
+})
+
+export const bundleInstallResultSchema = z.object({
+  bundleName: z.string(),
+  bundleVersion: z.string(),
+  installed: z.array(
+    z.object({
+      name: z.string(),
+      type: z.string(),
+      source: z.object({ type: z.string(), uri: z.string().optional() }),
+    })
+  ),
+  skipped: z.array(
+    z.object({
+      name: z.string(),
+      type: z.string(),
+      reason: z.string(),
+    })
+  ),
+  mcpServers: z.array(
+    z.object({
+      name: z.string(),
+      configured: z.boolean(),
+    })
+  ),
 })
 
 export type RemoveResult = z.infer<typeof removeResultSchema>
+
+export type BundleInstallResult = z.infer<typeof bundleInstallResultSchema>
 
 export const updateResultSchema = z.object({
   updated: z.array(
