@@ -13,6 +13,8 @@ export type AgentverErrorCode =
   | 'AMBIGUOUS_SKILL'
   | 'CANCELLED'
   | 'INSTALL_FAILED'
+  | 'DEPENDENCY_MISSING'
+  | 'CONFLICT_DETECTED'
 
 export class AgentverError extends Error {
   readonly code: AgentverErrorCode

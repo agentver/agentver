@@ -14,6 +14,13 @@ describe('AgentverError', () => {
       'RATE_LIMITED',
       'STORAGE_ERROR',
       'INTEGRITY_ERROR',
+      'NO_FILES',
+      'SECURITY_BLOCK',
+      'AMBIGUOUS_SKILL',
+      'CANCELLED',
+      'INSTALL_FAILED',
+      'DEPENDENCY_MISSING',
+      'CONFLICT_DETECTED',
     ]
 
     for (const code of codes) {

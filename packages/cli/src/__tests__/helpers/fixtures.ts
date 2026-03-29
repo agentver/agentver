@@ -122,6 +122,8 @@ export type SkillMdFrontmatter = {
   compatibility?: string | string[]
   metadata?: Record<string, string>
   'allowed-tools'?: string | string[]
+  dependsOn?: string[]
+  conflictsWith?: string[]
 }
 
 export function createSkillMd(frontmatter?: SkillMdFrontmatter): string {
