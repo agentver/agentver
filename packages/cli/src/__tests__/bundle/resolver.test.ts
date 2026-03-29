@@ -127,6 +127,7 @@ describe('resolveBundle', () => {
           transport: 'stdio',
           command: 'npx',
           args: ['@test/server'],
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional credential reference syntax
           env: { API_KEY: '${credentials.api-key}' },
           credentials: [
             {
@@ -220,6 +221,7 @@ describe('validateBundleManifest', () => {
           name: 'env-server',
           transport: 'stdio',
           command: 'node',
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional credential reference syntax
           env: { TOKEN: '${credentials.missing-key}' },
         },
       ],
@@ -244,6 +246,7 @@ describe('validateBundleManifest', () => {
           name: 'env-server',
           transport: 'stdio',
           command: 'node',
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional credential reference syntax
           env: { TOKEN: '${credentials.my-key}' },
         },
       ],
