@@ -1,3 +1,4 @@
+import { isAbsolute, normalize } from 'node:path'
 import type { AgentId } from '@agentver/agent-definitions'
 import { getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { UpdateResult } from '@agentver/shared'
@@ -30,6 +31,19 @@ type UpdateInfo = {
 }
 
 type UpdateAction = 'replace' | 'patch' | 'skip'
+
+/**
+ * Validate a path read from the manifest before passing it to installPackage.
+ * Rejects relative paths and paths containing traversal segments to prevent
+ * a corrupted manifest from writing outside the expected directory.
+ */
+function validateManifestPath(path: string | undefined): string | undefined {
+  if (!path) return undefined
+  const normalised = normalize(path)
+  if (!isAbsolute(normalised)) return undefined
+  if (normalised.includes('..')) return undefined
+  return normalised
+}
 
 function parseUriToCliSource(
   uri: string,
@@ -367,7 +381,7 @@ export function registerUpdateCommand(program: Command): void {
         for (const update of updates) {
           const installedPkg = manifest.packages[update.name]
           const agents = installedPkg?.agents ?? []
-          const installedPath = installedPkg?.path
+          const installedPath = validateManifestPath(installedPkg?.path)
 
           if (update.locallyModified) {
             let action: UpdateAction
