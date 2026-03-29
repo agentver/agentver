@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import * as core from '@actions/core'
 import {
   detectInstalledAgents,
@@ -25,7 +25,7 @@ const REQUEST_TIMEOUT_MS = 30_000
 type DownloadResponse = {
   version: string
   content: string | null
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | Array<{ path: string; content: string }>
   sha256: string | null
   size: number | null
   gitRef: string | null
@@ -187,7 +187,6 @@ async function registryFetch<T>(path: string, registryUrl: string, apiKey: strin
       signal: controller.signal,
     })
   } catch (error) {
-    clearTimeout(timeoutId)
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new RegistryTimeoutError(url)
     }
@@ -218,13 +217,18 @@ function splitPackageName(name: string): { org: string; pkg: string } {
 }
 
 function assertDownloadResponse(data: unknown): asserts data is DownloadResponse {
+  const record = data as Record<string, unknown>
   if (
     typeof data !== 'object' ||
     data === null ||
-    typeof (data as Record<string, unknown>).version !== 'string' ||
-    typeof (data as Record<string, unknown>).createdAt !== 'string'
+    typeof record.version !== 'string' ||
+    typeof record.createdAt !== 'string' ||
+    typeof record.fileManifest !== 'object' ||
+    record.fileManifest === null
   ) {
-    throw new Error('Invalid response from registry: missing required fields (version, createdAt)')
+    throw new Error(
+      'Invalid response from registry: missing required fields (version, createdAt, fileManifest)'
+    )
   }
 }
 
@@ -237,16 +241,14 @@ function assertDownloadResponse(data: unknown): asserts data is DownloadResponse
  * - An empty object
  */
 export function extractFilesFromManifest(
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
 ): Array<{ path: string; content: string }> {
   if (Array.isArray(fileManifest)) {
-    return fileManifest.filter(
-      (entry): entry is { path: string; content: string } =>
-        typeof entry === 'object' &&
-        entry !== null &&
-        typeof entry.path === 'string' &&
-        typeof entry.content === 'string'
-    )
+    return fileManifest.filter((entry): entry is { path: string; content: string } => {
+      if (typeof entry !== 'object' || entry === null) return false
+      const record = entry as Record<string, unknown>
+      return typeof record.path === 'string' && typeof record.content === 'string'
+    })
   }
 
   return Object.entries(fileManifest)
@@ -283,7 +285,9 @@ export async function resolvePackage(
   const { org, pkg } = splitPackageName(name)
 
   const resolvedVersion =
-    version === 'latest' ? await resolveLatestVersion(org, pkg, registryUrl, apiKey) : version
+    !version || version === 'latest'
+      ? await resolveLatestVersion(org, pkg, registryUrl, apiKey)
+      : version
 
   const data = await registryFetch<unknown>(
     `/skills/${encodeURIComponent(org)}/${encodeURIComponent(pkg)}/${encodeURIComponent(resolvedVersion)}/download`,
@@ -364,15 +368,11 @@ export function placeFiles(
     }
 
     for (const file of files) {
-      if (file.path.includes('..')) {
-        core.warning(`Skipping file with path traversal segment: '${file.path}'`)
-        continue
-      }
-
       const filePath = resolve(fullPath, file.path)
       const resolvedBase = resolve(fullPath)
+      const rel = relative(resolvedBase, filePath)
 
-      if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) {
+      if (rel.startsWith('..') || isAbsolute(rel)) {
         core.warning(`Skipping file that escapes target directory: '${file.path}'`)
         continue
       }

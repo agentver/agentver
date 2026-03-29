@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   type AgentId,
   detectInstalledAgents,
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
-import { AgentverError } from '@agentver/shared'
 import type { GitSource } from '@agentver/shared'
+import { AgentverError, createLogger } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
@@ -17,7 +17,7 @@ import { readLockfile, readManifest, writeLockfile, writeManifest } from '../sto
 type DownloadResponse = {
   version: string
   content: string | null
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | Array<{ path: string; content: string }>
   sha256: string | null
   size: number | null
   gitRef: string | null
@@ -35,11 +35,13 @@ type VersionListResponse = {
 }
 
 const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+const logger = createLogger('mcp-server:install')
 
 function assertPathWithin(filePath: string, baseDir: string): void {
   const resolved = resolve(filePath)
   const resolvedBase = resolve(baseDir)
-  if (!resolved.startsWith(`${resolvedBase}/`) && resolved !== resolvedBase) {
+  const rel = relative(resolvedBase, resolved)
+  if (rel.startsWith('..') || isAbsolute(rel)) {
     throw new AgentverError(
       'VALIDATION_ERROR',
       `Path traversal detected: "${filePath}" escapes base directory`
@@ -52,16 +54,14 @@ function expandTilde(path: string): string {
 }
 
 function extractFilesFromManifest(
-  fileManifest: Record<string, unknown>
+  fileManifest: Record<string, unknown> | unknown[]
 ): Array<{ path: string; content: string }> {
   if (Array.isArray(fileManifest)) {
-    return fileManifest.filter(
-      (entry): entry is { path: string; content: string } =>
-        typeof entry === 'object' &&
-        entry !== null &&
-        typeof entry.path === 'string' &&
-        typeof entry.content === 'string'
-    )
+    return fileManifest.filter((entry): entry is { path: string; content: string } => {
+      if (typeof entry !== 'object' || entry === null) return false
+      const record = entry as Record<string, unknown>
+      return typeof record.path === 'string' && typeof record.content === 'string'
+    })
   }
 
   return Object.entries(fileManifest)
@@ -194,10 +194,14 @@ export function registerInstallTool(server: McpServer): void {
         const resolvedBase = resolve(fullPath)
 
         for (const file of files) {
-          if (file.path.includes('..')) continue
-
           const filePath = resolve(fullPath, file.path)
-          if (!filePath.startsWith(`${resolvedBase}/`) && filePath !== resolvedBase) continue
+          const rel = relative(resolvedBase, filePath)
+          if (rel.startsWith('..') || isAbsolute(rel)) {
+            logger.warn(
+              `Skipping file outside target directory: ${file.path} -> ${filePath} (base: ${resolvedBase})`
+            )
+            continue
+          }
 
           const dir = dirname(filePath)
           if (!existsSync(dir)) {
