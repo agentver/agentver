@@ -7,7 +7,14 @@
  * (canonical dir, symlinks, manifest, lockfile) are real.
  */
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { lockfileV2Schema, manifestV2Schema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,10 +75,10 @@ vi.mock('node:os', async (importOriginal) => {
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
 
-import type { FetchResult, ResolvedRef } from '../../git/types'
-import * as gitIndex from '../../git/index.js'
-import * as securityModule from '../../security/index.js'
 import { installPackage } from '../../commands/install'
+import * as gitIndex from '../../git/index.js'
+import type { FetchResult, ResolvedRef } from '../../git/types'
+import * as securityModule from '../../security/index.js'
 
 // ---------------------------------------------------------------------------
 // Test state
@@ -273,9 +280,12 @@ describe('E2E: install AGENT_CONFIG (in-process, real filesystem)', () => {
   it('writes to agent-specific config paths when multiple agents detected', async () => {
     const configContent = '# Shared coding standards\n\nUse strict mode.\n'
 
-    // Create config dirs for cursor and copilot so detectInstalledAgents picks them up
+    // Create config dirs/files so detectInstalledAgents picks up cursor and copilot.
+    // Cursor is detected via configDirs (['.cursor']), copilot via configFiles
+    // (['.github/copilot-instructions.md']) — a bare .github/ dir is not enough.
     mkdirSync(join(tempDir, '.cursor'), { recursive: true })
     mkdirSync(join(tempDir, '.github'), { recursive: true })
+    writeFileSync(join(tempDir, '.github/copilot-instructions.md'), '')
 
     setupGitMocks([{ path: 'CLAUDE.md', content: configContent, size: configContent.length }])
 
