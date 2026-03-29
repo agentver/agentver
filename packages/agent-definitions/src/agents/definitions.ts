@@ -269,9 +269,9 @@ export const AGENT_DEFINITIONS: AgentDefinition[] = [
     configFiles: [],
     configDirs: ['.continue'],
     category: 'agent-specific',
-    mcpConfigPath: '.continue/config.yaml',
-    globalMcpConfigPath: '~/.continue/config.yaml',
-    mcpConfigFormat: 'mcp-servers',
+    mcpConfigPath: null,
+    globalMcpConfigPath: null,
+    mcpConfigFormat: null,
   },
   {
     id: 'crush',

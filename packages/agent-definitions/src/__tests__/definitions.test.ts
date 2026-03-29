@@ -68,7 +68,7 @@ describe('getMcpCapableAgents', () => {
     expect(ids).toContain('cline')
     expect(ids).toContain('zencoder')
     expect(ids).toContain('kiro-cli')
-    expect(ids).toContain('continue')
+    expect(ids).not.toContain('continue')
   })
 
   it('should ensure all returned agents with mcpConfigFormat also have mcpConfigPath', () => {
@@ -76,6 +76,15 @@ describe('getMcpCapableAgents', () => {
     for (const agent of mcpAgents) {
       if (agent.mcpConfigFormat !== null) {
         expect(agent.mcpConfigPath).not.toBeNull()
+      }
+    }
+  })
+
+  it('should ensure all returned agents with mcpConfigPath also have mcpConfigFormat', () => {
+    const mcpAgents = getMcpCapableAgents()
+    for (const agent of mcpAgents) {
+      if (agent.mcpConfigPath !== null || agent.globalMcpConfigPath !== null) {
+        expect(agent.mcpConfigFormat).not.toBeNull()
       }
     }
   })
