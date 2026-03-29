@@ -3,27 +3,7 @@ import type { AgentverErrorCode } from '../errors'
 import { AgentverError } from '../errors'
 
 describe('AgentverError', () => {
-  it('should be an instance of Error', () => {
-    const error = new AgentverError('NOT_FOUND', 'Resource not found')
-    expect(error).toBeInstanceOf(Error)
-  })
-
-  it('should set name to AgentverError', () => {
-    const error = new AgentverError('INTERNAL_ERROR', 'Something went wrong')
-    expect(error.name).toBe('AgentverError')
-  })
-
-  it('should store the error code', () => {
-    const error = new AgentverError('UNAUTHORISED', 'Not authenticated')
-    expect(error.code).toBe('UNAUTHORISED')
-  })
-
-  it('should store the message', () => {
-    const error = new AgentverError('FORBIDDEN', 'Access denied')
-    expect(error.message).toBe('Access denied')
-  })
-
-  it('should work with all 9 error codes', () => {
+  it('should set name, code, message, and extend Error for all error codes', () => {
     const codes: AgentverErrorCode[] = [
       'NOT_FOUND',
       'UNAUTHORISED',

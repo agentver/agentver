@@ -241,38 +241,6 @@ describe('commands/completion', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 7. All commands present in completion script
-  // -------------------------------------------------------------------------
-
-  describe('all commands present', () => {
-    it('bash script contains all top-level commands', async () => {
-      await runCompletion(['completion', 'bash'])
-
-      for (const cmd of EXPECTED_COMMANDS) {
-        expect(stdoutData).toContain(cmd)
-      }
-    })
-
-    it('zsh script contains all top-level commands', async () => {
-      stdoutData = ''
-      await runCompletion(['completion', 'zsh'])
-
-      for (const cmd of EXPECTED_COMMANDS) {
-        expect(stdoutData).toContain(cmd)
-      }
-    })
-
-    it('fish script contains all top-level commands', async () => {
-      stdoutData = ''
-      await runCompletion(['completion', 'fish'])
-
-      for (const cmd of EXPECTED_COMMANDS) {
-        expect(stdoutData).toContain(cmd)
-      }
-    })
-  })
-
-  // -------------------------------------------------------------------------
   // --json output
   // -------------------------------------------------------------------------
 

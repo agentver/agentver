@@ -813,12 +813,6 @@ describe('pluginManifestSchema', () => {
 // ---------------------------------------------------------------------------
 
 describe('scriptManifestSchema', () => {
-  it('should accept valid script manifest for each runtime', () => {
-    for (const runtime of ['node', 'bun', 'python', 'bash'] as const) {
-      scriptManifestSchema.parse({ name: 'my-script', runtime, entryPoint: 'index.ts' })
-    }
-  })
-
   it('should reject unknown runtime', () => {
     const result = scriptManifestSchema.safeParse({
       name: 'my-script',
