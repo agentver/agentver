@@ -33,6 +33,24 @@ export default defineConfig({
           testTimeout: 30_000,
         },
       },
+      {
+        test: {
+          name: 'mcp-server',
+          root: './packages/mcp-server',
+          environment: 'node',
+          globals: true,
+          include: ['src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'github-action',
+          root: './packages/github-action',
+          environment: 'node',
+          globals: true,
+          include: ['src/**/*.test.ts'],
+        },
+      },
     ],
   },
 })
