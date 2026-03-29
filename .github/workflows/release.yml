@@ -271,4 +271,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add packages/github-action/dist/ --force
           git diff --cached --quiet || git commit -m "chore: build github-action dist for ${RELEASE_TAG}"
+          git pull --rebase origin main
           git push origin HEAD:main

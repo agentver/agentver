@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -7,7 +6,7 @@ import {
   detectInstalledAgents,
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
-import { AgentverError } from '@agentver/shared'
+import { AgentverError, createLogger } from '@agentver/shared'
 import type { GitSource } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
@@ -36,6 +35,7 @@ type VersionListResponse = {
 }
 
 const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+const logger = createLogger('mcp-server:install')
 
 function assertPathWithin(filePath: string, baseDir: string): void {
   const resolved = resolve(filePath)
@@ -67,13 +67,6 @@ function extractFilesFromManifest(
   return Object.entries(fileManifest)
     .filter(([, value]) => typeof value === 'string')
     .map(([path, content]) => ({ path, content: content as string }))
-}
-
-function computeIntegrity(files: Array<{ path: string; content: string }>): string {
-  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
-  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\0')
-  const hash = createHash('sha256').update(combined).digest('base64')
-  return `sha256-${hash}`
 }
 
 async function resolveLatestVersion(org: string, name: string): Promise<string> {
@@ -204,7 +197,9 @@ export function registerInstallTool(server: McpServer): void {
           const filePath = resolve(fullPath, file.path)
           const rel = relative(resolvedBase, filePath)
           if (rel.startsWith('..') || isAbsolute(rel)) {
-            console.warn(`Skipping file that escapes target directory: '${file.path}'`)
+            logger.warn(
+              `Skipping file outside target directory: ${file.path} -> ${filePath} (base: ${resolvedBase})`
+            )
             continue
           }
 
