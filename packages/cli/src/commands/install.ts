@@ -1,14 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import type { AgentId } from '@agentver/agent-definitions'
 import {
   type AgentId,
   composeConfigs,
   detectInstalledAgents,
   getAgentPlacementPath,
   getCommandPlacementPath,
-  getConfigFilePath,
   isComposedConfig,
   parseComposedSections,
   translateConfig,
