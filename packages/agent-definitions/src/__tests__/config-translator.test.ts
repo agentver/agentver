@@ -148,7 +148,24 @@ describe('getGlobalConfigFilePath', () => {
 
   it('should handle agents with no configDirs (copilot)', () => {
     // copilot has configDirs: [] but configPath is .github/copilot-instructions.md
-    expect(getGlobalConfigFilePath('copilot', 'my-config')).toBe('~/.github/copilot-instructions.md')
+    expect(getGlobalConfigFilePath('copilot', 'my-config')).toBe(
+      '~/.github/copilot-instructions.md'
+    )
+  })
+
+  it('should not false-match when configPath shares prefix but is not under configDir (windsurf)', () => {
+    // windsurf has configDirs: ['.windsurf'] but configPath is '.windsurfrules' (not under .windsurf/)
+    expect(getGlobalConfigFilePath('windsurf', 'my-config')).toBe('~/.windsurf/.windsurfrules')
+  })
+
+  it('should not double-prefix when configPath already starts with configDir (junie)', () => {
+    // junie returns .junie/guidelines.md which already contains configDirs[0] (.junie)
+    expect(getGlobalConfigFilePath('junie', 'my-config')).toBe('~/.junie/guidelines.md')
+  })
+
+  it('should not double-prefix when configPath already starts with configDir (continue)', () => {
+    // continue returns .continue/config.yaml which already contains configDirs[0] (.continue)
+    expect(getGlobalConfigFilePath('continue', 'my-config')).toBe('~/.continue/config.yaml')
   })
 
   it('should return null for unknown agent', () => {

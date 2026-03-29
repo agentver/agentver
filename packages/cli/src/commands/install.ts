@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import type { AgentId } from '@agentver/agent-definitions'
 import {
   composeConfigs,
@@ -982,14 +982,11 @@ async function installAgentConfig(
       : resolve(projectRoot, translation.filePath)
     if (!fullConfigPath) continue
 
-    const baseRoot = options.global ? homedir() : projectRoot
-    const rel = relative(baseRoot, fullConfigPath)
+    // Guard against path traversal (e.g. malicious package name containing ../)
+    const expectedBase = options.global ? homedir() : projectRoot
+    if (!resolve(fullConfigPath).startsWith(expectedBase)) continue
 
-    if (rel.startsWith('..') || isAbsolute(rel)) {
-      continue
-    }
-
-    const configDir = dirname(fullConfigPath)
+    const configDir = join(fullConfigPath, '..')
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true })
     }
