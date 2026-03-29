@@ -22,6 +22,18 @@ describe('parseUriSegments', () => {
     expect(parseUriSegments('agentver://')).toBeNull()
   })
 
+  it('returns null for agentver:/// (triple slash, empty org)', () => {
+    expect(parseUriSegments('agentver:///')).toBeNull()
+  })
+
+  it('parses http:// prefixed URIs', () => {
+    expect(parseUriSegments('http://gitlab.com/team/repo')).toEqual({
+      host: 'gitlab.com',
+      owner: 'team',
+      repo: 'repo',
+    })
+  })
+
   it('parses github.com/test-org/test-repo', () => {
     expect(parseUriSegments('github.com/test-org/test-repo')).toEqual({
       host: 'github.com',
@@ -94,5 +106,9 @@ describe('extractOrgFromUri', () => {
 
   it('returns null for a single segment (host only)', () => {
     expect(extractOrgFromUri('github.com')).toBeNull()
+  })
+
+  it('returns null for agentver:// with whitespace-only org', () => {
+    expect(extractOrgFromUri('agentver:// ')).toBeNull()
   })
 })

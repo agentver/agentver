@@ -18,7 +18,7 @@ export type UriSegments = {
 export function parseUriSegments(uri: string): UriSegments | null {
   if (uri.startsWith(AGENTVER_PROTOCOL)) {
     const withoutProtocol = uri.slice(AGENTVER_PROTOCOL.length)
-    const segments = withoutProtocol.split('/').filter(Boolean)
+    const segments = withoutProtocol.split('/').filter((s) => s.trim() !== '')
     if (segments.length === 0) return null
     return { host: 'agentver', owner: segments[0]!, repo: 'platform' }
   }
