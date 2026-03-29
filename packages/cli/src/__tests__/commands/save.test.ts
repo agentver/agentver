@@ -39,17 +39,18 @@ vi.mock('chalk', () => {
   return { default: fn }
 })
 
-vi.mock('ora', () => {
-  const spinner = {
+vi.mock('../../output.js', () => ({
+  outputSuccess: vi.fn(),
+  outputError: vi.fn(),
+  createSpinner: vi.fn(() => ({
     start: vi.fn().mockReturnThis(),
     stop: vi.fn().mockReturnThis(),
     succeed: vi.fn().mockReturnThis(),
     fail: vi.fn().mockReturnThis(),
     warn: vi.fn().mockReturnThis(),
     text: '',
-  }
-  return { default: () => spinner }
-})
+  })),
+}))
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -59,6 +60,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import { registerSaveCommand } from '../../commands/save.js'
 import { readFilesFromDirectory } from '../../git/fetcher.js'
+import * as outputModule from '../../output.js'
 import { platformFetch } from '../../registry/platform.js'
 import { readLockfile, writeLockfile } from '../../storage/lockfile.js'
 import { readManifest } from '../../storage/manifest.js'
@@ -137,14 +139,12 @@ function setupHappyPath(): void {
 
 describe('save command', () => {
   let processExitSpy: ReturnType<typeof vi.spyOn>
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     vi.clearAllMocks()
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -237,12 +237,13 @@ describe('save command', () => {
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'save', '--json'])
 
-    expect(consoleLogSpy).toHaveBeenCalled()
-    const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<string, unknown>
-    expect(output.skill).toEqual(expect.stringContaining('test-skill'))
-    expect(output).toHaveProperty('commitSha', 'def7890abcdef')
-    expect(output).toHaveProperty('files')
-    expect(Array.isArray(output.files)).toBe(true)
+    const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+    expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+    const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.skill).toEqual(expect.stringContaining('test-skill'))
+    expect(data).toHaveProperty('commitSha', 'def7890abcdef')
+    expect(data).toHaveProperty('files')
+    expect(Array.isArray(data.files)).toBe(true)
   })
 
   it('outputs valid JSON with --json and --dry-run', async () => {
@@ -252,12 +253,13 @@ describe('save command', () => {
     await program.parseAsync(['node', 'agentver', 'save', '--dry-run', '--json'])
 
     expect(platformFetch).not.toHaveBeenCalled()
-    expect(consoleLogSpy).toHaveBeenCalled()
-    const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<string, unknown>
-    expect(output).toHaveProperty('dryRun', true)
-    expect(output.skill).toEqual(expect.stringContaining('test-skill'))
-    expect(output).toHaveProperty('message')
-    expect(output).toHaveProperty('files')
+    const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+    expect(mockedOutputSuccess).toHaveBeenCalledOnce()
+    const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
+    expect(data).toHaveProperty('dryRun', true)
+    expect(data.skill).toEqual(expect.stringContaining('test-skill'))
+    expect(data).toHaveProperty('message')
+    expect(data).toHaveProperty('files')
   })
 
   // -------------------------------------------------------------------------

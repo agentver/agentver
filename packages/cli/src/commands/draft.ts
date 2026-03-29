@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import ora from 'ora'
+import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile, writeLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
@@ -84,7 +84,7 @@ export function registerDraftCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora(`Creating draft "${name}"...`).start()
+      const spinner = createSpinner(`Creating draft "${name}"...`).start()
 
       try {
         const result = await platformFetch<DraftCreateResponse>(
@@ -97,7 +97,7 @@ export function registerDraftCommand(program: Command): void {
 
         if (options.json) {
           spinner.stop()
-          console.log(JSON.stringify(result, null, 2))
+          outputSuccess(result)
         } else {
           spinner.succeed(
             `Draft ${chalk.green(result.name)} created on branch ${chalk.cyan(result.branchName)}`
@@ -125,7 +125,7 @@ export function registerDraftCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora('Fetching drafts...').start()
+      const spinner = createSpinner('Fetching drafts...').start()
 
       try {
         const drafts = await platformFetch<DraftInfo[]>(
@@ -135,7 +135,7 @@ export function registerDraftCommand(program: Command): void {
         spinner.stop()
 
         if (options.json) {
-          console.log(JSON.stringify({ drafts }, null, 2))
+          outputSuccess({ drafts })
           return
         }
 
@@ -190,17 +190,11 @@ export function registerDraftCommand(program: Command): void {
       }
 
       if (options.json) {
-        console.log(
-          JSON.stringify(
-            {
-              skill: `@${identity.org}/${identity.name}`,
-              draft: name,
-              ref: `draft/${identity.name}/${name}`,
-            },
-            null,
-            2
-          )
-        )
+        outputSuccess({
+          skill: `@${identity.org}/${identity.name}`,
+          draft: name,
+          ref: `draft/${identity.name}/${name}`,
+        })
       } else {
         process.stdout.write(
           `Switched to draft ${chalk.green(name)} ${chalk.dim(`(ref: draft/${identity.name}/${name})`)}\n`
@@ -238,7 +232,7 @@ export function registerDraftCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora('Merging draft to main...').start()
+      const spinner = createSpinner('Merging draft to main...').start()
 
       try {
         const result = await platformFetch<DraftActionResponse>(
@@ -258,17 +252,11 @@ export function registerDraftCommand(program: Command): void {
 
         if (options.json) {
           spinner.stop()
-          console.log(
-            JSON.stringify(
-              {
-                merged: true,
-                commitSha: result.commitSha,
-                ref: 'main',
-              },
-              null,
-              2
-            )
-          )
+          outputSuccess({
+            merged: true,
+            commitSha: result.commitSha,
+            ref: 'main',
+          })
         } else {
           spinner.succeed(
             `Draft merged to main ${result.commitSha ? chalk.dim(`(${result.commitSha.slice(0, 7)})`) : ''}`
@@ -311,7 +299,7 @@ export function registerDraftCommand(program: Command): void {
         process.exit(1)
       }
 
-      const spinner = ora('Discarding draft...').start()
+      const spinner = createSpinner('Discarding draft...').start()
 
       try {
         await platformFetch<DraftActionResponse>(
@@ -328,17 +316,11 @@ export function registerDraftCommand(program: Command): void {
 
         if (options.json) {
           spinner.stop()
-          console.log(
-            JSON.stringify(
-              {
-                discarded: true,
-                previousRef: currentRef,
-                ref: 'main',
-              },
-              null,
-              2
-            )
-          )
+          outputSuccess({
+            discarded: true,
+            previousRef: currentRef,
+            ref: 'main',
+          })
         } else {
           spinner.succeed(`Draft discarded. Switched back to ${chalk.cyan('main')}.`)
         }
