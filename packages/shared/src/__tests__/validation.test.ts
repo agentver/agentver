@@ -317,6 +317,41 @@ description: >
     })
   })
 
+  it('should preserve indented # lines inside literal block scalar', () => {
+    const content = `---
+name: test
+description: |
+  # heading
+  text below
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      description: '# heading\ntext below',
+    })
+  })
+
+  it('should preserve paragraph breaks in folded block scalar', () => {
+    const content = `---
+name: test
+description: >
+  First paragraph
+  continues here
+
+  Second paragraph
+  also continues
+---`
+
+    const result = parseFrontmatter(content)
+
+    expect(result.rawData).toEqual({
+      name: 'test',
+      description: 'First paragraph continues here\n\nSecond paragraph also continues',
+    })
+  })
+
   it('should parse block scalar followed by another key', () => {
     const content = `---
 description: |

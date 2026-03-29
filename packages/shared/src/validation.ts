@@ -18,6 +18,37 @@ export type SpecComplianceLevel = 'compliant' | 'partial' | 'none'
 
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---/
 
+function flushBlockScalar(lines: string[], style: '|' | '>'): string {
+  // Strip trailing empty lines
+  const trimmed = [...lines]
+  while (trimmed.length > 0 && trimmed[trimmed.length - 1] === '') {
+    trimmed.pop()
+  }
+
+  if (style === '|') {
+    return trimmed.join('\n')
+  }
+
+  // Folded style: single line breaks become spaces, but blank lines preserve paragraph breaks
+  const paragraphs: string[] = []
+  let current: string[] = []
+  for (const line of trimmed) {
+    if (line === '') {
+      if (current.length > 0) {
+        paragraphs.push(current.join(' '))
+        current = []
+      }
+      paragraphs.push('')
+    } else {
+      current.push(line)
+    }
+  }
+  if (current.length > 0) {
+    paragraphs.push(current.join(' '))
+  }
+  return paragraphs.join('\n')
+}
+
 /**
  * Parse a simple YAML key-value block.
  * Supports: strings, arrays (inline `[a, b]` and multiline `- item`),
@@ -35,17 +66,13 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
   let currentBlockScalarIndent: number | null = null
 
   for (const line of lines) {
-    // Skip empty lines and comments (but empty lines are valid inside block scalars)
-    if (line.trim() === '' || line.trim().startsWith('#')) {
-      if (currentKey && currentBlockScalarLines !== null && line.trim() === '') {
+    // Block scalar continuation must be checked before comment/empty skipping
+    // because indented # lines and blank lines are valid content inside block scalars
+    if (currentKey && currentBlockScalarLines !== null) {
+      if (line.trim() === '') {
         currentBlockScalarLines.push('')
         continue
       }
-      continue
-    }
-
-    // Block scalar continuation — indented lines are part of the block
-    if (currentKey && currentBlockScalarLines !== null) {
       if (/^\s+/.test(line)) {
         if (currentBlockScalarIndent === null) {
           currentBlockScalarIndent = line.match(/^(\s+)/)![1]!.length
@@ -54,18 +81,17 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
         continue
       }
       // Non-indented line — flush the block scalar
-      const trimmedLines = [...currentBlockScalarLines]
-      while (trimmedLines.length > 0 && trimmedLines[trimmedLines.length - 1] === '') {
-        trimmedLines.pop()
-      }
-      result[currentKey] = currentBlockScalarStyle === '|'
-        ? trimmedLines.join('\n')
-        : trimmedLines.join(' ').replace(/\s+/g, ' ').trim()
+      result[currentKey] = flushBlockScalar(currentBlockScalarLines, currentBlockScalarStyle!)
       currentKey = null
       currentBlockScalarLines = null
       currentBlockScalarStyle = null
       currentBlockScalarIndent = null
       // Fall through to process current line as a new key
+    }
+
+    // Skip empty lines and comments
+    if (line.trim() === '' || line.trim().startsWith('#')) {
+      continue
     }
 
     // Array item continuation (e.g. `  - value`)
@@ -95,7 +121,7 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
     }
 
     // Top-level key: value
-    const kvMatch = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/)
+    const kvMatch = line.match(/^([a-zA-Z0-9_-]+):(.*)$/)
     if (!kvMatch) continue
 
     const key = kvMatch[1]!
@@ -144,13 +170,7 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
 
   // Flush any trailing block scalar
   if (currentKey && currentBlockScalarLines !== null) {
-    const trimmedLines = [...currentBlockScalarLines]
-    while (trimmedLines.length > 0 && trimmedLines[trimmedLines.length - 1] === '') {
-      trimmedLines.pop()
-    }
-    result[currentKey] = currentBlockScalarStyle === '|'
-      ? trimmedLines.join('\n')
-      : trimmedLines.join(' ').replace(/\s+/g, ' ').trim()
+    result[currentKey] = flushBlockScalar(currentBlockScalarLines, currentBlockScalarStyle!)
   } else if (currentKey) {
     if (currentRecord && Object.keys(currentRecord).length > 0) {
       result[currentKey] = currentRecord
