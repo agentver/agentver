@@ -5,12 +5,10 @@ import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
 import { ensureStorageDir, getManifestPath, writeJsonFileAtomic } from './files'
-import { recoverPendingStorageTransaction } from './transaction'
 
 const logger = createCliLogger('manifest')
 
 export function readManifest(projectRoot: string, scope: Scope = 'project'): ManifestV2 {
-  recoverPendingStorageTransaction(projectRoot, scope)
   const manifestPath = getManifestPath(projectRoot, scope)
 
   if (!existsSync(manifestPath)) {

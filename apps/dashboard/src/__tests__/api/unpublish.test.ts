@@ -2,7 +2,12 @@ import { prisma } from '@agentver/database/client'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { authenticateRequestWithDetails } from '@/lib/auth/api-auth'
 import { POST } from '~/app/api/v1/skills/[org]/[name]/versions/[version]/unpublish/route'
-import { createTestOrgWithOwner, createTestPackage, createTestVersion } from '~/test/factories'
+import {
+  createTestOrgWithOwner,
+  createTestPackage,
+  createTestUser,
+  createTestVersion,
+} from '~/test/factories'
 import { cleanDatabase, disconnectDatabase } from '~/test/helpers/db'
 
 vi.mock('@/lib/auth/api-auth', () => ({
@@ -51,5 +56,29 @@ describe('POST /api/v1/skills/[org]/[name]/versions/[version]/unpublish', () => 
 
     const updated = await prisma.packageVersion.findUnique({ where: { id: version.id } })
     expect(updated?.status).toBe('YANKED')
+  })
+
+  it('returns 403 for a non-maintainer', async () => {
+    const { user, org } = await createTestOrgWithOwner()
+    const pkg = await createTestPackage(org.id, user.id, {
+      name: 'my-skill',
+      slug: `${org.slug}/my-skill`,
+    })
+    await createTestVersion(pkg.id, {
+      version: '1.2.3',
+      status: 'PUBLISHED',
+    })
+    const outsider = await createTestUser()
+
+    vi.mocked(authenticateRequestWithDetails).mockResolvedValue({
+      ok: true,
+      result: { userId: outsider.id, scopes: ['WRITE'] },
+    })
+
+    const response = await POST(makeRequest(), {
+      params: Promise.resolve({ org: org.slug, name: 'my-skill', version: '1.2.3' }),
+    })
+
+    expect(response.status).toBe(403)
   })
 })

@@ -230,13 +230,11 @@ function checkSymlinksValid(projectRoot: string, scope: Scope): DoctorCheck {
 
 async function checkAuthentication(): Promise<DoctorCheck> {
   const creds = await getCredentials()
-  const hasCredentials = !!(creds?.token ?? creds?.apiKey)
+  const token = creds?.token
+  const apiKey = creds?.apiKey
+  const hasCredentials = !!(token ?? apiKey)
 
   if (!hasCredentials) {
-    return check('authentication', 'warn', 'No credentials configured (run agentver login)')
-  }
-
-  if (!creds) {
     return check('authentication', 'warn', 'No credentials configured (run agentver login)')
   }
 
@@ -250,10 +248,10 @@ async function checkAuthentication(): Promise<DoctorCheck> {
     const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS)
 
     const headers: Record<string, string> = {}
-    if (creds.token) {
-      headers.Authorization = `Bearer ${creds.token}`
-    } else if (creds.apiKey) {
-      headers['X-API-Key'] = creds.apiKey
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    } else if (apiKey) {
+      headers['X-API-Key'] = apiKey
     }
 
     const response = await fetch(`${platformUrl}/api/v1/me`, {

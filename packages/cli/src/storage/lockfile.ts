@@ -5,12 +5,10 @@ import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
 import { ensureStorageDir, getLockfilePath, writeJsonFileAtomic } from './files'
-import { recoverPendingStorageTransaction } from './transaction'
 
 const logger = createCliLogger('lockfile')
 
 export function readLockfile(projectRoot: string, scope: Scope = 'project'): LockfileV2 {
-  recoverPendingStorageTransaction(projectRoot, scope)
   const lockfilePath = getLockfilePath(projectRoot, scope)
 
   if (!existsSync(lockfilePath)) {

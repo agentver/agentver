@@ -4,11 +4,12 @@ import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
+import { platformFetch } from '../registry/platform.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
 import { extractError } from '../utils.js'
-import { readInstalledPackageFiles, requestPlatform } from './platform-request.js'
+import { readInstalledPackageFiles } from './platform-request.js'
 
 type SuggestionFile = {
   path: string
@@ -61,7 +62,7 @@ async function submitSuggestion(
     files: localFiles,
   }
 
-  const result = await requestPlatform<SuggestionResponse>(endpoint, {
+  const result = await platformFetch<SuggestionResponse>(endpoint, {
     method: 'POST',
     body: requestBody,
   })

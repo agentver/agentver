@@ -240,6 +240,38 @@ describe('installBundleFromFiles', () => {
     )
   })
 
+  it('batches manifest and lockfile writes for local bundle constituents', async () => {
+    const bundleYaml = `
+name: local-bundle
+version: 1.0.0
+includes:
+  skills:
+    - name: google-search
+    - name: seo-audit
+    - name: content-check
+`
+    const files = [
+      createBundleFile(bundleYaml),
+      ...createLocalSkillFiles('google-search'),
+      ...createLocalSkillFiles('seo-audit'),
+      ...createLocalSkillFiles('content-check'),
+    ]
+
+    await installBundleFromFiles(
+      'local-bundle',
+      files,
+      ['claude-code'],
+      { global: true },
+      spinner as SpinnerLike,
+      source,
+      mockInstallPackage
+    )
+
+    expect(updateManifestAndLockfile).toHaveBeenCalledTimes(1)
+    expect(installLocalBundleConstituent).toHaveBeenCalledTimes(3)
+    expect(mockInstallPackage).not.toHaveBeenCalled()
+  })
+
   it('skips optional packages that fail resolution', async () => {
     const bundleYaml = `
 name: partial-bundle

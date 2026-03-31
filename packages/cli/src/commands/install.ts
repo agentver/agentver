@@ -75,6 +75,7 @@ export type InstallOptions = {
   detect?: boolean
   skipAudit?: boolean
   type?: 'agent' | 'command'
+  persist?: boolean
 }
 
 export type InstallResult = {
@@ -82,6 +83,8 @@ export type InstallResult = {
   ref: string
   commitSha: string
   agents: string[]
+  manifestEntry?: ManifestV2['packages'][string]
+  lockfileEntry?: LockfileV2['packages'][string]
 }
 
 type InstalledPackageType = NonNullable<ManifestV2['packages'][string]['packageType']>
@@ -413,13 +416,15 @@ async function installFromWellKnown(
       integrity: wkSingleFileIntegrity,
       agents,
     }
-    recordInstalledPackage(
-      projectRoot,
-      scope as 'project' | 'global',
-      selectedEntry.name,
-      manifestEntry,
-      lockfileEntry
-    )
+    if (options.persist !== false) {
+      recordInstalledPackage(
+        projectRoot,
+        scope as 'project' | 'global',
+        selectedEntry.name,
+        manifestEntry,
+        lockfileEntry
+      )
+    }
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -442,7 +447,14 @@ async function installFromWellKnown(
       )
     }
 
-    return { name: selectedEntry.name, ref: 'well-known', commitSha: '', agents }
+    return {
+      name: selectedEntry.name,
+      ref: 'well-known',
+      commitSha: '',
+      agents,
+      manifestEntry,
+      lockfileEntry,
+    }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
@@ -714,7 +726,9 @@ async function installFromPlatform(
       integrity: platformSingleFileIntegrity,
       agents,
     }
-    recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
+    if (options.persist !== false) {
+      recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
+    }
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -745,7 +759,14 @@ async function installFromPlatform(
       )
     }
 
-    return { name: shortName, ref, commitSha: syntheticCommit, agents }
+    return {
+      name: shortName,
+      ref,
+      commitSha: syntheticCommit,
+      agents,
+      manifestEntry,
+      lockfileEntry,
+    }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
@@ -1022,9 +1043,10 @@ export async function installPackage(
       integrity: singleFileIntegrity,
       agents,
     }
-    recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
-
-    reportInstallation(shortName, gitSourceRecord, agents, resolved.commitSha)
+    if (options.persist !== false) {
+      recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
+      reportInstallation(shortName, gitSourceRecord, agents, resolved.commitSha)
+    }
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -1055,7 +1077,14 @@ export async function installPackage(
       )
     }
 
-    return { name: shortName, ref: gitSource.ref, commitSha: resolved.commitSha, agents }
+    return {
+      name: shortName,
+      ref: gitSource.ref,
+      commitSha: resolved.commitSha,
+      agents,
+      manifestEntry,
+      lockfileEntry,
+    }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')

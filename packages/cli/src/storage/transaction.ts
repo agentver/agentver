@@ -1,5 +1,10 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import type { LockfileV2, ManifestV2 } from '@agentver/shared'
+import {
+  type LockfileV2,
+  lockfileV2Schema,
+  type ManifestV2,
+  manifestV2Schema,
+} from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import {
@@ -37,9 +42,18 @@ export function recoverPendingStorageTransaction(
       return
     }
 
+    const manifestResult = manifestV2Schema.safeParse(parsed.manifest)
+    const lockfileResult = lockfileV2Schema.safeParse(parsed.lockfile)
+
+    if (!manifestResult.success || !lockfileResult.success) {
+      logger.warn(`Ignoring invalid storage transaction at ${transactionPath}`)
+      rmSync(transactionPath, { force: true })
+      return
+    }
+
     ensureStorageDir(projectRoot, scope)
-    writeJsonFileAtomic(getManifestPath(projectRoot, scope), parsed.manifest)
-    writeJsonFileAtomic(getLockfilePath(projectRoot, scope), parsed.lockfile)
+    writeJsonFileAtomic(getManifestPath(projectRoot, scope), manifestResult.data)
+    writeJsonFileAtomic(getLockfilePath(projectRoot, scope), lockfileResult.data)
     rmSync(transactionPath, { force: true })
     logger.warn(`Recovered pending storage transaction at ${transactionPath}`)
   } catch (error) {

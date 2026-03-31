@@ -181,4 +181,30 @@ describe('storage/transaction', () => {
       { force: true }
     )
   })
+
+  it('deletes a transaction when required keys are missing', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue('{}')
+
+    transactionModule.recoverPendingStorageTransaction('/project')
+
+    expect(filesModule.writeJsonFileAtomic).not.toHaveBeenCalled()
+    expect(fs.rmSync).toHaveBeenCalledWith(
+      join('/project', '.agentver', 'storage-transaction.json'),
+      { force: true }
+    )
+  })
+
+  it('deletes a transaction when the WAL contains invalid JSON', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue('not-json')
+
+    transactionModule.recoverPendingStorageTransaction('/project')
+
+    expect(filesModule.writeJsonFileAtomic).not.toHaveBeenCalled()
+    expect(fs.rmSync).toHaveBeenCalledWith(
+      join('/project', '.agentver', 'storage-transaction.json'),
+      { force: true }
+    )
+  })
 })

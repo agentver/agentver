@@ -4,7 +4,7 @@ import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
-import { requestPlatform } from './platform-request.js'
+import { platformFetch } from '../registry/platform.js'
 
 type SuggestionStatus = 'OPEN' | 'IN_REVIEW' | 'APPROVED' | 'MERGED' | 'REJECTED' | 'CLOSED'
 
@@ -98,7 +98,7 @@ export function registerSuggestionsCommand(program: Command): void {
 
         const queryString = queryParams.toString()
         const queryPath = `/proposals${queryString ? `?${queryString}` : ''}`
-        const { suggestions } = await requestPlatform<SuggestionsResponse>(queryPath)
+        const { suggestions } = await platformFetch<SuggestionsResponse>(queryPath)
 
         spinner.stop()
 

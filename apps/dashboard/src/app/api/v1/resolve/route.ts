@@ -5,6 +5,16 @@ import { authenticateRequest } from '@/lib/auth/api-auth'
 import { getGitProvider } from '@/lib/git'
 
 const logger = createLogger('api:resolve')
+const REF_PATTERN = /^[a-zA-Z0-9/_.-]{1,200}$/
+const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/i
+
+function isValidGitRef(ref: string): boolean {
+  if (FULL_SHA_PATTERN.test(ref)) {
+    return true
+  }
+
+  return REF_PATTERN.test(ref) && !ref.includes('..')
+}
 
 /**
  * Shared include clause for package lookups — keeps both direct and
@@ -74,6 +84,13 @@ export async function GET(request: Request) {
 
   if (!name) {
     return NextResponse.json({ error: 'Missing required query parameter: name' }, { status: 400 })
+  }
+
+  if (requestedRef && !isValidGitRef(requestedRef)) {
+    return NextResponse.json(
+      { error: 'Invalid ref query parameter. Expected a branch, tag, or 40-character commit SHA.' },
+      { status: 400 }
+    )
   }
 
   const parts = name.split('/').filter(Boolean)
