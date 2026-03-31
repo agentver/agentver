@@ -34237,6 +34237,9 @@ function date4(params) {
 // ../../node_modules/.bun/zod@4.3.6/node_modules/zod/v4/classic/external.js
 config(en_default());
 
+// ../shared/dist/constants.js
+var SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
 // ../shared/dist/schemas.js
 var AGENT_IDS_FOR_SCHEMA = [
   "adal",
@@ -34284,10 +34287,11 @@ var AGENT_IDS_FOR_SCHEMA = [
   "zencoder"
 ];
 var agentIdEnum = external_exports.enum(AGENT_IDS_FOR_SCHEMA);
+var STORAGE_SCHEMA_VERSION = 2;
 var skillMetadataSchema = external_exports.object({
   name: external_exports.string().min(1).max(100),
   description: external_exports.string().max(500).optional(),
-  version: external_exports.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, "Must be valid semver"),
+  version: external_exports.string().regex(SEMVER_REGEX, "Must be valid semver"),
   type: external_exports.enum([
     "SKILL",
     "AGENT_CONFIG",
@@ -34295,31 +34299,11 @@ var skillMetadataSchema = external_exports.object({
     "SCRIPT",
     "PROMPT",
     "BUNDLE",
-    "SUB_AGENT",
+    "AGENT",
     "COMMAND"
   ]),
   tags: external_exports.array(external_exports.string().max(50)).max(20).default([]),
   agents: external_exports.array(agentIdEnum).default([])
-});
-var installedPackageSchema = external_exports.object({
-  name: external_exports.string(),
-  version: external_exports.string(),
-  agents: external_exports.array(external_exports.string()).default([]),
-  installedAt: external_exports.string().datetime()
-});
-var manifestSchema = external_exports.object({
-  version: external_exports.literal(1),
-  packages: external_exports.record(external_exports.string(), installedPackageSchema)
-});
-var lockedPackageSchema = external_exports.object({
-  version: external_exports.string(),
-  resolved: external_exports.string().url(),
-  integrity: external_exports.string().regex(/^sha256-/),
-  agents: external_exports.array(external_exports.string())
-});
-var lockfileSchema = external_exports.object({
-  version: external_exports.literal(1),
-  packages: external_exports.record(external_exports.string(), lockedPackageSchema)
 });
 var gitSourceSchema = external_exports.object({
   type: external_exports.literal("git"),
@@ -34327,6 +34311,24 @@ var gitSourceSchema = external_exports.object({
   path: external_exports.string(),
   ref: external_exports.string().min(1),
   commit: external_exports.string().min(7)
+});
+var localSourceSchema = external_exports.object({
+  type: external_exports.literal("local"),
+  path: external_exports.string().min(1)
+});
+var platformSourceSchema = external_exports.object({
+  type: external_exports.literal("platform"),
+  uri: external_exports.string().min(1),
+  path: external_exports.string(),
+  ref: external_exports.string().min(1),
+  commit: external_exports.string().min(7)
+});
+var unknownSourceSchema = external_exports.object({
+  type: external_exports.literal("unknown"),
+  path: external_exports.string().optional(),
+  ref: external_exports.string().min(1).optional(),
+  commit: external_exports.string().min(1).optional(),
+  reason: external_exports.string().min(1).optional()
 });
 var wellKnownSourceSchema = external_exports.object({
   type: external_exports.literal("well-known"),
@@ -34336,9 +34338,75 @@ var wellKnownSourceSchema = external_exports.object({
 });
 var packageSourceSchema = external_exports.discriminatedUnion("type", [
   gitSourceSchema,
+  localSourceSchema,
+  platformSourceSchema,
+  unknownSourceSchema,
   wellKnownSourceSchema
 ]);
+function normalisePackageSource(source) {
+  if (source.type !== "git") {
+    return source;
+  }
+  if (source.uri === "local") {
+    return {
+      type: "local",
+      path: source.path
+    };
+  }
+  if (source.uri === "unknown") {
+    return {
+      type: "unknown",
+      path: source.path,
+      ref: source.ref,
+      commit: source.commit
+    };
+  }
+  if (source.uri.startsWith("agentver://")) {
+    return {
+      type: "platform",
+      uri: source.uri,
+      path: source.path,
+      ref: source.ref,
+      commit: source.commit
+    };
+  }
+  return source;
+}
+function getPackageSourceReference(source) {
+  switch (source.type) {
+    case "git":
+    case "platform":
+      return source.ref;
+    case "well-known":
+      return "well-known";
+    case "local":
+      return "local";
+    case "unknown":
+      return source.ref ?? "unknown";
+  }
+}
+function createPackageKey(displayName, source) {
+  const identity = (() => {
+    switch (source.type) {
+      case "git":
+        return `${source.uri}#${source.path}`;
+      case "platform":
+        return `${source.uri}#${source.path}`;
+      case "well-known":
+        return `${source.baseUrl}#${source.skillName}`;
+      case "local":
+        return source.path;
+      case "unknown":
+        return [source.path ?? "", source.ref ?? "", source.commit ?? "", displayName].join("#");
+    }
+  })();
+  return `${source.type}:${encodeURIComponent(identity)}`;
+}
+function getPackageDisplayName(manifestKey, pkg) {
+  return pkg.name?.trim() || manifestKey;
+}
 var manifestV2PackageSchema = external_exports.object({
+  name: external_exports.string().min(1).optional(),
   source: packageSourceSchema,
   agents: external_exports.array(external_exports.string()).default([]),
   installedAt: external_exports.string().datetime(),
@@ -34346,58 +34414,70 @@ var manifestV2PackageSchema = external_exports.object({
   pinned: external_exports.boolean().optional(),
   path: external_exports.string().optional(),
   bundle: external_exports.string().optional(),
-  packageType: external_exports.enum(["SKILL", "AGENT_CONFIG", "PLUGIN", "SCRIPT", "PROMPT", "BUNDLE"]).optional()
+  packageType: external_exports.enum(["SKILL", "AGENT_CONFIG", "PLUGIN", "SCRIPT", "PROMPT", "BUNDLE", "AGENT", "COMMAND"]).optional(),
+  entryFile: external_exports.string().optional(),
+  dependsOn: external_exports.array(external_exports.string()).optional(),
+  conflictsWith: external_exports.array(external_exports.string()).optional()
 });
 var manifestV2Schema = external_exports.object({
-  version: external_exports.literal(2),
+  version: external_exports.literal(STORAGE_SCHEMA_VERSION),
   packages: external_exports.record(external_exports.string(), manifestV2PackageSchema)
 });
+function normaliseManifestV2(manifest) {
+  const packages = Object.fromEntries(Object.entries(manifest.packages).map(([name, pkg]) => {
+    const source = normalisePackageSource(pkg.source);
+    const displayName = getPackageDisplayName(name, pkg);
+    const stableKey = createPackageKey(displayName, source);
+    return [
+      stableKey,
+      {
+        name: displayName,
+        ...pkg,
+        source
+      }
+    ];
+  }));
+  return {
+    version: STORAGE_SCHEMA_VERSION,
+    packages
+  };
+}
+var linkModeSchema = external_exports.enum(["symlink", "copy", "junction"]);
 var lockfileV2PackageSchema = external_exports.object({
+  name: external_exports.string().min(1).optional(),
   source: packageSourceSchema,
   integrity: external_exports.string().regex(/^sha256-/),
-  agents: external_exports.array(external_exports.string())
+  agents: external_exports.array(external_exports.string()),
+  /** Filesystem link mode used for agent placements. */
+  linkMode: linkModeSchema.optional(),
+  /** True when a fallback link mode was used instead of the preferred mode. */
+  degraded: external_exports.boolean().optional()
 });
 var lockfileV2Schema = external_exports.object({
-  version: external_exports.literal(2),
+  version: external_exports.literal(STORAGE_SCHEMA_VERSION),
   packages: external_exports.record(external_exports.string(), lockfileV2PackageSchema)
 });
-var manifestAnySchema = external_exports.discriminatedUnion("version", [manifestSchema, manifestV2Schema]);
-var lockfileAnySchema = external_exports.discriminatedUnion("version", [lockfileSchema, lockfileV2Schema]);
-function migrateManifestV1ToV2(v1) {
-  const packages = {};
-  for (const [name, pkg] of Object.entries(v1.packages)) {
-    packages[name] = {
-      source: {
-        type: "git",
-        uri: "unknown",
-        path: "",
-        ref: pkg.version,
-        commit: "unknown"
-      },
-      agents: pkg.agents,
-      installedAt: pkg.installedAt,
-      modified: false
-    };
-  }
-  return { version: 2, packages };
+function normaliseLockfileV2(lockfile) {
+  const packages = Object.fromEntries(Object.entries(lockfile.packages).map(([name, pkg]) => {
+    const source = normalisePackageSource(pkg.source);
+    const displayName = getPackageDisplayName(name, pkg);
+    const stableKey = createPackageKey(displayName, source);
+    return [
+      stableKey,
+      {
+        name: displayName,
+        ...pkg,
+        source
+      }
+    ];
+  }));
+  return {
+    version: STORAGE_SCHEMA_VERSION,
+    packages
+  };
 }
-function migrateLockfileV1ToV2(v1) {
-  const packages = {};
-  for (const [name, pkg] of Object.entries(v1.packages)) {
-    packages[name] = {
-      source: {
-        type: "git",
-        uri: "unknown",
-        path: "",
-        ref: pkg.version,
-        commit: "unknown"
-      },
-      integrity: pkg.integrity,
-      agents: pkg.agents
-    };
-  }
-  return { version: 2, packages };
-}
+var manifestAnySchema = manifestV2Schema;
+var lockfileAnySchema = lockfileV2Schema;
 var packageStructureSchema = external_exports.object({
   type: external_exports.enum([
     "SKILL",
@@ -34406,7 +34486,7 @@ var packageStructureSchema = external_exports.object({
     "SCRIPT",
     "PROMPT",
     "BUNDLE",
-    "SUB_AGENT",
+    "AGENT",
     "COMMAND"
   ]),
   entryFile: external_exports.string(),
@@ -34483,7 +34563,7 @@ var fileManifestSchema = external_exports.object({
     "SCRIPT",
     "PROMPT",
     "BUNDLE",
-    "SUB_AGENT",
+    "AGENT",
     "COMMAND"
   ])
 });
@@ -34574,17 +34654,54 @@ var updateResultSchema = external_exports.object({
     reason: external_exports.string()
   }))
 });
+var scopeSchema = external_exports.enum(["project", "global"]);
+var listPackageEntrySchema = external_exports.object({
+  name: external_exports.string(),
+  scope: scopeSchema,
+  package: manifestV2PackageSchema
+});
 var listResultSchema = external_exports.object({
-  packages: external_exports.record(external_exports.string(), manifestV2PackageSchema)
+  packages: external_exports.array(listPackageEntrySchema)
+});
+var platformSearchResultSchema = external_exports.object({
+  id: external_exports.string(),
+  name: external_exports.string(),
+  slug: external_exports.string(),
+  description: external_exports.string().nullable(),
+  type: external_exports.string(),
+  tags: external_exports.array(external_exports.string()),
+  compatibilityAgents: external_exports.array(external_exports.string()),
+  starCount: external_exports.number(),
+  installCount: external_exports.number(),
+  organisation: external_exports.object({
+    slug: external_exports.string(),
+    name: external_exports.string()
+  }),
+  categories: external_exports.array(external_exports.object({
+    id: external_exports.string(),
+    name: external_exports.string(),
+    slug: external_exports.string(),
+    icon: external_exports.string().nullable()
+  }))
+});
+var communitySearchResultSchema = external_exports.object({
+  id: external_exports.string(),
+  name: external_exports.string(),
+  description: external_exports.string().optional(),
+  installCount: external_exports.number(),
+  source: external_exports.string(),
+  url: external_exports.string().optional()
+});
+var wellKnownSearchResultSchema = external_exports.object({
+  name: external_exports.string(),
+  description: external_exports.string(),
+  url: external_exports.string()
 });
 var searchResultSchema = external_exports.object({
-  results: external_exports.array(external_exports.object({
-    name: external_exports.string(),
-    description: external_exports.string(),
-    type: external_exports.string(),
-    source: external_exports.string(),
-    url: external_exports.string().optional()
-  }))
+  platform: external_exports.array(platformSearchResultSchema),
+  community: external_exports.array(communitySearchResultSchema),
+  wellKnown: external_exports.array(wellKnownSearchResultSchema),
+  total: external_exports.number()
 });
 var auditResultSchema = external_exports.object({
   target: external_exports.string(),
@@ -34649,6 +34766,26 @@ var proposalsResultSchema = external_exports.object({
     createdAt: external_exports.string()
   }))
 });
+var agentsResultSchema = external_exports.object({
+  agents: external_exports.array(external_exports.object({
+    id: external_exports.string(),
+    name: external_exports.string(),
+    configPath: external_exports.string()
+  })),
+  scope: scopeSchema
+});
+var logResultSchema = external_exports.object({
+  commits: external_exports.array(external_exports.object({
+    sha: external_exports.string(),
+    message: external_exports.string(),
+    author: external_exports.object({
+      name: external_exports.string(),
+      email: external_exports.string(),
+      date: external_exports.string()
+    }),
+    createdAt: external_exports.string()
+  }))
+});
 var syncResultSchema = external_exports.object({
   synced: external_exports.number(),
   machineId: external_exports.string(),
@@ -34690,10 +34827,49 @@ var infoResultSchema = external_exports.object({
     count: external_exports.number(),
     totalSize: external_exports.number()
   }),
+  pinned: external_exports.boolean(),
+  packageType: external_exports.string().optional(),
+  bundle: external_exports.string().optional(),
   skill: external_exports.object({
     title: external_exports.string(),
     description: external_exports.string()
   }).optional()
+});
+var versionCreateResultSchema = external_exports.object({
+  skill: external_exports.string(),
+  version: external_exports.string(),
+  tag: external_exports.string(),
+  commitSha: external_exports.string()
+});
+var versionListEntrySchema = external_exports.object({
+  name: external_exports.string(),
+  tag: external_exports.string(),
+  commitSha: external_exports.string(),
+  message: external_exports.string()
+});
+var versionListResultSchema = external_exports.object({
+  versions: external_exports.array(versionListEntrySchema)
+});
+var deprecateResultSchema = external_exports.object({
+  skill: external_exports.string(),
+  target: external_exports.enum(["package", "version"]),
+  version: external_exports.string().optional(),
+  status: external_exports.literal("DEPRECATED"),
+  message: external_exports.string().optional()
+});
+var unpublishResultSchema = external_exports.object({
+  skill: external_exports.string(),
+  version: external_exports.string(),
+  status: external_exports.literal("YANKED")
+});
+var upgradeResultSchema = external_exports.object({
+  current: external_exports.string().optional(),
+  previous: external_exports.string(),
+  latest: external_exports.string(),
+  packageManager: external_exports.enum(["bun", "npm", "pnpm", "yarn"]).optional(),
+  upToDate: external_exports.boolean(),
+  checkedOnly: external_exports.boolean(),
+  targetVersion: external_exports.string().optional()
 });
 var doctorCheckSchema = external_exports.object({
   name: external_exports.string(),
@@ -34774,7 +34950,7 @@ var bundlePackageRefSchema = external_exports.object({
 });
 var bundleManifestSchema = external_exports.object({
   name: external_exports.string().min(1).max(64).regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/),
-  version: external_exports.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, "Must be valid semver"),
+  version: external_exports.string().regex(SEMVER_REGEX, "Must be valid semver"),
   description: external_exports.string().max(1e3).optional(),
   extends: external_exports.string().optional(),
   includes: external_exports.object({
@@ -34836,7 +35012,7 @@ var agentSkillsSpecSchema = external_exports.object({
 });
 var agentverSkillSchema = agentSkillsSpecSchema.extend({
   /** Agentver requires semver for registry publishing */
-  version: external_exports.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, "Must be valid semver").optional(),
+  version: external_exports.string().regex(SEMVER_REGEX, "Must be valid semver").optional(),
   /** Agent compatibility — which agents this skill is designed for */
   "agentver-compatibility": external_exports.object({
     agents: external_exports.array(external_exports.string()).optional()
@@ -34901,13 +35077,11 @@ function readManifestFile(manifestPath) {
   if (!result.success) {
     throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`);
   }
-  if (result.data.version === 1) {
-    core.info("Migrating v1 manifest to v2 format");
-    const migrated = migrateManifestV1ToV2(result.data);
-    (0, import_node_fs2.writeFileSync)(manifestPath, JSON.stringify(migrated, null, 2), "utf-8");
-    return migrated;
+  const normalised = normaliseManifestV2(result.data);
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    (0, import_node_fs2.writeFileSync)(manifestPath, JSON.stringify(normalised, null, 2), "utf-8");
   }
-  return result.data;
+  return normalised;
 }
 function readLockfileFile(lockfilePath) {
   if (!(0, import_node_fs2.existsSync)(lockfilePath)) {
@@ -34924,13 +35098,11 @@ function readLockfileFile(lockfilePath) {
   if (!result.success) {
     return null;
   }
-  if (result.data.version === 1) {
-    core.info("Migrating v1 lockfile to v2 format");
-    const migrated = migrateLockfileV1ToV2(result.data);
-    (0, import_node_fs2.writeFileSync)(lockfilePath, JSON.stringify(migrated, null, 2), "utf-8");
-    return migrated;
+  const normalised = normaliseLockfileV2(result.data);
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    (0, import_node_fs2.writeFileSync)(lockfilePath, JSON.stringify(normalised, null, 2), "utf-8");
   }
-  return result.data;
+  return normalised;
 }
 function writeLockfileFile(lockfilePath, lockfile) {
   const dir = (0, import_node_path2.dirname)(lockfilePath);
@@ -35090,14 +35262,16 @@ function updateLockfile(lockfile, results, resolvedData) {
       );
       continue;
     }
-    updated.packages[result.name] = {
-      source: {
-        type: "git",
-        uri: entry.response.gitUri,
-        path: entry.response.gitPath ?? "",
-        ref: entry.response.gitRef,
-        commit: entry.response.gitCommitSha
-      },
+    const source = {
+      type: "git",
+      uri: entry.response.gitUri,
+      path: entry.response.gitPath ?? "",
+      ref: entry.response.gitRef,
+      commit: entry.response.gitCommitSha
+    };
+    updated.packages[createPackageKey(result.name, source)] = {
+      name: result.name,
+      source,
       integrity: computeIntegrity(entry.files),
       agents: result.agents
     };
@@ -35141,8 +35315,8 @@ async function installPackageWithData(packageName, response, files, config2, loc
   }
 }
 function resolveVersionFromSource(pkg) {
-  if (pkg.source.type === "git") {
-    const ref = pkg.source.ref;
+  if (pkg.source.type === "git" || pkg.source.type === "platform") {
+    const ref = getPackageSourceReference(pkg.source);
     if (ref === "unknown") return "latest";
     const stripped = ref.replace(/^(refs\/tags\/)?v?/, "");
     return /^\d+\.\d+\.\d+/.test(stripped) ? stripped : "latest";
@@ -35153,18 +35327,19 @@ async function installAllPackages(manifest, config2, existingLockfile) {
   const results = [];
   const resolvedData = /* @__PURE__ */ new Map();
   const packageEntries = Object.entries(manifest.packages);
-  for (const [packageName, packageInfo] of packageEntries) {
+  for (const [packageKey, packageInfo] of packageEntries) {
+    const displayName = getPackageDisplayName(packageKey, packageInfo);
     const version2 = resolveVersionFromSource(packageInfo);
-    core.info(`Resolving ${packageName}@${version2}...`);
+    core.info(`Resolving ${displayName}@${version2}...`);
     let response;
     let files;
     try {
-      response = await resolvePackage(packageName, version2, config2.registryUrl, config2.apiKey);
+      response = await resolvePackage(displayName, version2, config2.registryUrl, config2.apiKey);
       files = extractFilesFromManifest(response.fileManifest);
       if (files.length === 0) {
-        core.warning(`Package ${packageName}@${response.version} has no files in its manifest`);
+        core.warning(`Package ${displayName}@${response.version} has no files in its manifest`);
         results.push({
-          name: packageName,
+          name: displayName,
           version: response.version,
           agents: [],
           fileCount: 0,
@@ -35173,12 +35348,12 @@ async function installAllPackages(manifest, config2, existingLockfile) {
         });
         continue;
       }
-      resolvedData.set(packageName, { response, files });
+      resolvedData.set(displayName, { response, files });
     } catch (error48) {
       const message = error48 instanceof Error ? error48.message : String(error48);
-      core.warning(`Failed to resolve ${packageName}@${version2}: ${message}`);
+      core.warning(`Failed to resolve ${displayName}@${version2}: ${message}`);
       results.push({
-        name: packageName,
+        name: displayName,
         version: version2,
         agents: [],
         fileCount: 0,
@@ -35187,10 +35362,10 @@ async function installAllPackages(manifest, config2, existingLockfile) {
       });
       continue;
     }
-    core.info(`Installing ${packageName}@${response.version}...`);
-    const lockfileIntegrity = existingLockfile?.packages[packageName]?.integrity;
+    core.info(`Installing ${displayName}@${response.version}...`);
+    const lockfileIntegrity = existingLockfile?.packages[packageKey]?.integrity;
     const result = await installPackageWithData(
-      packageName,
+      displayName,
       response,
       files,
       config2,
@@ -35199,10 +35374,10 @@ async function installAllPackages(manifest, config2, existingLockfile) {
     results.push(result);
     if (result.success) {
       core.info(
-        `Installed ${packageName}@${result.version} to ${result.agents.join(", ")} (${result.fileCount} files)`
+        `Installed ${displayName}@${result.version} to ${result.agents.join(", ")} (${result.fileCount} files)`
       );
     } else {
-      core.warning(`Failed to install ${packageName}: ${result.error}`);
+      core.warning(`Failed to install ${displayName}: ${result.error}`);
     }
   }
   return { results, resolvedData };

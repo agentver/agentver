@@ -16,7 +16,12 @@ export default defineConfig({
   banner: {
     js: '#!/usr/bin/env node',
   },
-  noExternal: ['@agentver/agent-definitions', '@agentver/shared'],
+  noExternal: [
+    '@agentver/agent-definitions',
+    '@agentver/installer',
+    '@agentver/shared',
+    '@agentver/storage',
+  ],
   define: {
     __PKG_VERSION__: JSON.stringify(pkg.version),
   },

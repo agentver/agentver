@@ -278,11 +278,18 @@ export function normaliseManifestV2(manifest: ManifestV2): ManifestV2 {
   }
 }
 
+export const linkModeSchema = z.enum(['symlink', 'copy', 'junction'])
+export type LinkMode = z.infer<typeof linkModeSchema>
+
 export const lockfileV2PackageSchema = z.object({
   name: z.string().min(1).optional(),
   source: packageSourceSchema,
   integrity: z.string().regex(/^sha256-/),
   agents: z.array(z.string()),
+  /** Filesystem link mode used for agent placements. */
+  linkMode: linkModeSchema.optional(),
+  /** True when a fallback link mode was used instead of the preferred mode. */
+  degraded: z.boolean().optional(),
 })
 
 export type LockfileV2Package = z.infer<typeof lockfileV2PackageSchema>

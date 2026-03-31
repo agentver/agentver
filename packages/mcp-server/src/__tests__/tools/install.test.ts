@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPackageKey } from '@agentver/shared'
+import { computeIntegrity } from '@agentver/storage'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
@@ -251,7 +252,8 @@ describe('install tool', () => {
     const lockfile = JSON.parse(readFileSync(lockfilePath, 'utf-8'))
     expect(lockfile.packages[packageKey]).toBeDefined()
     expect(lockfile.packages[packageKey].name).toBe('org/my-skill')
-    expect(lockfile.packages[packageKey].integrity).toBe('sha256-abc123hash')
+    const expectedIntegrity = computeIntegrity([{ path: 'SKILL.md', content: '# My Skill' }])
+    expect(lockfile.packages[packageKey].integrity).toBe(expectedIntegrity)
   })
 
   // ---------------------------------------------------------------------------

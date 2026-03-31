@@ -1,0 +1,11 @@
+{
+  "extends": "@agentver/typescript-config/library.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".turbo", "src/**/*.test.ts"]
+}

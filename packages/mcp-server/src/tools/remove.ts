@@ -1,7 +1,12 @@
 import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
+import {
+  getCanonicalSkillPath,
+  removeAgentPlacements,
+  resolveCanonicalCategory,
+} from '@agentver/installer'
 import { AgentverError, getPackageDisplayName } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
@@ -35,23 +40,6 @@ function findPackageEntry(
   return { key, displayName: getPackageDisplayName(key, pkg), pkg }
 }
 
-/** Expand a leading ~ to the user's home directory */
-function expandTilde(path: string): string {
-  return path.replace(/^~/, homedir())
-}
-
-/** Validate that a resolved path stays within the expected base directory */
-function assertPathWithin(filePath: string, baseDir: string): void {
-  const resolved = resolve(filePath)
-  const resolvedBase = resolve(baseDir)
-  if (!resolved.startsWith(`${resolvedBase}/`) && resolved !== resolvedBase) {
-    throw new AgentverError(
-      'VALIDATION_ERROR',
-      `Path traversal detected: "${filePath}" escapes base directory`
-    )
-  }
-}
-
 export function registerRemoveTool(server: McpServer): void {
   server.registerTool(
     'agentver_remove',
@@ -81,18 +69,28 @@ export function registerRemoveTool(server: McpServer): void {
 
       const { key: packageKey, displayName, pkg } = packageEntry
       const shortName = displayName.split('/').pop()!
-      const removedFrom: string[] = []
       const scope = isGlobal ? 'global' : 'project'
-      const baseDir = isGlobal ? homedir() : getWorkingDirectory()
+      const category = resolveCanonicalCategory('SKILL')
 
+      // Remove canonical storage directory
+      const canonicalPath = getCanonicalSkillPath(root, shortName, scope)
+      if (existsSync(canonicalPath)) {
+        rmSync(canonicalPath, { recursive: true, force: true })
+      }
+
+      // Remove agent placements (symlinks or copies) via installer
+      removeAgentPlacements(root, shortName, pkg.agents, scope, category)
+
+      // Fall back to legacy direct placement removal for packages installed
+      // before the canonical storage migration
+      const removedFrom: string[] = []
       for (const agentId of pkg.agents) {
         const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
         if (!placementPath) continue
 
-        const fullPath = isGlobal ? expandTilde(placementPath) : join(root, placementPath)
-
-        // Validate path stays within expected boundaries before deletion
-        assertPathWithin(fullPath, baseDir)
+        const fullPath = isGlobal
+          ? placementPath.replace(/^~/, homedir())
+          : join(root, placementPath)
 
         if (existsSync(fullPath)) {
           rmSync(fullPath, { recursive: true, force: true })

@@ -1,18 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   type AgentId,
   composeConfigs,
   detectInstalledAgents,
-  getAgentPlacementPath,
-  getCommandPlacementPath,
   getConfigFilePath,
   getGlobalConfigFilePath,
   isComposedConfig,
   parseComposedSections,
   translateConfig,
 } from '@agentver/agent-definitions'
+import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
 import type { InstallResult as InstallResultJSON } from '@agentver/shared'
 import {
   AGENT_CONFIG_FILES,
@@ -26,6 +25,7 @@ import {
   type PlatformSource,
   type WellKnownSource,
 } from '@agentver/shared'
+import { computeIntegrity, createStablePackageKey } from '@agentver/storage'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import type ora from 'ora'
@@ -51,12 +51,7 @@ import type { PlatformResolveResponse } from '../registry/platform.js'
 import { reportInstallation } from '../registry/reporter.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
-import {
-  createAgentSymlinks,
-  findAgentSkillPlacementConflicts,
-  getCanonicalSkillPath,
-  type SkillPlacementConflict,
-} from '../storage/canonical'
+import { getCanonicalSkillPath } from '../storage/canonical'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readManifest } from '../storage/manifest'
 import { setLockfilePackage, setManifestPackage } from '../storage/package-identity'
@@ -67,7 +62,6 @@ import {
   type FilesystemBackupState,
   restoreFilesystemBackup,
 } from '../utils/backup'
-import { resolvePlacementPath } from '../utils/paths'
 import { extractError } from '../utils.js'
 import {
   fetchWellKnownIndex,
@@ -113,6 +107,18 @@ type ConfigWriteTarget = {
   fullPath: string
   content: string
   requiresConfirmation: boolean
+}
+
+/**
+ * Context passed to installStandardPackage / installSingleFilePackage so
+ * the installer can record the real source, integrity, and dependency
+ * metadata in the manifest/lockfile.
+ */
+type PlacementContext = {
+  source: PackageSource
+  integrity: string
+  depMeta: { dependsOn: string[]; conflictsWith: string[] }
+  bundleParentKey?: string
 }
 
 /**
@@ -287,6 +293,22 @@ async function installFromWellKnown(
     enforceDependencies(depMeta.dependsOn, currentManifest, selectedEntry.name)
     enforceConflicts(depMeta.conflictsWith, currentManifest, selectedEntry.name)
 
+    // Build source record early so it can be passed to placement functions
+    const wellKnownSourceRecord: WellKnownSource = {
+      type: 'well-known',
+      baseUrl,
+      hostname,
+      skillName: selectedEntry.name,
+    }
+    const placementCtx: PlacementContext = {
+      source: wellKnownSourceRecord,
+      integrity,
+      depMeta,
+    }
+
+    // Track whether the installer handled persistence
+    let installerHandledPersistence = false
+
     if (options.path) {
       await installToCustomPath(selectedEntry.name, fetchResult.files, options, spinner)
       agents = requestedAgents
@@ -326,12 +348,6 @@ async function installFromWellKnown(
       detectedWkType = detectPackageType(fetchResult.files, options.type)
 
       if (detectedWkType === 'BUNDLE') {
-        const wellKnownSourceRecord: WellKnownSource = {
-          type: 'well-known',
-          baseUrl,
-          hostname,
-          skillName: selectedEntry.name,
-        }
         return installBundleFlow(selectedEntry.name, fetchResult.files, agents, options, spinner, {
           sourceRecord: wellKnownSourceRecord,
           integrity,
@@ -350,16 +366,20 @@ async function installFromWellKnown(
           agents,
           detectedWkType,
           options,
-          spinner
+          spinner,
+          placementCtx
         )
+        installerHandledPersistence = !options.dryRun
       } else {
         await installStandardPackage(
           selectedEntry.name,
           fetchResult.files,
           agents,
           options,
-          spinner
+          spinner,
+          placementCtx
         )
+        installerHandledPersistence = !options.dryRun
       }
     }
 
@@ -378,13 +398,6 @@ async function installFromWellKnown(
         })
       }
       return { name: selectedEntry.name, ref: 'well-known', commitSha: '', agents }
-    }
-
-    const wellKnownSourceRecord: WellKnownSource = {
-      type: 'well-known',
-      baseUrl,
-      hostname,
-      skillName: selectedEntry.name,
     }
 
     const manifestEntry = {
@@ -420,7 +433,9 @@ async function installFromWellKnown(
       integrity: wkSingleFileIntegrity,
       agents,
     }
-    if (options.persist !== false) {
+
+    // Only record if the installer did not already handle persistence
+    if (options.persist !== false && !installerHandledPersistence) {
       recordInstalledPackage(projectRoot, scope, selectedEntry.name, manifestEntry, lockfileEntry)
     }
 
@@ -595,6 +610,23 @@ async function installFromPlatform(
     enforceDependencies(depMeta.dependsOn, currentManifestForChecks, shortName)
     enforceConflicts(depMeta.conflictsWith, currentManifestForChecks, shortName)
 
+    // Build source record early so it can be passed to placement functions
+    const platformSourceRecord: PlatformSource = {
+      type: 'platform',
+      uri: sourceUri,
+      path: resolved.gitPath ?? '',
+      ref,
+      commit: syntheticCommit,
+    }
+    const placementCtx: PlacementContext = {
+      source: platformSourceRecord,
+      integrity,
+      depMeta,
+    }
+
+    // Track whether the installer handled persistence
+    let installerHandledPersistence = false
+
     if (options.path) {
       await installToCustomPath(shortName, files, options, spinner)
       agents = requestedAgents
@@ -634,13 +666,6 @@ async function installFromPlatform(
       detectedPlatformType = detectPackageType(files, options.type)
 
       if (detectedPlatformType === 'BUNDLE') {
-        const platformSourceRecord: PlatformSource = {
-          type: 'platform',
-          uri: sourceUri,
-          path: resolved.gitPath ?? '',
-          ref,
-          commit: syntheticCommit,
-        }
         return installBundleFlow(shortName, files, agents, options, spinner, {
           sourceRecord: platformSourceRecord,
           integrity,
@@ -660,10 +685,13 @@ async function installFromPlatform(
           agents,
           detectedPlatformType,
           options,
-          spinner
+          spinner,
+          placementCtx
         )
+        installerHandledPersistence = !options.dryRun
       } else {
-        await installStandardPackage(shortName, files, agents, options, spinner)
+        await installStandardPackage(shortName, files, agents, options, spinner, placementCtx)
+        installerHandledPersistence = !options.dryRun
       }
     }
 
@@ -682,14 +710,6 @@ async function installFromPlatform(
         })
       }
       return { name: shortName, ref, commitSha: syntheticCommit, agents }
-    }
-
-    const platformSourceRecord: PlatformSource = {
-      type: 'platform',
-      uri: sourceUri,
-      path: resolved.gitPath ?? '',
-      ref,
-      commit: syntheticCommit,
     }
 
     const manifestEntry = {
@@ -726,7 +746,9 @@ async function installFromPlatform(
       integrity: platformSingleFileIntegrity,
       agents,
     }
-    if (options.persist !== false) {
+
+    // Only record if the installer did not already handle persistence
+    if (options.persist !== false && !installerHandledPersistence) {
       recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
     }
 
@@ -916,6 +938,23 @@ export async function installPackage(
     enforceDependencies(depMeta.dependsOn, currentManifestForChecks, shortName)
     enforceConflicts(depMeta.conflictsWith, currentManifestForChecks, shortName)
 
+    // Build source record early so it can be passed to placement functions
+    const gitSourceRecord: GitSource = {
+      type: 'git',
+      uri: gitUri,
+      path: gitSource.path,
+      ref: gitSource.ref,
+      commit: resolved.commitSha,
+    }
+    const placementCtx: PlacementContext = {
+      source: gitSourceRecord,
+      integrity,
+      depMeta,
+    }
+
+    // Track whether the installer handled persistence
+    let installerHandledPersistence = false
+
     if (options.path) {
       await installToCustomPath(shortName, result.files, options, spinner)
       agents = requestedAgents
@@ -955,13 +994,6 @@ export async function installPackage(
       detectedType = detectPackageType(result.files, options.type)
 
       if (detectedType === 'BUNDLE') {
-        const gitSourceRecord: GitSource = {
-          type: 'git',
-          uri: gitUri,
-          path: gitSource.path,
-          ref: gitSource.ref,
-          commit: resolved.commitSha,
-        }
         return installBundleFlow(shortName, result.files, agents, options, spinner, {
           sourceRecord: gitSourceRecord,
           integrity,
@@ -981,10 +1013,20 @@ export async function installPackage(
           agents,
           detectedType,
           options,
-          spinner
+          spinner,
+          placementCtx
         )
+        installerHandledPersistence = !options.dryRun
       } else {
-        await installStandardPackage(shortName, result.files, agents, options, spinner)
+        await installStandardPackage(
+          shortName,
+          result.files,
+          agents,
+          options,
+          spinner,
+          placementCtx
+        )
+        installerHandledPersistence = !options.dryRun
       }
     }
 
@@ -1003,14 +1045,6 @@ export async function installPackage(
         })
       }
       return { name: shortName, ref: gitSource.ref, commitSha: resolved.commitSha, agents }
-    }
-
-    const gitSourceRecord: GitSource = {
-      type: 'git',
-      uri: gitUri,
-      path: gitSource.path,
-      ref: gitSource.ref,
-      commit: resolved.commitSha,
     }
 
     const manifestEntry = {
@@ -1043,8 +1077,12 @@ export async function installPackage(
       integrity: singleFileIntegrity,
       agents,
     }
-    if (options.persist !== false) {
+
+    // Only record if the installer did not already handle persistence
+    if (options.persist !== false && !installerHandledPersistence) {
       recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
+    }
+    if (options.persist !== false) {
       reportInstallation(shortName, gitSourceRecord, agents, resolved.commitSha)
     }
 
@@ -1128,10 +1166,6 @@ function detectPackageType(
   }
 
   return 'SKILL'
-}
-
-function formatSkillPlacementConflicts(conflicts: SkillPlacementConflict[]): string {
-  return conflicts.map((conflict) => `${conflict.agentId}:${conflict.path}`).join(', ')
 }
 
 function formatConfigOverwriteTargets(targets: ConfigWriteTarget[]): string {
@@ -1347,7 +1381,8 @@ async function installStandardPackage(
   files: FetchedFile[],
   agents: string[],
   options: InstallOptions,
-  spinner: ReturnType<typeof ora> | SpinnerLike
+  spinner: ReturnType<typeof ora> | SpinnerLike,
+  ctx?: PlacementContext
 ): Promise<void> {
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
@@ -1364,55 +1399,69 @@ async function installStandardPackage(
 
   spinner.text = `Installing to canonical path and symlinking to ${agents.length} agent(s)...`
 
-  const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
-  const placementConflicts = findAgentSkillPlacementConflicts(projectRoot, name, agents, scope)
+  const source = ctx?.source ?? { type: 'unknown' as const }
+  const persist = ctx ? options.persist !== false : false
 
-  if (placementConflicts.length > 0) {
+  // Build an InstallRequest for the installer planner
+  const request: InstallRequest = {
+    packageKey: createStablePackageKey(name, source),
+    displayName: name,
+    packageType: 'SKILL',
+    source,
+    files: files.map((f) => ({ path: f.path, content: f.content })),
+    integrity:
+      ctx?.integrity ?? computeIntegrity(files.map((f) => ({ path: f.path, content: f.content }))),
+    target: {
+      scope,
+      projectRoot,
+      agents,
+    },
+    policy: {
+      conflictStrategy: 'error',
+      preferredLinkMode: 'symlink',
+      allowFallback: true,
+      dryRun: false,
+      persist,
+      securityScanPolicy: 'skip',
+    },
+    metadata: {
+      dependsOn: ctx?.depMeta.dependsOn,
+      conflictsWith: ctx?.depMeta.conflictsWith,
+      bundleParentKey: ctx?.bundleParentKey,
+    },
+  }
+
+  // Plan first with 'error' strategy to detect conflicts
+  let plan = planInstall(request)
+
+  // If conflicts detected, prompt the user
+  if (!plan.executable && plan.conflicts.length > 0) {
+    const conflictSummary = plan.conflicts.map((c) => `${c.agentId}:${c.path}`).join(', ')
+
     await confirmOverwrite(
-      `Installing ${name} will replace existing unmanaged skill paths: ${formatSkillPlacementConflicts(placementConflicts)}. Agentver will create a backup first. Continue?`,
+      `Installing ${name} will replace existing unmanaged skill paths: ${conflictSummary}. Agentver will create a backup first. Continue?`,
       options,
       spinner
     )
+
+    // Re-plan with backup-and-replace strategy after user confirmation
+    const confirmedRequest: InstallRequest = {
+      ...request,
+      policy: { ...request.policy, conflictStrategy: 'backup-and-replace' },
+    }
+    plan = planInstall(confirmedRequest)
   }
 
-  const backup = backupExistingPaths([
-    canonicalPath,
-    ...placementConflicts.map((conflict) => conflict.path),
-  ])
+  // Execute the plan
+  const result = executeInstall(plan)
 
-  try {
-    if (existsSync(canonicalPath)) {
-      rmSync(canonicalPath, { recursive: true, force: true })
-    }
+  if (!result.success) {
+    throw new AgentverError('INSTALL_FAILED', result.error?.message ?? 'Installation failed')
+  }
 
-    for (const conflict of placementConflicts) {
-      rmSync(conflict.path, { recursive: true, force: true })
-    }
-
-    mkdirSync(canonicalPath, { recursive: true })
-
-    for (const file of files) {
-      const resolvedFilePath = resolve(canonicalPath, file.path)
-      const relativePath = relative(canonicalPath, resolvedFilePath)
-      if (relativePath.startsWith('..') || resolve(resolvedFilePath) !== resolvedFilePath) {
-        continue
-      }
-
-      const dir = dirname(resolvedFilePath)
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true })
-      }
-      writeFileSync(resolvedFilePath, file.content, 'utf-8')
-    }
-
-    createAgentSymlinks(projectRoot, name, agents, scope)
-
-    if (backup) {
-      cleanupBackup(backup)
-    }
-  } catch (error) {
-    rollbackFilesystemBackup(backup)
-    throw error
+  // Clean up backups from successful installs
+  for (const backup of result.backups) {
+    backup.cleanup()
   }
 }
 
@@ -1422,7 +1471,8 @@ async function installSingleFilePackage(
   agents: string[],
   packageType: 'AGENT' | 'COMMAND',
   options: InstallOptions,
-  spinner: ReturnType<typeof ora> | SpinnerLike
+  spinner: ReturnType<typeof ora> | SpinnerLike,
+  ctx?: PlacementContext
 ): Promise<string> {
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
@@ -1451,34 +1501,58 @@ async function installSingleFilePackage(
 
   spinner.text = `Installing ${packageType.toLowerCase()} ${name} to ${agents.length} agent(s)...`
 
-  const getPlacementPath = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
-  const writtenAgents: string[] = []
+  const source = ctx?.source ?? { type: 'unknown' as const }
+  const persist = ctx ? options.persist !== false : false
 
-  for (const agentId of agents) {
-    const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
-    if (!placementPath) {
-      const typeLabel = packageType === 'AGENT' ? 'agent' : 'command'
-      spinner.text = `${agentId} does not support ${typeLabel}-type packages. Skipping.`
-      continue
-    }
-
-    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
-    if (!fullPath) continue
-
-    const parentDir = dirname(fullPath)
-    if (!existsSync(parentDir)) {
-      mkdirSync(parentDir, { recursive: true })
-    }
-
-    writeFileSync(fullPath, mdFile.content, 'utf-8')
-    writtenAgents.push(agentId)
+  // Build an InstallRequest for the installer planner
+  const entryFile = mdFile.path
+  const singleFileIntegrity = computeIntegrity([{ path: fileName, content: mdFile.content }])
+  const request: InstallRequest = {
+    packageKey: createStablePackageKey(name, source),
+    displayName: name,
+    packageType,
+    source,
+    files: [{ path: entryFile, content: mdFile.content }],
+    integrity: ctx ? singleFileIntegrity : singleFileIntegrity,
+    target: {
+      scope,
+      projectRoot,
+      agents,
+    },
+    policy: {
+      conflictStrategy: 'force',
+      preferredLinkMode: 'symlink',
+      allowFallback: true,
+      dryRun: false,
+      persist,
+      securityScanPolicy: 'skip',
+    },
+    metadata: {
+      entryFile,
+      dependsOn: ctx?.depMeta.dependsOn,
+      conflictsWith: ctx?.depMeta.conflictsWith,
+      bundleParentKey: ctx?.bundleParentKey,
+    },
   }
 
-  if (writtenAgents.length === 0) {
+  const plan = planInstall(request)
+  const result = executeInstall(plan)
+
+  if (!result.success) {
+    throw new AgentverError('INSTALL_FAILED', result.error?.message ?? 'Installation failed')
+  }
+
+  // Check that at least one agent was installed to
+  if (result.agentsInstalledCount === 0 && plan.skippedAgents.length > 0) {
     const typeLabel = packageType === 'AGENT' ? 'agent' : 'command'
     const message = `No agents support ${typeLabel}-type packages`
     spinner.fail(message)
     throw new AgentverError('VALIDATION_ERROR', message)
+  }
+
+  // Clean up backups from successful installs
+  for (const backup of result.backups) {
+    backup.cleanup()
   }
 
   return fileName

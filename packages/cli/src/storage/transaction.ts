@@ -5,7 +5,7 @@ import {
   type ManifestV2,
   manifestV2Schema,
 } from '@agentver/shared'
-import type { Scope } from '../utils/paths'
+import type { Scope } from '@agentver/storage'
 import { createCliLogger } from '../utils.js'
 import {
   ensureStorageDir,

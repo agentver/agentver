@@ -143,6 +143,8 @@
         "agentver": "./dist/agentver.js",
       },
       "dependencies": {
+        "@agentver/installer": "workspace:*",
+        "@agentver/storage": "workspace:*",
         "chalk": "^5.4.1",
         "commander": "^14.0.0",
         "open": "^10.1.2",
@@ -187,9 +189,25 @@
       },
       "devDependencies": {
         "@agentver/agent-definitions": "workspace:*",
+        "@agentver/installer": "workspace:*",
         "@agentver/shared": "workspace:*",
+        "@agentver/storage": "workspace:*",
         "@agentver/typescript-config": "workspace:*",
         "tsup": "^8.5.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.0",
+      },
+    },
+    "packages/installer": {
+      "name": "@agentver/installer",
+      "version": "0.0.1",
+      "dependencies": {
+        "@agentver/agent-definitions": "workspace:*",
+        "@agentver/shared": "workspace:*",
+        "@agentver/storage": "workspace:*",
+      },
+      "devDependencies": {
+        "@agentver/typescript-config": "workspace:*",
         "typescript": "^5.9.3",
         "vitest": "^4.1.0",
       },
@@ -206,7 +224,9 @@
       },
       "devDependencies": {
         "@agentver/agent-definitions": "workspace:*",
+        "@agentver/installer": "workspace:*",
         "@agentver/shared": "workspace:*",
+        "@agentver/storage": "workspace:*",
         "@agentver/typescript-config": "workspace:*",
         "tsup": "^8.5.0",
         "typescript": "^5.9.3",
@@ -225,6 +245,18 @@
         "@agentver/agent-definitions": "workspace:*",
         "@agentver/typescript-config": "workspace:*",
         "typescript": "^5.9.3",
+      },
+    },
+    "packages/storage": {
+      "name": "@agentver/storage",
+      "version": "0.0.1",
+      "dependencies": {
+        "@agentver/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@agentver/typescript-config": "workspace:*",
+        "typescript": "^5.9.3",
+        "vitest": "^4.1.0",
       },
     },
     "packages/typescript-config": {
@@ -307,9 +339,13 @@
 
     "@agentver/github-action": ["@agentver/github-action@workspace:packages/github-action"],
 
+    "@agentver/installer": ["@agentver/installer@workspace:packages/installer"],
+
     "@agentver/mcp-server": ["@agentver/mcp-server@workspace:packages/mcp-server"],
 
     "@agentver/shared": ["@agentver/shared@workspace:packages/shared"],
+
+    "@agentver/storage": ["@agentver/storage@workspace:packages/storage"],
 
     "@agentver/typescript-config": ["@agentver/typescript-config@workspace:packages/typescript-config"],
 

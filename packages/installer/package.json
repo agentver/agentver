@@ -1,0 +1,49 @@
+{
+  "name": "@agentver/installer",
+  "version": "0.0.1",
+  "description": "Headless install engine for Agentver — plan, execute, and rollback skill installations",
+  "license": "MIT",
+  "author": "Agentver <hello@agentver.com>",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check src/"
+  },
+  "dependencies": {
+    "@agentver/agent-definitions": "workspace:*",
+    "@agentver/shared": "workspace:*",
+    "@agentver/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@agentver/typescript-config": "workspace:*",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentver/agentver.git",
+    "directory": "packages/installer"
+  },
+  "bugs": {
+    "url": "https://github.com/agentver/agentver/issues"
+  },
+  "homepage": "https://agentver.com"
+}

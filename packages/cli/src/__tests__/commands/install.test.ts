@@ -45,6 +45,66 @@ vi.mock('../../storage/canonical', () => ({
   removeCanonicalDirectory: vi.fn(),
 }))
 
+vi.mock('@agentver/installer', () => ({
+  planInstall: vi.fn().mockReturnValue({
+    request: {},
+    kind: 'fresh',
+    canonical: { path: '/project/.agents/skills/test-skill', category: 'skills' },
+    placements: [],
+    conflicts: [],
+    backupsRequired: [],
+    manifestEntry: {
+      name: 'test-skill',
+      source: { type: 'unknown' },
+      agents: ['claude-code'],
+      installedAt: new Date().toISOString(),
+      modified: false,
+    },
+    lockfileEntry: {
+      name: 'test-skill',
+      source: { type: 'unknown' },
+      integrity: 'sha256-test',
+      agents: ['claude-code'],
+    },
+    skippedAgents: [],
+    skippedFiles: [],
+    executable: true,
+  }),
+  executeInstall: vi.fn().mockReturnValue({
+    success: true,
+    packageKey: 'test-skill',
+    displayName: 'test-skill',
+    placements: [
+      {
+        agentId: 'claude-code',
+        destinationPath: '/project/.claude/skills/test-skill',
+        actualLinkMode: 'symlink',
+        fallbackUsed: false,
+        success: true,
+      },
+    ],
+    conflictsResolved: [],
+    backups: [],
+    manifestWritten: false,
+    lockfileWritten: false,
+    manifestEntry: {
+      name: 'test-skill',
+      source: { type: 'unknown' },
+      agents: ['claude-code'],
+      installedAt: new Date().toISOString(),
+      modified: false,
+    },
+    lockfileEntry: {
+      name: 'test-skill',
+      source: { type: 'unknown' },
+      integrity: 'sha256-test',
+      agents: ['claude-code'],
+    },
+    filesPlacedCount: 2,
+    agentsInstalledCount: 1,
+  }),
+}))
+
 vi.mock('../../storage/integrity', async () => {
   const actual =
     await vi.importActual<typeof import('../../storage/integrity')>('../../storage/integrity')
@@ -138,6 +198,7 @@ import * as nodeFs from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import * as agentDefs from '@agentver/agent-definitions'
+import * as installerModule from '@agentver/installer'
 import promptsDefault from 'prompts'
 import * as gitIndex from '../../git/index.js'
 import * as outputModule from '../../output.js'
@@ -149,7 +210,6 @@ import * as canonicalModule from '../../storage/canonical'
 import * as integrityModule from '../../storage/integrity'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
-import { resolvePackageQuery } from '../../storage/package-identity'
 import * as pairModule from '../../storage/pair'
 import * as wellknownModule from '../../wellknown/index.js'
 
@@ -195,18 +255,6 @@ function setupHappyPathMocks() {
   return { gitSource, files, resolved, fetchResult }
 }
 
-function getStoredManifestPackage(manifest: ReturnType<typeof createManifest>, name: string) {
-  const lookup = resolvePackageQuery(manifest.packages, name)
-  expect(lookup.ok).toBe(true)
-  return lookup.ok ? lookup.pkg : undefined
-}
-
-function getStoredLockfilePackage(lockfile: ReturnType<typeof createLockfile>, name: string) {
-  const lookup = resolvePackageQuery(lockfile.packages, name)
-  expect(lookup.ok).toBe(true)
-  return lookup.ok ? lookup.pkg : undefined
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -233,6 +281,65 @@ describe('commands/install', () => {
     vi.mocked(wellknownModule.looksLikeWellKnownUrl).mockReturnValue(false)
     vi.mocked(canonicalModule.findAgentSkillPlacementConflicts).mockReturnValue([])
     vi.mocked(promptsDefault).mockResolvedValue({ proceed: true })
+
+    // Default installer mocks — planInstall returns an executable plan, executeInstall succeeds
+    vi.mocked(installerModule.planInstall).mockReturnValue({
+      request: {} as never,
+      kind: 'fresh',
+      canonical: { path: '/project/.agents/skills/test-skill', category: 'skills' },
+      placements: [],
+      conflicts: [],
+      backupsRequired: [],
+      manifestEntry: {
+        name: 'test-skill',
+        source: { type: 'unknown' },
+        agents: ['claude-code'],
+        installedAt: new Date().toISOString(),
+        modified: false,
+      },
+      lockfileEntry: {
+        name: 'test-skill',
+        source: { type: 'unknown' },
+        integrity: 'sha256-test',
+        agents: ['claude-code'],
+      },
+      skippedAgents: [],
+      skippedFiles: [],
+      executable: true,
+    })
+    vi.mocked(installerModule.executeInstall).mockReturnValue({
+      success: true,
+      packageKey: 'test-skill',
+      displayName: 'test-skill',
+      placements: [
+        {
+          agentId: 'claude-code',
+          destinationPath: '/project/.claude/skills/test-skill',
+          actualLinkMode: 'symlink',
+          fallbackUsed: false,
+          success: true,
+        },
+      ],
+      conflictsResolved: [],
+      backups: [],
+      manifestWritten: false,
+      lockfileWritten: false,
+      manifestEntry: {
+        name: 'test-skill',
+        source: { type: 'unknown' },
+        agents: ['claude-code'],
+        installedAt: new Date().toISOString(),
+        modified: false,
+      },
+      lockfileEntry: {
+        name: 'test-skill',
+        source: { type: 'unknown' },
+        integrity: 'sha256-test',
+        agents: ['claude-code'],
+      },
+      filesPlacedCount: 2,
+      agentsInstalledCount: 1,
+    })
     vi.mocked(pairModule.updateManifestAndLockfile).mockImplementation(
       (projectRoot, scope, updater) => {
         const manifest = structuredClone(manifestModule.readManifest(projectRoot, scope))
@@ -256,50 +363,53 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('happy path git install', () => {
-    it('writes manifest with package entry after successful install', async () => {
+    it('delegates persistence to the installer with correct source and agents', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
-      const [projectRoot, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(projectRoot).toBe('/project')
-      expect(getStoredManifestPackage(manifest, DERIVED_NAME)?.agents).toEqual(['claude-code'])
-    })
-
-    it('writes lockfile with integrity hash after successful install', async () => {
-      setupHappyPathMocks()
-
-      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
-
-      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
-      const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
-      expect(getStoredLockfilePackage(lockfile, DERIVED_NAME)?.integrity).toBe(INTEGRITY_HASH)
-    })
-
-    it('creates agent symlinks for the target agent', async () => {
-      setupHappyPathMocks()
-
-      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
-
-      expect(canonicalModule.createAgentSymlinks).toHaveBeenCalledWith(
-        '/project',
-        DERIVED_NAME,
-        ['claude-code'],
-        'project'
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policy: expect.objectContaining({ persist: true }),
+          source: expect.objectContaining({ type: 'git' }),
+          target: expect.objectContaining({
+            agents: ['claude-code'],
+            projectRoot: '/project',
+          }),
+        })
       )
     })
 
-    it('stores the resolved commit SHA in the lockfile source, not the original ref', async () => {
+    it('passes integrity to the installer for lockfile recording', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
-      const source = getStoredLockfilePackage(lockfile, DERIVED_NAME)!.source
-      expect(source.type).toBe('git')
-      if (source.type === 'git') {
-        expect(source.commit).toBe(RESOLVED_SHA)
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          integrity: expect.any(String),
+        })
+      )
+    })
+
+    it('delegates file placement to the installer', async () => {
+      setupHappyPathMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      expect(installerModule.planInstall).toHaveBeenCalled()
+      expect(installerModule.executeInstall).toHaveBeenCalled()
+    })
+
+    it('passes the resolved commit SHA in the installer source, not the original ref', async () => {
+      setupHappyPathMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code' })
+
+      const planCall = vi.mocked(installerModule.planInstall).mock.calls[0]![0]
+      expect(planCall.source.type).toBe('git')
+      if (planCall.source.type === 'git') {
+        expect(planCall.source.commit).toBe(RESOLVED_SHA)
       }
     })
 
@@ -382,13 +492,17 @@ describe('commands/install', () => {
       expect(securityModule.scanFiles).not.toHaveBeenCalled()
     })
 
-    it('still writes manifest and lockfile when audit is skipped', async () => {
+    it('still delegates persistence to the installer when audit is skipped', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', skipAudit: true })
 
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
-      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
     })
   })
 
@@ -498,21 +612,25 @@ describe('commands/install', () => {
       await installPackage(TEST_SOURCE, { agent: 'cursor' })
 
       expect(agentDefs.detectInstalledAgents).not.toHaveBeenCalled()
-      expect(canonicalModule.createAgentSymlinks).toHaveBeenCalledWith(
-        '/project',
-        DERIVED_NAME,
-        ['cursor'],
-        'project'
+      // The installer receives the specified agent via the install request
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({ agents: ['cursor'] }),
+        })
       )
     })
 
-    it('stores the specified agent in the manifest', async () => {
+    it('passes the specified agent to the installer for manifest recording', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'cursor' })
 
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(getStoredManifestPackage(manifest, DERIVED_NAME)?.agents).toEqual(['cursor'])
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({ agents: ['cursor'] }),
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
     })
   })
 
@@ -644,30 +762,28 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('ref resolution to commit SHA', () => {
-    it('stores the resolved SHA in manifest source commit field', async () => {
+    it('passes the resolved SHA in the installer source commit field', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      const source = getStoredManifestPackage(manifest, DERIVED_NAME)!.source
-      expect(source.type).toBe('git')
-      if (source.type === 'git') {
-        expect(source.commit).toBe(RESOLVED_SHA)
+      const planCall = vi.mocked(installerModule.planInstall).mock.calls[0]![0]
+      expect(planCall.source.type).toBe('git')
+      if (planCall.source.type === 'git') {
+        expect(planCall.source.commit).toBe(RESOLVED_SHA)
       }
     })
 
-    it('lockfile contains the resolved commit SHA, not the original ref string', async () => {
+    it('passes the resolved commit SHA and original ref to the installer source', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
-      const source = getStoredLockfilePackage(lockfile, DERIVED_NAME)!.source
-      expect(source.type).toBe('git')
-      if (source.type === 'git') {
-        expect(source.commit).toBe(RESOLVED_SHA)
-        expect(source.ref).toBe('main')
+      const planCall = vi.mocked(installerModule.planInstall).mock.calls[0]![0]
+      expect(planCall.source.type).toBe('git')
+      if (planCall.source.type === 'git') {
+        expect(planCall.source.commit).toBe(RESOLVED_SHA)
+        expect(planCall.source.ref).toBe('main')
       }
     })
   })
@@ -677,16 +793,15 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('global scope', () => {
-    it('passes global scope to createAgentSymlinks', async () => {
+    it('passes global scope to the installer', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', global: true })
 
-      expect(canonicalModule.createAgentSymlinks).toHaveBeenCalledWith(
-        '/project',
-        DERIVED_NAME,
-        ['claude-code'],
-        'global'
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({ scope: 'global' }),
+        })
       )
     })
   })
@@ -773,8 +888,12 @@ describe('commands/install', () => {
       expect(secondCallArg.source.path).toBe('skills/my-skill')
       // Install should succeed
       expect(result).toBeDefined()
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
-      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
     })
 
     it('does not retry with skills/ prefix when direct path returns files', async () => {
@@ -784,7 +903,7 @@ describe('commands/install', () => {
 
       // fetchFiles should only be called once — no retry needed
       expect(gitIndex.fetchFiles).toHaveBeenCalledTimes(1)
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      expect(installerModule.executeInstall).toHaveBeenCalled()
     })
 
     it('throws AgentverError when both direct and skills/-prefixed paths return no files', async () => {
@@ -878,27 +997,34 @@ describe('commands/install', () => {
       return { files }
     }
 
-    it('writes manifest with well-known source after successful install', async () => {
+    it('delegates persistence to the installer with well-known source', async () => {
       setupWellKnownMocks()
 
       await installPackage('https://skills.example.com', { agent: 'claude-code' })
 
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
-      const [projectRoot, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(projectRoot).toBe('/project')
-      expect(getStoredManifestPackage(manifest, 'test-skill')?.source).toEqual(
-        expect.objectContaining({ type: 'well-known', baseUrl: 'https://skills.example.com' })
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: expect.objectContaining({
+            type: 'well-known',
+            baseUrl: 'https://skills.example.com',
+          }),
+          policy: expect.objectContaining({ persist: true }),
+          target: expect.objectContaining({ projectRoot: '/project' }),
+        })
       )
     })
 
-    it('writes lockfile with integrity hash after successful well-known install', async () => {
+    it('passes integrity to the installer for lockfile recording on well-known install', async () => {
       setupWellKnownMocks()
 
       await installPackage('https://skills.example.com', { agent: 'claude-code' })
 
-      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
-      const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
-      expect(getStoredLockfilePackage(lockfile, 'test-skill')?.integrity).toBe(INTEGRITY_HASH)
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          integrity: expect.any(String),
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
     })
 
     it('returns the correct result shape for well-known installs', async () => {
@@ -1352,7 +1478,11 @@ describe('commands/install', () => {
       expect(promptsDefault).toHaveBeenCalled()
       expect(result).toBeDefined()
       expect(result!.name).toBe(DERIVED_NAME)
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
     })
   })
 
@@ -1851,46 +1981,120 @@ describe('commands/install', () => {
   describe('unmanaged skill path conflicts', () => {
     it('requires confirmation before replacing an unmanaged skill directory', async () => {
       setupHappyPathMocks()
-      vi.mocked(canonicalModule.findAgentSkillPlacementConflicts).mockReturnValue([
-        {
-          agentId: 'claude-code',
-          path: '/project/.claude/skills/test-skill',
-          kind: 'directory',
+      // planInstall returns a non-executable plan with conflicts
+      vi.mocked(installerModule.planInstall).mockReturnValue({
+        request: {} as never,
+        kind: 'fresh',
+        canonical: { path: '/project/.agents/skills/test-skill', category: 'skills' },
+        placements: [],
+        conflicts: [
+          {
+            agentId: 'claude-code',
+            path: '/project/.claude/skills/test-skill',
+            kind: 'directory',
+          },
+        ],
+        backupsRequired: [],
+        manifestEntry: {
+          name: 'test-skill',
+          source: { type: 'unknown' },
+          agents: ['claude-code'],
+          installedAt: new Date().toISOString(),
+          modified: false,
         },
-      ])
+        lockfileEntry: {
+          name: 'test-skill',
+          source: { type: 'unknown' },
+          integrity: 'sha256-test',
+          agents: ['claude-code'],
+        },
+        skippedAgents: [],
+        skippedFiles: [],
+        executable: false,
+        blockedReason: 'Conflicts detected',
+      })
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
 
       await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toMatchObject({
         code: 'CONFIRMATION_REQUIRED',
       })
 
-      expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
-      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
+      expect(installerModule.executeInstall).not.toHaveBeenCalled()
     })
 
-    it('backs up and replaces an unmanaged skill directory when --yes is passed', async () => {
+    it('re-plans with backup-and-replace strategy when --yes is passed', async () => {
       setupHappyPathMocks()
-      vi.mocked(canonicalModule.findAgentSkillPlacementConflicts).mockReturnValue([
-        {
-          agentId: 'claude-code',
-          path: '/project/.claude/skills/test-skill',
-          kind: 'directory',
-        },
-      ])
-      vi.mocked(nodeFs.existsSync).mockImplementation(
-        (path) =>
-          String(path) === '/project/.claude/skills/test-skill' ||
-          String(path) === '/project/.agents/skills/test-skill'
-      )
+      // First planInstall call returns non-executable (conflicts)
+      // Second planInstall call returns executable (after user confirms)
+      vi.mocked(installerModule.planInstall)
+        .mockReturnValueOnce({
+          request: {} as never,
+          kind: 'fresh',
+          canonical: { path: '/project/.agents/skills/test-skill', category: 'skills' },
+          placements: [],
+          conflicts: [
+            {
+              agentId: 'claude-code',
+              path: '/project/.claude/skills/test-skill',
+              kind: 'directory',
+            },
+          ],
+          backupsRequired: [],
+          manifestEntry: {
+            name: 'test-skill',
+            source: { type: 'unknown' },
+            agents: ['claude-code'],
+            installedAt: new Date().toISOString(),
+            modified: false,
+          },
+          lockfileEntry: {
+            name: 'test-skill',
+            source: { type: 'unknown' },
+            integrity: 'sha256-test',
+            agents: ['claude-code'],
+          },
+          skippedAgents: [],
+          skippedFiles: [],
+          executable: false,
+          blockedReason: 'Conflicts detected',
+        })
+        .mockReturnValueOnce({
+          request: {} as never,
+          kind: 'fresh',
+          canonical: { path: '/project/.agents/skills/test-skill', category: 'skills' },
+          placements: [],
+          conflicts: [],
+          backupsRequired: [
+            { originalPath: '/project/.claude/skills/test-skill', reason: 'conflict-replace' },
+          ],
+          manifestEntry: {
+            name: 'test-skill',
+            source: { type: 'unknown' },
+            agents: ['claude-code'],
+            installedAt: new Date().toISOString(),
+            modified: false,
+          },
+          lockfileEntry: {
+            name: 'test-skill',
+            source: { type: 'unknown' },
+            integrity: 'sha256-test',
+            agents: ['claude-code'],
+          },
+          skippedAgents: [],
+          skippedFiles: [],
+          executable: true,
+        })
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', yes: true })
 
-      expect(nodeFs.cpSync).toHaveBeenCalled()
-      expect(nodeFs.rmSync).toHaveBeenCalledWith('/project/.claude/skills/test-skill', {
-        force: true,
-        recursive: true,
-      })
-      expect(canonicalModule.createAgentSymlinks).toHaveBeenCalled()
+      // Should have been called twice: once with 'error', once with 'backup-and-replace'
+      expect(installerModule.planInstall).toHaveBeenCalledTimes(2)
+      expect(installerModule.planInstall).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          policy: expect.objectContaining({ conflictStrategy: 'backup-and-replace' }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
     })
   })
 
@@ -2126,9 +2330,14 @@ describe('commands/install', () => {
       expect(result).toBeDefined()
       expect(result!.name).toBe('google-search-console')
       expect(result!.agents).toEqual(['claude-code'])
-      // Should write manifest and lockfile
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
-      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+      // Installer should handle persistence
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: expect.objectContaining({ type: 'platform' }),
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
     })
 
     it('delegates to git install flow when platform resolves a git-backed package', async () => {
@@ -2413,28 +2622,31 @@ describe('commands/install', () => {
   // -------------------------------------------------------------------------
 
   describe('--global scope', () => {
-    it('passes global scope to readManifest and writeManifest', async () => {
+    it('passes global scope to the installer and readManifest', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { global: true, agent: 'claude-code' })
 
       expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
-      const [, manifest, writeScope] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(writeScope).toBe('global')
-      expect(manifest.version).toBe(2)
-      expect(getStoredManifestPackage(manifest, DERIVED_NAME)).toBeDefined()
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({ scope: 'global' }),
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
     })
 
-    it('passes global scope to readLockfile and writeLockfile', async () => {
+    it('passes global scope to the installer for lockfile recording', async () => {
       setupHappyPathMocks()
 
       await installPackage(TEST_SOURCE, { global: true, agent: 'claude-code' })
 
-      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
-      const [, lockfile, writeScope] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
-      expect(writeScope).toBe('global')
-      expect(lockfile.version).toBe(2)
-      expect(getStoredLockfilePackage(lockfile, DERIVED_NAME)).toBeDefined()
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({ scope: 'global' }),
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
     })
 
     it('uses project scope by default when --global is not set', async () => {
@@ -2443,16 +2655,11 @@ describe('commands/install', () => {
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
       expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'project')
-      expect(manifestModule.writeManifest).toHaveBeenCalledWith(
-        '/project',
-        expect.any(Object),
-        'project'
-      )
-      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'project')
-      expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
-        '/project',
-        expect.any(Object),
-        'project'
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({ scope: 'project' }),
+          policy: expect.objectContaining({ persist: true }),
+        })
       )
     })
 
@@ -2572,57 +2779,42 @@ describe('commands/install', () => {
       return { ...mocks, files }
     }
 
-    it('writes the .md file via writeFileSync at the agent placement path', async () => {
+    it('delegates AGENT file placement to the installer', async () => {
       setupAgentTypeMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
 
-      expect(nodeFs.writeFileSync).toHaveBeenCalledWith(
-        '/project/.claude/agents/AGENT.md',
-        '# My Agent\n\nDoes agent things.\n',
-        'utf-8'
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          packageType: 'AGENT',
+          metadata: expect.objectContaining({ entryFile: 'AGENT.md' }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
+    })
+
+    it('passes AGENT packageType and entryFile to the installer for persistence', async () => {
+      setupAgentTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
+
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          packageType: 'AGENT',
+          metadata: expect.objectContaining({ entryFile: 'AGENT.md' }),
+          policy: expect.objectContaining({ persist: true }),
+        })
       )
     })
 
-    it('stores packageType AGENT and entryFile in manifest', async () => {
+    it('passes AGENT type to the installer (not as standard skill)', async () => {
       setupAgentTypeMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
 
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      const pkg = getStoredManifestPackage(manifest, DERIVED_NAME)!
-      expect(pkg.packageType).toBe('AGENT')
-      expect(pkg.entryFile).toBe('AGENT.md')
-    })
-
-    it('does not create canonical symlinks for agent-type packages', async () => {
-      setupAgentTypeMocks()
-
-      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
-
-      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
-    })
-
-    it('calls getAgentPlacementPath with the correct agentId and fileName', async () => {
-      setupAgentTypeMocks()
-
-      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
-
-      expect(agentDefs.getAgentPlacementPath).toHaveBeenCalledWith(
-        'claude-code',
-        'AGENT.md',
-        'project'
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({ packageType: 'AGENT' })
       )
-    })
-
-    it('creates parent directory if it does not exist', async () => {
-      setupAgentTypeMocks()
-      vi.mocked(nodeFs.existsSync).mockReturnValue(false)
-
-      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
-
-      expect(nodeFs.mkdirSync).toHaveBeenCalledWith('/project/.claude/agents', { recursive: true })
     })
 
     it('does not write files in dry-run mode', async () => {
@@ -2630,7 +2822,7 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent', dryRun: true })
 
-      expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
+      expect(installerModule.executeInstall).not.toHaveBeenCalled()
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
     })
   })
@@ -2658,48 +2850,42 @@ describe('commands/install', () => {
       return { ...mocks, files }
     }
 
-    it('writes the .md file via writeFileSync at the command placement path', async () => {
+    it('delegates COMMAND file placement to the installer', async () => {
       setupCommandTypeMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
 
-      expect(nodeFs.writeFileSync).toHaveBeenCalledWith(
-        '/project/.claude/commands/COMMAND.md',
-        '# My Command\n\nDoes command things.\n',
-        'utf-8'
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          packageType: 'COMMAND',
+          metadata: expect.objectContaining({ entryFile: 'COMMAND.md' }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
+    })
+
+    it('passes COMMAND packageType and entryFile to the installer for persistence', async () => {
+      setupCommandTypeMocks()
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
+
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          packageType: 'COMMAND',
+          metadata: expect.objectContaining({ entryFile: 'COMMAND.md' }),
+          policy: expect.objectContaining({ persist: true }),
+        })
       )
     })
 
-    it('stores packageType COMMAND and entryFile in manifest', async () => {
+    it('passes COMMAND type to the installer', async () => {
       setupCommandTypeMocks()
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
 
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      const pkg = getStoredManifestPackage(manifest, DERIVED_NAME)!
-      expect(pkg.packageType).toBe('COMMAND')
-      expect(pkg.entryFile).toBe('COMMAND.md')
-    })
-
-    it('calls getCommandPlacementPath with the correct agentId and fileName', async () => {
-      setupCommandTypeMocks()
-
-      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
-
-      expect(agentDefs.getCommandPlacementPath).toHaveBeenCalledWith(
-        'claude-code',
-        'COMMAND.md',
-        'project'
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({ packageType: 'COMMAND' })
       )
-    })
-
-    it('does not create canonical symlinks for command-type packages', async () => {
-      setupCommandTypeMocks()
-
-      await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'command' })
-
-      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
     })
   })
 
@@ -2722,8 +2908,9 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code', type: 'agent' })
 
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(getStoredManifestPackage(manifest, DERIVED_NAME)!.packageType).toBe('AGENT')
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({ packageType: 'AGENT' })
+      )
     })
 
     it('rejects multi-markdown packages for AGENT type', async () => {
@@ -2763,9 +2950,10 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      // Without type override, SKILL.md should be detected as a SKILL
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(getStoredManifestPackage(manifest, DERIVED_NAME)!.packageType).toBeUndefined()
+      // Without type override, SKILL.md should be detected as a standard SKILL
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({ packageType: 'SKILL' })
+      )
     })
   })
 
@@ -2848,23 +3036,17 @@ describe('commands/install', () => {
       expect(result!.commitSha).not.toBe('')
       expect(result!.commitSha.length).toBeGreaterThanOrEqual(7)
 
-      // Verify the manifest was written with a valid commit
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      const entry = getStoredManifestPackage(manifest, result!.name)!
-      expect(entry.source.type).toBe('platform')
-      if (entry.source.type === 'platform') {
-        expect(entry.source.commit).not.toBe('')
-        expect(entry.source.commit.length).toBeGreaterThanOrEqual(7)
-        expect(entry.source.commit).toMatch(/^[0-9a-f]{40}$/)
+      // Verify the installer received a platform source with valid commit
+      const planCall = vi.mocked(installerModule.planInstall).mock.calls[0]![0]
+      expect(planCall.source.type).toBe('platform')
+      if (planCall.source.type === 'platform') {
+        expect(planCall.source.commit).not.toBe('')
+        expect(planCall.source.commit.length).toBeGreaterThanOrEqual(7)
+        expect(planCall.source.commit).toMatch(/^[0-9a-f]{40}$/)
       }
 
-      // Verify the lockfile was also written with a valid commit
-      const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
-      const lockEntry = getStoredLockfilePackage(lockfile, result!.name)!
-      if (lockEntry.source.type === 'git') {
-        expect(lockEntry.source.commit).not.toBe('')
-        expect(lockEntry.source.commit).toMatch(/^[0-9a-f]{40}$/)
-      }
+      // Verify installer was called with persist: true
+      expect(planCall.policy.persist).toBe(true)
     })
 
     it('derives commit SHA from integrity hash deterministically', async () => {
@@ -2993,10 +3175,15 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
     })
 
-    it('stores dependsOn in the manifest entry', async () => {
+    it('passes dependsOn metadata to the installer', async () => {
       const gitSource = createGitSource()
       const skillContent = createSkillMd({
         name: 'test-skill',
@@ -3044,8 +3231,12 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(getStoredManifestPackage(manifest, DERIVED_NAME)!.dependsOn).toEqual(['base-skill'])
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ dependsOn: ['base-skill'] }),
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
     })
   })
 
@@ -3135,10 +3326,15 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
+      expect(installerModule.executeInstall).toHaveBeenCalled()
     })
 
-    it('stores conflictsWith in the manifest entry', async () => {
+    it('passes conflictsWith metadata to the installer', async () => {
       const gitSource = createGitSource()
       const skillContent = createSkillMd({
         name: 'test-skill',
@@ -3169,10 +3365,12 @@ describe('commands/install', () => {
 
       await installPackage(TEST_SOURCE, { agent: 'claude-code' })
 
-      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(getStoredManifestPackage(manifest, DERIVED_NAME)!.conflictsWith).toEqual([
-        'rival-skill',
-      ])
+      expect(installerModule.planInstall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ conflictsWith: ['rival-skill'] }),
+          policy: expect.objectContaining({ persist: true }),
+        })
+      )
     })
   })
 })

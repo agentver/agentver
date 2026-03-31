@@ -12,15 +12,21 @@ vi.mock('@agentver/agent-definitions', () => ({
   scanGlobalSkillFiles: vi.fn(),
 }))
 
-vi.mock('@agentver/shared', () => ({
-  validateSkillMd: vi.fn(),
-  getPackageSourceCommit: vi.fn((source: { commit?: string }) => source.commit ?? ''),
-  getPackageSourceLocation: vi.fn((source: { uri?: string; path?: string; hostname?: string }) => {
-    if (source.uri) return source.path ? `${source.uri}/${source.path}` : source.uri
-    return source.hostname ?? 'unknown'
-  }),
-  getPackageSourceReference: vi.fn((source: { ref?: string }) => source.ref ?? 'unknown'),
-}))
+vi.mock('@agentver/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agentver/shared')>()
+  return {
+    ...actual,
+    validateSkillMd: vi.fn(),
+    getPackageSourceCommit: vi.fn((source: { commit?: string }) => source.commit ?? ''),
+    getPackageSourceLocation: vi.fn(
+      (source: { uri?: string; path?: string; hostname?: string }) => {
+        if (source.uri) return source.path ? `${source.uri}/${source.path}` : source.uri
+        return source.hostname ?? 'unknown'
+      }
+    ),
+    getPackageSourceReference: vi.fn((source: { ref?: string }) => source.ref ?? 'unknown'),
+  }
+})
 
 vi.mock('../../storage/manifest.js', () => ({
   readManifest: vi.fn(),

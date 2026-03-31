@@ -30,17 +30,35 @@ import {
   extractFilesFromManifest,
   IntegrityError,
   ManifestNotFoundError,
-  placeFiles,
   RegistryAuthError,
   RegistryNetworkError,
   RegistryTimeoutError,
   readLockfileFile,
   readManifestFile,
   updateLockfile,
-  verifyIntegrity,
+  verifyIntegrityWithWarning,
   writeLockfileFile,
 } from '../installer'
 import type { InstallResult } from '../reporter'
+
+/** Helper: path to .agentver dir within a project root. */
+function agentverDir(projectRoot: string): string {
+  return join(projectRoot, '.agentver')
+}
+
+/** Helper: write a manifest file in the standard storage location. */
+function writeManifest(projectRoot: string, data: unknown): void {
+  const dir = agentverDir(projectRoot)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify(data), 'utf-8')
+}
+
+/** Helper: write a lockfile in the standard storage location. */
+function writeLockfile(projectRoot: string, data: unknown): void {
+  const dir = agentverDir(projectRoot)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'lockfile.json'), JSON.stringify(data), 'utf-8')
+}
 
 describe('installer', () => {
   let tempDir: string
@@ -113,25 +131,24 @@ describe('installer', () => {
 
   describe('readManifestFile', () => {
     it('throws ManifestNotFoundError when file does not exist', () => {
-      expect(() => readManifestFile(join(tempDir, 'nonexistent.json'))).toThrow(
+      expect(() => readManifestFile(join(tempDir, 'nonexistent-project'))).toThrow(
         ManifestNotFoundError
       )
     })
 
     it('throws on invalid JSON', () => {
-      const path = join(tempDir, 'manifest.json')
-      writeFileSync(path, '{bad json', 'utf-8')
-      expect(() => readManifestFile(path)).toThrow('invalid JSON')
+      const dir = agentverDir(tempDir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'manifest.json'), '{bad json', 'utf-8')
+      expect(() => readManifestFile(tempDir)).toThrow('invalid JSON')
     })
 
     it('throws on schema validation failure', () => {
-      const path = join(tempDir, 'manifest.json')
-      writeFileSync(path, JSON.stringify({ foo: 'bar' }), 'utf-8')
-      expect(() => readManifestFile(path)).toThrow('schema validation failed')
+      writeManifest(tempDir, { foo: 'bar' })
+      expect(() => readManifestFile(tempDir)).toThrow('schema validation failed')
     })
 
     it('reads a valid v2 manifest', () => {
-      const path = join(tempDir, 'manifest.json')
       const manifest = {
         version: 2,
         packages: {
@@ -149,9 +166,9 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(manifest), 'utf-8')
+      writeManifest(tempDir, manifest)
 
-      const result = readManifestFile(path)
+      const result = readManifestFile(tempDir)
       expect(result.version).toBe(2)
       expect(result.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']).toEqual(
         expect.objectContaining({
@@ -161,7 +178,6 @@ describe('installer', () => {
     })
 
     it('rejects a legacy manifest schema', () => {
-      const path = join(tempDir, 'manifest.json')
       const legacyManifest = {
         version: 1,
         packages: {
@@ -173,10 +189,12 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(legacyManifest), 'utf-8')
+      writeManifest(tempDir, legacyManifest)
 
-      expect(() => readManifestFile(path)).toThrow('schema validation failed')
-      expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual(legacyManifest)
+      expect(() => readManifestFile(tempDir)).toThrow('schema validation failed')
+      expect(
+        JSON.parse(readFileSync(join(agentverDir(tempDir), 'manifest.json'), 'utf-8'))
+      ).toEqual(legacyManifest)
     })
   })
 
@@ -186,23 +204,22 @@ describe('installer', () => {
 
   describe('readLockfileFile', () => {
     it('returns null when file does not exist', () => {
-      expect(readLockfileFile(join(tempDir, 'nonexistent.json'))).toBeNull()
+      expect(readLockfileFile(join(tempDir, 'nonexistent-project'))).toBeNull()
     })
 
     it('returns null for invalid JSON', () => {
-      const path = join(tempDir, 'lockfile.json')
-      writeFileSync(path, 'not json', 'utf-8')
-      expect(readLockfileFile(path)).toBeNull()
+      const dir = agentverDir(tempDir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'lockfile.json'), 'not json', 'utf-8')
+      expect(readLockfileFile(tempDir)).toBeNull()
     })
 
     it('returns null when schema validation fails', () => {
-      const path = join(tempDir, 'lockfile.json')
-      writeFileSync(path, JSON.stringify({ invalid: true }), 'utf-8')
-      expect(readLockfileFile(path)).toBeNull()
+      writeLockfile(tempDir, { invalid: true })
+      expect(readLockfileFile(tempDir)).toBeNull()
     })
 
     it('reads a valid v2 lockfile', () => {
-      const path = join(tempDir, 'lockfile.json')
       const lockfile = {
         version: 2,
         packages: {
@@ -219,9 +236,9 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(lockfile), 'utf-8')
+      writeLockfile(tempDir, lockfile)
 
-      const result = readLockfileFile(path)
+      const result = readLockfileFile(tempDir)
       expect(result).not.toBeNull()
       expect(result!.version).toBe(2)
       expect(
@@ -234,7 +251,6 @@ describe('installer', () => {
     })
 
     it('returns null for a legacy lockfile schema', () => {
-      const path = join(tempDir, 'lockfile.json')
       const legacyLockfile = {
         version: 1,
         packages: {
@@ -246,10 +262,12 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(legacyLockfile), 'utf-8')
+      writeLockfile(tempDir, legacyLockfile)
 
-      expect(readLockfileFile(path)).toBeNull()
-      expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual(legacyLockfile)
+      expect(readLockfileFile(tempDir)).toBeNull()
+      expect(
+        JSON.parse(readFileSync(join(agentverDir(tempDir), 'lockfile.json'), 'utf-8'))
+      ).toEqual(legacyLockfile)
     })
   })
 
@@ -259,17 +277,18 @@ describe('installer', () => {
 
   describe('writeLockfileFile', () => {
     it('creates parent directories if they do not exist', () => {
-      const path = join(tempDir, 'nested', 'dir', 'lockfile.json')
-      writeLockfileFile(path, { version: 2, packages: {} })
-      expect(existsSync(path)).toBe(true)
+      const projectRoot = join(tempDir, 'nested', 'dir')
+      mkdirSync(projectRoot, { recursive: true })
+      writeLockfileFile(projectRoot, { version: 2, packages: {} })
+      expect(existsSync(join(agentverDir(projectRoot), 'lockfile.json'))).toBe(true)
     })
 
     it('writes valid JSON that can be read back', () => {
-      const path = join(tempDir, 'lockfile.json')
+      mkdirSync(agentverDir(tempDir), { recursive: true })
       const lockfile = { version: 2 as const, packages: {} }
-      writeLockfileFile(path, lockfile)
+      writeLockfileFile(tempDir, lockfile)
 
-      const raw = readFileSync(path, 'utf-8')
+      const raw = readFileSync(join(agentverDir(tempDir), 'lockfile.json'), 'utf-8')
       expect(JSON.parse(raw)).toEqual(lockfile)
     })
   })
@@ -366,13 +385,13 @@ describe('installer', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // verifyIntegrity
+  // verifyIntegrityWithWarning
   // ---------------------------------------------------------------------------
 
-  describe('verifyIntegrity', () => {
+  describe('verifyIntegrityWithWarning', () => {
     it('does nothing when lockfile integrity is undefined', () => {
       expect(() => {
-        verifyIntegrity([{ path: 'a.md', content: 'hello' }], undefined, 'org/skill')
+        verifyIntegrityWithWarning([{ path: 'a.md', content: 'hello' }], undefined, 'org/skill')
       }).not.toThrow()
     })
 
@@ -381,7 +400,7 @@ describe('installer', () => {
       const integrity = computeIntegrity(files)
 
       expect(() => {
-        verifyIntegrity(files, integrity, 'org/skill')
+        verifyIntegrityWithWarning(files, integrity, 'org/skill')
       }).not.toThrow()
     })
 
@@ -389,7 +408,7 @@ describe('installer', () => {
       const files = [{ path: 'a.md', content: 'hello' }]
 
       expect(() => {
-        verifyIntegrity(files, 'sha256-wrong', 'org/skill')
+        verifyIntegrityWithWarning(files, 'sha256-wrong', 'org/skill')
       }).toThrow(IntegrityError)
     })
   })
@@ -418,67 +437,20 @@ describe('installer', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // placeFiles
+  // installer integration (planInstall + executeInstall via installAllPackages)
   // ---------------------------------------------------------------------------
 
-  describe('placeFiles', () => {
-    it('writes files to the correct agent skill directory', () => {
+  describe('installer integration', () => {
+    it('detects agents correctly for the installer request', () => {
       mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
-      const files = [{ path: 'SKILL.md', content: '# Test Skill' }]
-      const count = placeFiles(files, 'org/my-skill', ['claude-code'], tempDir)
-
-      expect(count).toBe(1)
-
-      const skillDir = join(tempDir, '.claude', 'skills', 'my-skill')
-      expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true)
-      expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf-8')).toBe('# Test Skill')
+      const agents = detectAgents(tempDir, [])
+      expect(agents).toContain('claude-code')
     })
 
-    it('writes files to multiple agents', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-      mkdirSync(join(tempDir, '.cursor'), { recursive: true })
-
-      const files = [{ path: 'SKILL.md', content: '# Test' }]
-      const count = placeFiles(files, 'org/skill', ['claude-code', 'cursor'], tempDir)
-
-      expect(count).toBe(2) // 1 file x 2 agents
-    })
-
-    it('skips unrecognised agent IDs', () => {
-      const files = [{ path: 'SKILL.md', content: '# Test' }]
-      const count = placeFiles(files, 'org/skill', ['nonexistent-agent-xyz'], tempDir)
-
-      expect(count).toBe(0)
-    })
-
-    it('skips files that escape the target directory', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-
-      const files = [
-        { path: 'SKILL.md', content: '# Good' },
-        { path: '../../../etc/passwd', content: 'evil' },
-      ]
-      const count = placeFiles(files, 'org/skill', ['claude-code'], tempDir)
-
-      expect(count).toBe(1)
-    })
-
-    it('creates nested directories for files with subdirectories', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-
-      const files = [{ path: 'sub/dir/file.md', content: '# Nested' }]
-      const count = placeFiles(files, 'org/skill', ['claude-code'], tempDir)
-
-      expect(count).toBe(1)
-      const nestedPath = join(tempDir, '.claude', 'skills', 'skill', 'sub', 'dir', 'file.md')
-      expect(existsSync(nestedPath)).toBe(true)
-    })
-
-    it('returns 0 when files array is empty', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-      const count = placeFiles([], 'org/skill', ['claude-code'], tempDir)
-      expect(count).toBe(0)
+    it('uses specified agents when provided', () => {
+      const agents = detectAgents(tempDir, ['claude-code', 'cursor'])
+      expect(agents).toEqual(['claude-code', 'cursor'])
     })
   })
 
