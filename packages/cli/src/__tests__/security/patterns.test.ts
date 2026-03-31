@@ -468,6 +468,10 @@ describe('SCAN_RULES', () => {
       testPattern('UO004', 'clean text', false)
     })
 
+    it('UO005 matches variation selectors in the BMP range', () => {
+      testPattern('UO005', 'text\uFE00here', true)
+    })
+
     it('UO006 matches Unicode line separator (U+2028)', () => {
       testPattern('UO006', 'line\u2028separator', true)
     })

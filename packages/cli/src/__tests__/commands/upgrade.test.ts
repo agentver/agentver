@@ -250,6 +250,19 @@ describe('commands/upgrade', () => {
       )
       expect(process.exit).toHaveBeenCalledWith(1)
     })
+
+    it('rejects invalid semver passed via --version before hitting the registry', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'upgrade', '--json']
+
+      await runUpgrade(['upgrade', '--version', '../some-other-package'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'UPGRADE_FAILED',
+        'Invalid version "../some-other-package". Expected a valid semver version.'
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
   })
 
   // -------------------------------------------------------------------------

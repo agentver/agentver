@@ -176,11 +176,13 @@ describe('login command', () => {
   })
 
   it('rejects empty token values', async () => {
+    const stderrWriteSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const program = buildProgram()
     await expect(
       program.parseAsync(['node', 'agentver', 'login', '--token', '   '])
     ).rejects.toThrow('process.exit called')
     expect(saveCredentials).not.toHaveBeenCalled()
+    expect(stderrWriteSpy).toHaveBeenCalledWith('Token must not be empty.\n')
     expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 

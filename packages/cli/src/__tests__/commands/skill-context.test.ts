@@ -46,8 +46,45 @@ describe('commands/skill-context', () => {
     expect(extractOrgFromSourceUri('https://github.com/acme-corp/agentver')).toBe('acme-corp')
   })
 
+  it('rejects invalid org slugs extracted from source URIs', () => {
+    expect(extractOrgFromSourceUri('agentver://../skills/gsc')).toBeNull()
+    expect(extractOrgFromSourceUri('https://github.com/invalid!org/agentver')).toBeNull()
+  })
+
   it('falls back to the only path segment for short source URIs', () => {
     expect(extractOrgFromSourceUri('acme-corp')).toBe('acme-corp')
+  })
+
+  it('resolves the org from the manifest source URI when available', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+    vi.mocked(readManifest).mockReturnValue({
+      version: 2,
+      packages: {
+        'search-console': {
+          source: {
+            type: 'git',
+            uri: 'agentver://my-org/skills/search-console',
+            path: 'skills/search-console',
+            ref: 'main',
+            commit: 'abc123',
+          },
+          agents: ['claude-code'],
+          installedAt: '2026-03-31T12:00:00.000Z',
+          modified: false,
+        },
+      },
+    })
+
+    expect(
+      resolveNamespace({
+        projectRoot: '/project',
+        skillDir: '/tmp/skills/acme-corp/search-console',
+        skillName: 'search-console',
+      })
+    ).toEqual({
+      org: 'my-org',
+      name: 'search-console',
+    })
   })
 
   it('resolves the org from the skill path when manifest lookup misses', () => {

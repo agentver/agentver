@@ -16,6 +16,7 @@ import { readManifest } from '../storage/manifest.js'
 import { updateManifestAndLockfile } from '../storage/pair.js'
 import { cleanupBackup, createFilesystemBackup, restoreFilesystemBackup } from '../utils/backup.js'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
+import { extractError } from '../utils.js'
 
 type MigrateOptions = {
   global?: boolean
@@ -58,10 +59,7 @@ async function confirmMigration(
   const message = `Migrate ${packageName} from ${sourcePath} to ${canonicalPath} and replace agent paths with symlinks?`
 
   if (isJSONMode() && !options.yes) {
-    throw new AgentverError(
-      'CONFIRMATION_REQUIRED' as import('@agentver/shared').AgentverErrorCode,
-      `${message} Re-run with --yes to continue.`
-    )
+    throw new AgentverError('CONFIRMATION_REQUIRED', `${message} Re-run with --yes to continue.`)
   }
 
   if (!isJSONMode() && !options.yes) {
@@ -236,10 +234,11 @@ export async function migrateSkills(
       }
     }
   } catch (error) {
+    const { code, message } = extractError(error, 'MIGRATE_FAILED')
     if (jsonMode) {
-      outputError('MIGRATE_FAILED', error instanceof Error ? error.message : String(error))
+      outputError(code, message)
     } else {
-      spinner.fail(`Failed to migrate: ${error instanceof Error ? error.message : String(error)}`)
+      spinner.fail(`Failed to migrate: ${message}`)
     }
     process.exit(1)
   }

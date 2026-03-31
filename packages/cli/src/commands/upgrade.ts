@@ -7,6 +7,7 @@ import type { UpgradeResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
+import { SEMVER_REGEX } from '../utils.js'
 
 const execFileAsync = promisify(execFile)
 const PACKAGE_NAME = '@agentver/cli'
@@ -28,6 +29,10 @@ function getCurrentVersion(): string {
 }
 
 async function resolveTargetVersion(targetVersion?: string): Promise<string> {
+  if (targetVersion && !SEMVER_REGEX.test(targetVersion)) {
+    throw new Error(`Invalid version "${targetVersion}". Expected a valid semver version.`)
+  }
+
   const suffix = targetVersion ? `/${targetVersion}` : '/latest'
   const response = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME}${suffix}`)
   if (!response.ok) {

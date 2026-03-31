@@ -1,16 +1,53 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
+import {
+  type AgentId,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+  getSkillPlacementPath,
+} from '@agentver/agent-definitions'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import { resolveReadPath } from '../storage/canonical.js'
-import type { Scope } from '../utils/paths.js'
+import { resolvePlacementPath, type Scope } from '../utils/paths.js'
+
+type ReadInstalledPackageFilesOptions = {
+  scope?: Scope
+  packageType?: string
+  entryFile?: string
+}
 
 export async function readInstalledPackageFiles(
   projectRoot: string,
   packageName: string,
   agents: string[],
-  scope: Scope = 'project'
+  options: Scope | ReadInstalledPackageFilesOptions = 'project'
 ): Promise<Array<{ path: string; content: string }>> {
+  const resolvedOptions = typeof options === 'string' ? { scope: options } : options
+  const scope = resolvedOptions.scope ?? 'project'
+
+  if (resolvedOptions.packageType === 'AGENT' || resolvedOptions.packageType === 'COMMAND') {
+    const getPlacementPath =
+      resolvedOptions.packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+    const shortName = packageName.split('/').pop() ?? packageName
+    const fileName = resolvedOptions.entryFile ?? `${shortName}.md`
+
+    for (const agentId of agents) {
+      const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+      if (!placementPath) {
+        continue
+      }
+
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath || !existsSync(fullPath)) {
+        continue
+      }
+
+      return [{ path: fileName, content: readFileSync(fullPath, 'utf-8') }]
+    }
+
+    return []
+  }
+
   try {
     const readPath = resolveReadPath(projectRoot, packageName, agents, scope)
     if (readPath) {

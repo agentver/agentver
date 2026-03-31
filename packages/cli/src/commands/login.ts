@@ -192,7 +192,7 @@ export function registerLoginCommand(program: Command): void {
             process.exit(1)
           }
 
-          console.error(chalk.red('Token must not be empty.'))
+          process.stderr.write(chalk.red('Token must not be empty.\n'))
           process.exit(1)
         }
 

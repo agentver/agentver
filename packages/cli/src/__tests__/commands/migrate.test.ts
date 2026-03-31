@@ -41,6 +41,20 @@ vi.mock('../../storage/pair.js', () => ({
   updateManifestAndLockfile: vi.fn(),
 }))
 
+vi.mock('../../utils/backup.js', () => ({
+  cleanupBackup: vi.fn(),
+  createFilesystemBackup: vi.fn().mockReturnValue({
+    tempDir: '/tmp/agentver-migrate-backup',
+    targets: [
+      {
+        originalPath: '/project/.claude/skills/test-skill',
+        backupPath: '/tmp/agentver-migrate-backup/target-0',
+      },
+    ],
+  }),
+  restoreFilesystemBackup: vi.fn(),
+}))
+
 vi.mock('prompts', () => ({ default: vi.fn() }))
 
 import * as nodeFs from 'node:fs'
@@ -51,6 +65,7 @@ import * as canonicalModule from '../../storage/canonical.js'
 import * as lockfileModule from '../../storage/lockfile.js'
 import * as manifestModule from '../../storage/manifest.js'
 import * as pairModule from '../../storage/pair.js'
+import * as backupModule from '../../utils/backup.js'
 
 describe('commands/migrate', () => {
   const originalCwd = process.cwd
@@ -180,5 +195,99 @@ describe('commands/migrate', () => {
     if (lockfile.packages['test-skill']?.source.type === 'git') {
       expect(lockfile.packages['test-skill'].source.path).toBe('/project/.agents/skills/test-skill')
     }
+  })
+
+  it('restores the original filesystem when symlink creation fails', async () => {
+    manifest = createManifest({
+      packages: {
+        'test-skill': createManifestPackage({
+          source: {
+            type: 'git',
+            uri: 'local',
+            path: '/project/.claude/skills/test-skill',
+            ref: 'local',
+            commit: 'adopted',
+          },
+        }),
+      },
+    })
+    lockfile = createLockfile({
+      packages: {
+        'test-skill': {
+          source: {
+            type: 'git',
+            uri: 'local',
+            path: '/project/.claude/skills/test-skill',
+            ref: 'local',
+            commit: 'adopted',
+          },
+          integrity: 'sha256-test',
+          agents: ['claude-code'],
+        },
+      },
+    })
+    vi.mocked(nodeFs.existsSync).mockImplementation(
+      (path) => String(path) === '/project/.claude/skills/test-skill'
+    )
+    vi.mocked(canonicalModule.createAgentSymlinks).mockImplementation(() => {
+      throw new Error('symlink failure')
+    })
+
+    await migrateSkills(undefined, { yes: true })
+
+    expect(backupModule.restoreFilesystemBackup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tempDir: '/tmp/agentver-migrate-backup',
+      })
+    )
+    expect(backupModule.cleanupBackup).toHaveBeenCalled()
+    expect(nodeFs.rmSync).toHaveBeenCalledWith('/project/.agents/skills/test-skill', {
+      recursive: true,
+      force: true,
+    })
+  })
+
+  it('outputs CONFIRMATION_REQUIRED in JSON mode without --yes', async () => {
+    manifest = createManifest({
+      packages: {
+        'test-skill': createManifestPackage({
+          source: {
+            type: 'git',
+            uri: 'local',
+            path: '/project/.claude/skills/test-skill',
+            ref: 'local',
+            commit: 'adopted',
+          },
+        }),
+      },
+    })
+    lockfile = createLockfile({
+      packages: {
+        'test-skill': {
+          source: {
+            type: 'git',
+            uri: 'local',
+            path: '/project/.claude/skills/test-skill',
+            ref: 'local',
+            commit: 'adopted',
+          },
+          integrity: 'sha256-test',
+          agents: ['claude-code'],
+        },
+      },
+    })
+    vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+    vi.mocked(nodeFs.existsSync).mockImplementation(
+      (path) => String(path) === '/project/.claude/skills/test-skill'
+    )
+
+    await migrateSkills(undefined, {})
+
+    expect(outputModule.outputError).toHaveBeenCalledWith(
+      'CONFIRMATION_REQUIRED',
+      expect.stringContaining('Re-run with --yes to continue.')
+    )
+    expect(nodeFs.cpSync).not.toHaveBeenCalled()
+    expect(process.exit).toHaveBeenCalledWith(1)
   })
 })

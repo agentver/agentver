@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { readManifest } from '../storage/manifest.js'
 
+const ORG_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
+
 export type SkillNamespace = {
   org: string
   name: string
@@ -34,25 +36,34 @@ export function detectSkillName(skillDir: string): string | null {
 }
 
 export function extractOrgFromSourceUri(sourceUri: string): string | null {
-  if (sourceUri.startsWith('agentver://')) {
-    const withoutProtocol = sourceUri.slice('agentver://'.length)
-    const atIndex = withoutProtocol.lastIndexOf('@')
-    const pathPart = atIndex > 0 ? withoutProtocol.slice(0, atIndex) : withoutProtocol
-    return pathPart.split('/').filter(Boolean)[0] ?? null
+  const trimmedSourceUri = sourceUri.trim()
+  if (!trimmedSourceUri) {
+    return null
   }
 
-  const cleaned = sourceUri
-    .replace(/^[a-z]+:\/\//i, '')
-    .split('@')[0]
-    ?.split('#')[0]
-    ?.split('?')[0]
+  if (trimmedSourceUri.startsWith('agentver://')) {
+    const withoutProtocol =
+      trimmedSourceUri.slice('agentver://'.length).split('#')[0]?.split('?')[0] ?? ''
+    const firstSegment = withoutProtocol.split('/').filter(Boolean)[0] ?? ''
+    return toValidOrgSlug(firstSegment.split('@')[0])
+  }
 
-  const parts = cleaned?.split('/').filter(Boolean) ?? []
+  try {
+    const parsed = new URL(trimmedSourceUri)
+    const pathSegments = parsed.pathname.split('/').filter(Boolean)
+    return toValidOrgSlug(pathSegments[0])
+  } catch {}
+
+  const sshPath = trimmedSourceUri.match(/^[^@/]+@[^:]+:(.+)$/)?.[1]
+  const cleaned = (sshPath ?? trimmedSourceUri).split('#')[0]?.split('?')[0] ?? ''
+  const parts = cleaned.split(/[\\/]/).filter(Boolean)
+
   if (parts.length >= 2) {
-    return parts[parts.length - 2] ?? null
+    const candidate = parts[0]?.includes('.') || parts[0]?.includes(':') ? parts[1] : parts[0]
+    return toValidOrgSlug(candidate)
   }
 
-  return parts[0] ?? null
+  return toValidOrgSlug(parts[0])
 }
 
 export function resolveNamespace(options: ResolveNamespaceOptions): SkillNamespace | null {
@@ -105,4 +116,12 @@ export function resolveCurrentSkillIdentity(
     skillName,
     fallbackToPath: options.fallbackToPath,
   })
+}
+
+function toValidOrgSlug(candidate: string | null | undefined): string | null {
+  const normalised = candidate?.trim().replace(/^@/, '') ?? ''
+  if (!normalised || !ORG_SLUG_REGEX.test(normalised)) {
+    return null
+  }
+  return normalised
 }

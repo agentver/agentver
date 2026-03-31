@@ -13,7 +13,7 @@ export type PlatformRequestOptions = {
 }
 
 export type PlatformSilentRequestOptions = PlatformRequestOptions & {
-  swallowAuthErrors?: boolean
+  rethrowAuthErrors?: boolean
 }
 
 export async function platformFetch<T>(
@@ -70,7 +70,7 @@ export async function platformFetchSilent<T>(
     return await platformFetch<T>(path, options)
   } catch (error) {
     if (
-      options.swallowAuthErrors === false &&
+      options.rethrowAuthErrors === true &&
       error instanceof AgentverError &&
       error.code === 'UNAUTHORISED'
     ) {

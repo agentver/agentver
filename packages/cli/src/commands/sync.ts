@@ -1,25 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  type AgentId,
-  getAgentPlacementPath,
-  getCommandPlacementPath,
-} from '@agentver/agent-definitions'
 import type { SyncResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { readFilesFromDirectory } from '../git/fetcher.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
-import { resolveReadPath } from '../storage/canonical.js'
 import { ensureStorageDir, getStorageRoot } from '../storage/files.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
-import { resolvePlacementPath, type Scope } from '../utils/paths'
+import type { Scope } from '../utils/paths'
 import { extractError } from '../utils.js'
+import { readInstalledPackageFiles } from './platform-request.js'
 
 const SYNC_TIMEOUT_MS = 30_000
 const MACHINE_ID_FILE = 'machine-id'
@@ -72,49 +66,6 @@ function getMachineId(projectRoot: string): string {
   return machineId
 }
 
-async function readLocalPackageFiles(
-  projectRoot: string,
-  packageName: string,
-  agents: string[],
-  scope: Scope,
-  packageType?: string,
-  entryFile?: string
-): Promise<Array<{ path: string; content: string }>> {
-  if (packageType === 'AGENT' || packageType === 'COMMAND') {
-    const getPlacementPath =
-      packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
-    const shortName = packageName.split('/').pop() ?? packageName
-    const fileName = entryFile ?? `${shortName}.md`
-
-    for (const agentId of agents) {
-      const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
-      if (!placementPath) {
-        continue
-      }
-
-      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
-      if (!fullPath || !existsSync(fullPath)) {
-        continue
-      }
-
-      return [{ path: fileName, content: readFileSync(fullPath, 'utf-8') }]
-    }
-
-    return []
-  }
-
-  const readPath = resolveReadPath(projectRoot, packageName, agents, scope)
-  if (!readPath) {
-    return []
-  }
-
-  const files = await readFilesFromDirectory(readPath)
-  return files.map((file) => ({
-    path: file.path,
-    content: file.content,
-  }))
-}
-
 async function isLocallyModified(
   projectRoot: string,
   scope: Scope,
@@ -127,14 +78,11 @@ async function isLocallyModified(
   }
 
   try {
-    const localFiles = await readLocalPackageFiles(
-      projectRoot,
-      name,
-      pkg.agents,
+    const localFiles = await readInstalledPackageFiles(projectRoot, name, pkg.agents, {
       scope,
-      pkg.packageType,
-      pkg.entryFile
-    )
+      packageType: pkg.packageType,
+      entryFile: pkg.entryFile,
+    })
 
     if (localFiles.length === 0) {
       return false

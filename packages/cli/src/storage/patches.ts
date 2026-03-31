@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 const PATCHES_DIR = '.agentver/patches'
 const CONTEXT_LINES = 3
@@ -111,7 +111,11 @@ export function applyPatch(projectRoot: string, patchContent: string): ApplyResu
 }
 
 function applyFilePatch(projectRoot: string, filePatch: FilePatch): boolean {
-  const fullPath = join(projectRoot, filePatch.filePath)
+  const fullPath = resolve(projectRoot, filePatch.filePath)
+  const relativePath = relative(projectRoot, fullPath)
+  if (relativePath === '' || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    return false
+  }
 
   const hasOnlyAdditions = filePatch.hunks.every((h) =>
     h.lines.every((l) => l.startsWith('+') || l.startsWith(' '))
@@ -125,7 +129,7 @@ function applyFilePatch(projectRoot: string, filePatch: FilePatch): boolean {
       .flatMap((h) => h.lines.filter((l) => l.startsWith('+')).map((l) => l.slice(1)))
       .join('\n')
 
-    const dir = join(fullPath, '..')
+    const dir = dirname(fullPath)
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
     }

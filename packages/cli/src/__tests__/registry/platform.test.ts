@@ -117,7 +117,7 @@ describe('registry/platform', () => {
       expect(result).toEqual({ data: 'silent-result' })
     })
 
-    it('rethrows unauthorised errors when swallowAuthErrors is false', async () => {
+    it('rethrows unauthorised errors when rethrowAuthErrors is true', async () => {
       vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://platform.com')
       vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'expired-token' })
 
@@ -131,7 +131,7 @@ describe('registry/platform', () => {
       )
 
       await expect(
-        platformModule.platformFetchSilent('/test', { swallowAuthErrors: false })
+        platformModule.platformFetchSilent('/test', { rethrowAuthErrors: true })
       ).rejects.toThrow('Authentication expired')
     })
   })

@@ -56,7 +56,7 @@ export function registerWhoamiCommand(program: Command): void {
       let warning: string | undefined
 
       try {
-        me = await platformFetchSilent<MeResponse>('/me', { swallowAuthErrors: false })
+        me = await platformFetchSilent<MeResponse>('/me', { rethrowAuthErrors: true })
       } catch (error) {
         const { code, message } = extractError(error, 'WHOAMI_FAILED')
         if (code === 'UNAUTHORISED' || message.startsWith('Authentication expired')) {

@@ -106,7 +106,7 @@ describe('whoami command', () => {
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Authenticated via OAuth'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('user@example.com'))
-    expect(platformFetchSilent).toHaveBeenCalledWith('/me', { swallowAuthErrors: false })
+    expect(platformFetchSilent).toHaveBeenCalledWith('/me', { rethrowAuthErrors: true })
   })
 
   // -------------------------------------------------------------------------

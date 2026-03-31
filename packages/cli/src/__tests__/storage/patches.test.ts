@@ -146,6 +146,23 @@ describe('storage/patches', () => {
   })
 
   describe('applyPatch deletion safety', () => {
+    it('rejects traversal paths outside the project root', () => {
+      const patchContent = [
+        '--- /dev/null',
+        '+++ b/my-skill/../escape.md',
+        '@@ -0,0 +1,1 @@',
+        '+escaped',
+        '',
+      ].join('\n')
+
+      const result = patchesModule.applyPatch('/project', patchContent)
+
+      expect(result.applied).toBe(false)
+      expect(result.conflicts).toEqual(['../escape.md'])
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
+      expect(fs.renameSync).not.toHaveBeenCalled()
+    })
+
     it('does not delete a file when deletion hunks do not match current content', () => {
       const patchContent = [
         '--- a/my-skill/obsolete.md',

@@ -1168,10 +1168,7 @@ async function confirmOverwrite(
   const jsonMode = isJSONMode()
 
   if (jsonMode && !options.yes) {
-    throw new AgentverError(
-      'CONFIRMATION_REQUIRED' as import('@agentver/shared').AgentverErrorCode,
-      `${message} Re-run with --yes to continue.`
-    )
+    throw new AgentverError('CONFIRMATION_REQUIRED', `${message} Re-run with --yes to continue.`)
   }
 
   if (!jsonMode && !options.yes) {
