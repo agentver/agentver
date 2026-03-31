@@ -17,13 +17,20 @@ vi.mock('../../registry/platform.js', () => ({
   platformFetch: vi.fn(),
 }))
 
+vi.mock('../../security/index.js', () => ({
+  scanFiles: vi.fn(),
+}))
+
 vi.mock('../../storage/lockfile.js', () => ({
   readLockfile: vi.fn(),
-  writeLockfile: vi.fn(),
 }))
 
 vi.mock('../../storage/manifest.js', () => ({
   readManifest: vi.fn(),
+}))
+
+vi.mock('../../storage/pair.js', () => ({
+  updateManifestAndLockfile: vi.fn(),
 }))
 
 vi.mock('chalk', () => {
@@ -56,9 +63,12 @@ import { registerSaveCommand } from '../../commands/save.js'
 import { readFilesFromDirectory } from '../../git/fetcher.js'
 import * as outputModule from '../../output.js'
 import { platformFetch } from '../../registry/platform.js'
-import { readLockfile, writeLockfile } from '../../storage/lockfile.js'
+import { scanFiles } from '../../security/index.js'
+import { readLockfile } from '../../storage/lockfile.js'
 import { readManifest } from '../../storage/manifest.js'
+import { updateManifestAndLockfile } from '../../storage/pair.js'
 import {
+  createAuditScanResult,
   createFetchedFiles,
   createLockfile,
   createLockfilePackage,
@@ -124,8 +134,22 @@ function setupHappyPath(): void {
       },
     })
   )
-  vi.mocked(writeLockfile).mockReturnValue(undefined)
   vi.mocked(platformFetch).mockResolvedValue({ commitSha: 'def7890abcdef' })
+  vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+  vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+    const manifest = createManifest({
+      packages: {
+        'test-skill': createManifestPackage({ source: GIT_SOURCE }),
+      },
+    })
+    const lockfile = createLockfile({
+      packages: {
+        'test-skill': createLockfilePackage({ source: GIT_SOURCE }),
+      },
+    })
+
+    return updater(manifest, lockfile)
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +194,7 @@ describe('save command', () => {
         }),
       })
     )
-    expect(writeLockfile).toHaveBeenCalled()
+    expect(updateManifestAndLockfile).toHaveBeenCalled()
   })
 
   // -------------------------------------------------------------------------
@@ -221,8 +245,41 @@ describe('save command', () => {
     await program.parseAsync(['node', 'agentver', 'save', '--dry-run'])
 
     expect(platformFetch).not.toHaveBeenCalled()
-    expect(writeLockfile).not.toHaveBeenCalled()
+    expect(updateManifestAndLockfile).not.toHaveBeenCalled()
     expect(stdout.join('')).toContain('dry-run')
+  })
+
+  it('blocks save when the security audit returns BLOCK', async () => {
+    setupHappyPath()
+    vi.mocked(scanFiles).mockResolvedValue(
+      createAuditScanResult('BLOCK', {
+        findings: [
+          {
+            severity: 'HIGH',
+            category: 'DANGEROUS_COMMAND',
+            file: 'SKILL.md',
+            line: 5,
+            message: 'Dangerous command detected',
+          },
+        ],
+      })
+    )
+
+    const program = buildProgram()
+    await expect(program.parseAsync(['node', 'agentver', 'save'])).rejects.toThrow()
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+    expect(platformFetch).not.toHaveBeenCalled()
+  })
+
+  it('skips the security audit when --skip-audit is set', async () => {
+    setupHappyPath()
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'save', '--skip-audit'])
+
+    expect(scanFiles).not.toHaveBeenCalled()
+    expect(platformFetch).toHaveBeenCalled()
   })
 
   // -------------------------------------------------------------------------
@@ -343,18 +400,7 @@ describe('save command', () => {
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'save'])
 
-    expect(writeLockfile).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        packages: expect.objectContaining({
-          'test-skill': expect.objectContaining({
-            source: expect.objectContaining({
-              commit: 'def7890abcdef',
-            }),
-          }),
-        }),
-      })
-    )
+    expect(updateManifestAndLockfile).toHaveBeenCalled()
   })
 
   // -------------------------------------------------------------------------
@@ -429,8 +475,21 @@ describe('save command', () => {
           },
         })
       )
-      vi.mocked(writeLockfile).mockReturnValue(undefined)
       vi.mocked(platformFetch).mockResolvedValue({ commitSha: 'abc1234567' })
+      vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+        const manifest = createManifest({
+          packages: {
+            'test-skill': createManifestPackage({ source }),
+          },
+        })
+        const lockfile = createLockfile({
+          packages: {
+            'test-skill': createLockfilePackage({ source }),
+          },
+        })
+
+        return updater(manifest, lockfile)
+      })
     }
 
     it('extracts org from agentver://orgSlug URI', async () => {

@@ -1,37 +1,25 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { readFilesFromDirectory } from '../git/fetcher.js'
+import type { GitSource } from '../git/types.js'
 import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
-import { readLockfile, writeLockfile } from '../storage/lockfile.js'
-import { readManifest } from '../storage/manifest.js'
-import { parseAgentverUri } from './install.js'
+import { scanFiles } from '../security/index.js'
+import { readLockfile } from '../storage/lockfile.js'
+import { updateManifestAndLockfile } from '../storage/pair.js'
+import { detectSkillName, resolveNamespace } from './skill-context.js'
 
 type SaveOptions = {
   path?: string
   dryRun?: boolean
+  skipAudit?: boolean
   json?: boolean
 }
 
 type SaveResponse = {
   commitSha: string
-}
-
-/**
- * Detect a skill name from the current directory by looking for a SKILL.md
- * frontmatter `name:` field, or falling back to the directory basename.
- */
-function detectSkillName(skillDir: string): string | null {
-  const skillMdPath = join(skillDir, 'SKILL.md')
-  if (!existsSync(skillMdPath)) {
-    return null
-  }
-
-  const content = readFileSync(skillMdPath, 'utf-8')
-  const nameMatch = content.match(/^name:\s*(.+)$/m)
-  return nameMatch?.[1]?.trim() ?? basename(skillDir)
 }
 
 /**
@@ -52,43 +40,13 @@ function resolveSkillContext(options: SaveOptions): { skillDir: string; skillNam
   return { skillDir, skillName }
 }
 
-/**
- * Find the org/namespace for a skill by checking the manifest source.
- */
-function findNamespace(
-  projectRoot: string,
-  skillName: string
-): { org: string; name: string } | null {
-  const manifest = readManifest(projectRoot)
-  const entry = manifest.packages[skillName]
-
-  if (!entry || entry.source.type !== 'git') {
-    return null
-  }
-
-  const agentverParsed = parseAgentverUri(entry.source.uri)
-  let org: string | undefined
-
-  if (agentverParsed) {
-    // agentver://orgSlug — org is the first segment
-    org = agentverParsed.org
-  } else {
-    // External git URI (e.g. github.com/org/repo or https://github.com/org/repo)
-    const parts = entry.source.uri.split('/').filter(Boolean)
-    org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
-  }
-
-  if (!org) return null
-
-  return { org, name: skillName }
-}
-
 export function registerSaveCommand(program: Command): void {
   program
     .command('save [message]')
     .description('Commit local skill changes to the platform')
     .option('--path <path>', 'Path to skill directory')
     .option('--dry-run', 'Show what would be saved without committing')
+    .option('--skip-audit', 'Skip security scan')
     .option('--json', 'Output as JSON')
     .action(async (message: string | undefined, options: SaveOptions) => {
       const context = resolveSkillContext(options)
@@ -103,7 +61,11 @@ export function registerSaveCommand(program: Command): void {
 
       const { skillDir, skillName } = context
       const projectRoot = process.cwd()
-      const namespace = findNamespace(projectRoot, skillName)
+      const namespace = resolveNamespace({
+        projectRoot,
+        skillDir,
+        skillName,
+      })
 
       if (!namespace) {
         process.stderr.write(
@@ -115,6 +77,11 @@ export function registerSaveCommand(program: Command): void {
       }
 
       const spinner = createSpinner('Reading local files...').start()
+      const lockfile = readLockfile(projectRoot)
+      const currentRef =
+        lockfile.packages[skillName]?.source.type === 'git'
+          ? lockfile.packages[skillName].source.ref
+          : undefined
 
       try {
         const localFiles = await readFilesFromDirectory(skillDir)
@@ -130,6 +97,42 @@ export function registerSaveCommand(program: Command): void {
         }))
 
         const commitMessage = message ?? `Update skill: ${skillName}`
+
+        if (!options.skipAudit) {
+          spinner.text = 'Running security audit...'
+
+          const scanSource: GitSource = {
+            host: 'local',
+            owner: namespace.org,
+            repo: namespace.name,
+            path: '',
+            ref: currentRef ?? 'main',
+          }
+
+          const scanResult = await scanFiles(localFiles, scanSource, {
+            skipAudit: false,
+          })
+
+          if (scanResult.verdict === 'BLOCK') {
+            spinner.fail('Security audit failed. Fix the issues before saving.')
+            for (const finding of scanResult.findings) {
+              process.stderr.write(
+                `  ${chalk.red('BLOCK')} ${finding.file}:${String(finding.line ?? '?')} — ${finding.message}\n`
+              )
+            }
+            process.exit(1)
+          }
+
+          if (scanResult.verdict === 'WARN') {
+            spinner.warn('Security audit warnings found:')
+            for (const finding of scanResult.findings) {
+              process.stderr.write(
+                `  ${chalk.yellow('WARN')} ${finding.file}:${String(finding.line ?? '?')} — ${finding.message}\n`
+              )
+            }
+            spinner.start('Continuing...')
+          }
+        }
 
         if (options.dryRun) {
           spinner.stop()
@@ -163,17 +166,33 @@ export function registerSaveCommand(program: Command): void {
             body: {
               message: commitMessage,
               files: filesToSave,
+              ...(currentRef ? { ref: currentRef } : {}),
             },
           }
         )
 
-        // Update the lockfile with the new commit SHA
-        const lockfile = readLockfile(projectRoot)
-        const lockEntry = lockfile.packages[skillName]
-        if (lockEntry?.source.type === 'git') {
-          lockEntry.source.commit = result.commitSha
-          writeLockfile(projectRoot, lockfile)
-        }
+        updateManifestAndLockfile(projectRoot, 'project', (manifest, currentLockfile) => {
+          const manifestEntry = manifest.packages[skillName]
+          if (manifestEntry?.source.type === 'git') {
+            manifestEntry.source.commit = result.commitSha
+            if (currentRef) {
+              manifestEntry.source.ref = currentRef
+            }
+          }
+
+          const lockEntry = currentLockfile.packages[skillName]
+          if (lockEntry?.source.type === 'git') {
+            lockEntry.source.commit = result.commitSha
+            if (currentRef) {
+              lockEntry.source.ref = currentRef
+            }
+          }
+
+          return {
+            manifest,
+            lockfile: currentLockfile,
+          }
+        })
 
         if (options.json) {
           outputSuccess({

@@ -1,11 +1,15 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
-import { readLockfile, writeLockfile } from '../storage/lockfile.js'
-import { readManifest } from '../storage/manifest.js'
+import { getCanonicalSkillPath } from '../storage/canonical.js'
+import { computeSha256FromFiles } from '../storage/integrity.js'
+import { readLockfile } from '../storage/lockfile.js'
+import { updateManifestAndLockfile } from '../storage/pair.js'
+import { deriveCommitFromIntegrity } from './install.js'
+import { resolveCurrentSkillIdentity } from './skill-context.js'
 
 type DraftInfo = {
   name: string
@@ -27,44 +31,38 @@ type DraftListOptions = {
   json?: boolean
 }
 
-/**
- * Resolve the skill name and namespace from the current directory or manifest.
- */
+type PlatformResolveResponse = {
+  gitUri: string
+  gitPath: string
+  gitRef: string
+  source?: 'git' | 'platform'
+  files?: Array<{ path: string; content: string }>
+}
+
 function resolveSkillIdentity(): { org: string; name: string } | null {
-  const cwd = process.cwd()
-  const skillMdPath = join(cwd, 'SKILL.md')
+  return resolveCurrentSkillIdentity()
+}
 
-  let skillName: string | null = null
+function writeResolvedFiles(
+  targetPath: string,
+  files: Array<{ path: string; content: string }>
+): void {
+  rmSync(targetPath, { recursive: true, force: true })
+  mkdirSync(targetPath, { recursive: true })
 
-  if (existsSync(skillMdPath)) {
-    const content = readFileSync(skillMdPath, 'utf-8')
-    const nameMatch = content.match(/^name:\s*(.+)$/m)
-    skillName = nameMatch?.[1]?.trim() ?? basename(cwd)
-  }
-
-  if (!skillName) {
-    skillName = basename(cwd)
-  }
-
-  const manifest = readManifest(cwd)
-  const entry = manifest.packages[skillName]
-
-  if (entry?.source.type === 'git') {
-    const parts = entry.source.uri.split('/')
-    const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
-    if (org) {
-      return { org, name: skillName }
+  for (const file of files) {
+    const resolvedFilePath = resolve(targetPath, file.path)
+    if (!resolvedFilePath.startsWith(`${targetPath}/`) && resolvedFilePath !== targetPath) {
+      continue
     }
-  }
 
-  // Fallback: try directory structure
-  const pathParts = cwd.split('/')
-  const skillsIdx = pathParts.lastIndexOf('skills')
-  if (skillsIdx >= 0 && pathParts.length > skillsIdx + 2) {
-    return { org: pathParts[skillsIdx + 1]!, name: skillName }
-  }
+    const parentDir = dirname(resolvedFilePath)
+    if (!existsSync(parentDir)) {
+      mkdirSync(parentDir, { recursive: true })
+    }
 
-  return null
+    writeFileSync(resolvedFilePath, file.content, 'utf-8')
+  }
 }
 
 export function registerDraftCommand(program: Command): void {
@@ -176,29 +174,113 @@ export function registerDraftCommand(program: Command): void {
       }
 
       const projectRoot = process.cwd()
-      const lockfile = readLockfile(projectRoot)
-      const lockEntry = lockfile.packages[identity.name]
+      let syncedFiles = false
+      let draftCommitSha: string | undefined
+      let syncWarning: string | undefined
+      const draftRef = `draft/${identity.name}/${name}`
+      const lockEntry = readLockfile(projectRoot).packages[identity.name]
 
-      if (!lockEntry) {
+      if (!lockEntry || lockEntry.source.type !== 'git') {
         process.stderr.write(chalk.red(`Skill "${identity.name}" not found in lockfile.\n`))
         process.exit(1)
       }
 
-      if (lockEntry.source.type === 'git') {
-        lockEntry.source.ref = `draft/${identity.name}/${name}`
-        writeLockfile(projectRoot, lockfile)
+      try {
+        const resolved = await platformFetch<PlatformResolveResponse>(
+          `/resolve?name=${encodeURIComponent(`${identity.org}/${identity.name}`)}&ref=${encodeURIComponent(draftRef)}`
+        )
+
+        if (resolved.source === 'platform' && resolved.files?.length) {
+          const resolvedFiles = resolved.files
+          let warning: string | undefined
+
+          updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
+            const manifestEntry = manifest.packages[identity.name]
+            const lockEntry = lockfile.packages[identity.name]
+
+            if (!manifestEntry || !lockEntry || lockEntry.source.type !== 'git') {
+              throw new Error(`Skill "${identity.name}" not found in lockfile.`)
+            }
+
+            if (manifestEntry.packageType === 'AGENT' || manifestEntry.packageType === 'COMMAND') {
+              warning =
+                'Draft selected, but automatic file sync is only available for skill directories.'
+            } else {
+              const targetPath =
+                manifestEntry.path ?? getCanonicalSkillPath(projectRoot, identity.name, 'project')
+              writeResolvedFiles(targetPath, resolvedFiles)
+              const integrity = computeSha256FromFiles(
+                resolvedFiles.map((file) => ({
+                  path: file.path,
+                  content: file.content,
+                }))
+              )
+              draftCommitSha = deriveCommitFromIntegrity(integrity)
+              lockEntry.integrity = integrity
+              syncedFiles = true
+            }
+
+            if (manifestEntry.source.type === 'git') {
+              manifestEntry.source.ref = draftRef
+              if (draftCommitSha) {
+                manifestEntry.source.commit = draftCommitSha
+              }
+            }
+
+            lockEntry.source.ref = draftRef
+            if (draftCommitSha) {
+              lockEntry.source.commit = draftCommitSha
+            }
+
+            return { manifest, lockfile }
+          })
+
+          syncWarning = warning
+        } else {
+          syncWarning =
+            'Draft selected, but the platform could not provide draft files. Run save after updating locally.'
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.includes('not found in lockfile')) {
+          process.stderr.write(chalk.red(`${message}\n`))
+          process.exit(1)
+        }
+
+        updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
+          const manifestEntry = manifest.packages[identity.name]
+          const lockEntry = lockfile.packages[identity.name]
+
+          if (!lockEntry || lockEntry.source.type !== 'git') {
+            throw new Error(`Skill "${identity.name}" not found in lockfile.`)
+          }
+
+          if (manifestEntry?.source.type === 'git') {
+            manifestEntry.source.ref = draftRef
+          }
+
+          lockEntry.source.ref = draftRef
+          return { manifest, lockfile }
+        })
+
+        syncWarning = 'Draft selected, but local files were not refreshed automatically.'
       }
 
       if (options.json) {
         outputSuccess({
           skill: `@${identity.org}/${identity.name}`,
           draft: name,
-          ref: `draft/${identity.name}/${name}`,
+          ref: draftRef,
+          syncedFiles,
+          ...(syncWarning ? { warning: syncWarning } : {}),
         })
       } else {
         process.stdout.write(
-          `Switched to draft ${chalk.green(name)} ${chalk.dim(`(ref: draft/${identity.name}/${name})`)}\n`
+          `Switched to draft ${chalk.green(name)} ${chalk.dim(`(ref: ${draftRef})`)}\n`
         )
+        if (syncWarning) {
+          process.stdout.write(chalk.dim(`${syncWarning}\n`))
+        }
       }
     })
 
@@ -218,8 +300,7 @@ export function registerDraftCommand(program: Command): void {
 
       // Determine current draft from lockfile ref
       const projectRoot = process.cwd()
-      const lockfile = readLockfile(projectRoot)
-      const lockEntry = lockfile.packages[identity.name]
+      const lockEntry = readLockfile(projectRoot).packages[identity.name]
 
       if (!lockEntry || lockEntry.source.type !== 'git') {
         process.stderr.write(chalk.red('Skill not found in lockfile.\n'))
@@ -227,6 +308,7 @@ export function registerDraftCommand(program: Command): void {
       }
 
       const currentRef = lockEntry.source.ref
+
       if (!currentRef.startsWith('draft/')) {
         process.stderr.write(chalk.red(`Not on a draft branch. Current ref: ${currentRef}\n`))
         process.exit(1)
@@ -243,12 +325,28 @@ export function registerDraftCommand(program: Command): void {
           }
         )
 
-        // Update lockfile back to main
-        lockEntry.source.ref = 'main'
-        if (result.commitSha) {
-          lockEntry.source.commit = result.commitSha
-        }
-        writeLockfile(projectRoot, lockfile)
+        updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
+          const manifestEntry = manifest.packages[identity.name]
+          const lockEntry = lockfile.packages[identity.name]
+
+          if (!lockEntry || lockEntry.source.type !== 'git') {
+            throw new Error('Skill not found in lockfile.')
+          }
+
+          if (manifestEntry?.source.type === 'git') {
+            manifestEntry.source.ref = 'main'
+            if (result.commitSha) {
+              manifestEntry.source.commit = result.commitSha
+            }
+          }
+
+          lockEntry.source.ref = 'main'
+          if (result.commitSha) {
+            lockEntry.source.commit = result.commitSha
+          }
+
+          return { manifest, lockfile }
+        })
 
         if (options.json) {
           spinner.stop()
@@ -285,8 +383,7 @@ export function registerDraftCommand(program: Command): void {
       }
 
       const projectRoot = process.cwd()
-      const lockfile = readLockfile(projectRoot)
-      const lockEntry = lockfile.packages[identity.name]
+      const lockEntry = readLockfile(projectRoot).packages[identity.name]
 
       if (!lockEntry || lockEntry.source.type !== 'git') {
         process.stderr.write(chalk.red('Skill not found in lockfile.\n'))
@@ -294,6 +391,7 @@ export function registerDraftCommand(program: Command): void {
       }
 
       const currentRef = lockEntry.source.ref
+
       if (!currentRef.startsWith('draft/')) {
         process.stderr.write(chalk.red(`Not on a draft branch. Current ref: ${currentRef}\n`))
         process.exit(1)
@@ -310,9 +408,21 @@ export function registerDraftCommand(program: Command): void {
           }
         )
 
-        // Reset lockfile ref to main
-        lockEntry.source.ref = 'main'
-        writeLockfile(projectRoot, lockfile)
+        updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
+          const manifestEntry = manifest.packages[identity.name]
+          const lockEntry = lockfile.packages[identity.name]
+
+          if (!lockEntry || lockEntry.source.type !== 'git') {
+            throw new Error('Skill not found in lockfile.')
+          }
+
+          if (manifestEntry?.source.type === 'git') {
+            manifestEntry.source.ref = 'main'
+          }
+
+          lockEntry.source.ref = 'main'
+          return { manifest, lockfile }
+        })
 
         if (options.json) {
           spinner.stop()

@@ -68,7 +68,8 @@ export class FilesystemGitProvider implements GitProvider {
     skillName: string,
     _filePath: string,
     content: string,
-    _message: string
+    _message: string,
+    _ref?: string
   ): Promise<{ commitSha: string }> {
     const { prisma } = await import('@agentver/database')
 

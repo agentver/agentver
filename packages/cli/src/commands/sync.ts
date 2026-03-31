@@ -1,15 +1,28 @@
-import { createHash } from 'node:crypto'
-import { hostname } from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+  type AgentId,
+  getAgentPlacementPath,
+  getCommandPlacementPath,
+} from '@agentver/agent-definitions'
 import type { SyncResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
+import { readFilesFromDirectory } from '../git/fetcher.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
+import { resolveReadPath } from '../storage/canonical.js'
+import { ensureStorageDir, getStorageRoot } from '../storage/files.js'
+import { computeSha256FromFiles } from '../storage/integrity.js'
+import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { resolvePlacementPath, type Scope } from '../utils/paths'
 import { extractError } from '../utils.js'
 
 const SYNC_TIMEOUT_MS = 30_000
+const MACHINE_ID_FILE = 'machine-id'
 
 type SyncGitSource = {
   type: 'git'
@@ -37,85 +50,203 @@ type SyncResponse = {
   removed: number
 }
 
-function getMachineId(): string {
-  return createHash('sha256').update(hostname()).digest('hex')
+type SyncOptions = {
+  global?: boolean
+  json?: boolean
+}
+
+function getMachineId(projectRoot: string): string {
+  ensureStorageDir(projectRoot, 'global')
+  const storageRoot = getStorageRoot(projectRoot, 'global')
+  const machineIdPath = join(storageRoot, MACHINE_ID_FILE)
+
+  if (existsSync(machineIdPath)) {
+    const existing = readFileSync(machineIdPath, 'utf-8').trim()
+    if (existing) {
+      return existing
+    }
+  }
+
+  const machineId = randomUUID()
+  writeFileSync(machineIdPath, machineId, 'utf-8')
+  return machineId
+}
+
+async function readLocalPackageFiles(
+  projectRoot: string,
+  packageName: string,
+  agents: string[],
+  scope: Scope,
+  packageType?: string,
+  entryFile?: string
+): Promise<Array<{ path: string; content: string }>> {
+  if (packageType === 'AGENT' || packageType === 'COMMAND') {
+    const getPlacementPath =
+      packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+    const shortName = packageName.split('/').pop() ?? packageName
+    const fileName = entryFile ?? `${shortName}.md`
+
+    for (const agentId of agents) {
+      const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
+      if (!placementPath) {
+        continue
+      }
+
+      const fullPath = resolvePlacementPath(placementPath, projectRoot, scope)
+      if (!fullPath || !existsSync(fullPath)) {
+        continue
+      }
+
+      return [{ path: fileName, content: readFileSync(fullPath, 'utf-8') }]
+    }
+
+    return []
+  }
+
+  const readPath = resolveReadPath(projectRoot, packageName, agents, scope)
+  if (!readPath) {
+    return []
+  }
+
+  const files = await readFilesFromDirectory(readPath)
+  return files.map((file) => ({
+    path: file.path,
+    content: file.content,
+  }))
+}
+
+async function isLocallyModified(
+  projectRoot: string,
+  scope: Scope,
+  name: string,
+  pkg: ReturnType<typeof readManifest>['packages'][string],
+  lockEntry: ReturnType<typeof readLockfile>['packages'][string] | undefined
+): Promise<boolean> {
+  if (!lockEntry?.integrity) {
+    return false
+  }
+
+  try {
+    const localFiles = await readLocalPackageFiles(
+      projectRoot,
+      name,
+      pkg.agents,
+      scope,
+      pkg.packageType,
+      pkg.entryFile
+    )
+
+    if (localFiles.length === 0) {
+      return false
+    }
+
+    return computeSha256FromFiles(localFiles) !== lockEntry.integrity
+  } catch {
+    return false
+  }
+}
+
+function toSyncSource(
+  pkg: ReturnType<typeof readManifest>['packages'][string]
+): SyncGitSource | SyncWellKnownSource {
+  if (pkg.source.type === 'git') {
+    return {
+      type: 'git',
+      uri: pkg.source.uri,
+      path: pkg.source.path,
+      ref: pkg.source.ref,
+      commit: pkg.source.commit,
+    }
+  }
+
+  return {
+    type: 'well-known',
+    baseUrl: pkg.source.baseUrl,
+    hostname: pkg.source.hostname,
+    skillName: pkg.source.skillName,
+  }
 }
 
 export function registerSyncCommand(program: Command): void {
   program
     .command('sync')
     .description('Push local installation state to platform (requires platform connection)')
-    .action(async () => {
+    .option('--global', 'Sync globally installed packages')
+    .option('--json', 'Output as JSON')
+    .action(async (options: SyncOptions) => {
+      const jsonMode = isJSONMode() || options.json === true
+      const scope: Scope = options.global ? 'global' : 'project'
       const platformUrl = getPlatformUrl()
+
       if (!platformUrl) {
-        if (isJSONMode()) {
+        if (jsonMode) {
           outputError(
             'AUTH_REQUIRED',
             'Not connected to a platform. Run `agentver login <url>` first.'
           )
-          process.exit(1)
+        } else {
+          console.error(
+            chalk.red('Not connected to a platform.') +
+              ' Run ' +
+              chalk.cyan('`agentver login <url>`') +
+              ' first.'
+          )
         }
-        console.error(
-          chalk.red('Not connected to a platform.') +
-            ' Run ' +
-            chalk.cyan('`agentver login <url>`') +
-            ' first.'
-        )
         process.exit(1)
+        return
       }
 
       const creds = await getCredentials()
       if (!creds?.token && !creds?.apiKey) {
-        if (isJSONMode()) {
+        if (jsonMode) {
           outputError(
             'AUTH_REQUIRED',
             'Not connected to a platform. Run `agentver login <url>` first.'
           )
-          process.exit(1)
+        } else {
+          console.error(
+            chalk.red('Not connected to a platform.') +
+              ' Run ' +
+              chalk.cyan('`agentver login <url>`') +
+              ' first.'
+          )
         }
-        console.error(
-          chalk.red('Not connected to a platform.') +
-            ' Run ' +
-            chalk.cyan('`agentver login <url>`') +
-            ' first.'
-        )
         process.exit(1)
+        return
       }
 
       const projectRoot = process.cwd()
-      const manifest = readManifest(projectRoot)
+      const manifest = readManifest(projectRoot, scope)
+      const lockfile = readLockfile(projectRoot, scope)
       const packageEntries = Object.entries(manifest.packages)
 
       const spinner = createSpinner('Syncing installation state to platform...').start()
 
       const packageNames = packageEntries.map(([name]) => name)
-      const packages: Record<string, SyncPackageEntry> = {}
+      const packages = Object.fromEntries(
+        await Promise.all(
+          packageEntries.map(async ([name, pkg]) => {
+            const modified = await isLocallyModified(
+              projectRoot,
+              scope,
+              name,
+              pkg,
+              lockfile.packages[name]
+            )
 
-      for (const [name, pkg] of packageEntries) {
-        const source: SyncGitSource | SyncWellKnownSource =
-          pkg.source.type === 'git'
-            ? {
-                type: 'git',
-                uri: pkg.source.uri,
-                path: pkg.source.path,
-                ref: pkg.source.ref,
-                commit: pkg.source.commit,
-              }
-            : {
-                type: 'well-known',
-                baseUrl: pkg.source.baseUrl,
-                hostname: pkg.source.hostname,
-                skillName: pkg.source.skillName,
-              }
+            return [
+              name,
+              {
+                source: toSyncSource(pkg),
+                agents: pkg.agents,
+                modified,
+              } satisfies SyncPackageEntry,
+            ]
+          })
+        )
+      ) as Record<string, SyncPackageEntry>
 
-        packages[name] = {
-          source,
-          agents: pkg.agents,
-          modified: pkg.modified,
-        }
-      }
-
-      const machineId = getMachineId()
+      const machineId = getMachineId(projectRoot)
 
       const authHeaders: Record<string, string> = {}
       if (creds.token) {
@@ -145,18 +276,19 @@ export function registerSyncCommand(program: Command): void {
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => 'Unknown error')
-          if (isJSONMode()) {
+          if (jsonMode) {
             spinner.stop()
             outputError('SYNC_FAILED', `Sync failed (${response.status}): ${errorText}`)
           } else {
             spinner.fail(`Sync failed (${response.status}): ${errorText}`)
           }
           process.exit(1)
+          return
         }
 
         const result = (await response.json()) as SyncResponse
 
-        if (isJSONMode()) {
+        if (jsonMode) {
           outputSuccess<SyncResult>({
             synced: result.synced,
             machineId,
@@ -167,11 +299,12 @@ export function registerSyncCommand(program: Command): void {
 
         spinner.succeed(
           `Synced ${chalk.green(String(result.synced))} skill${result.synced === 1 ? '' : 's'} to platform` +
-            (result.removed > 0 ? chalk.dim(` (${result.removed} removed)`) : '')
+            (result.removed > 0 ? chalk.dim(` (${result.removed} removed)`) : '') +
+            chalk.dim(scope === 'global' ? ' [global]' : ' [project]')
         )
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
-          if (isJSONMode()) {
+          if (jsonMode) {
             spinner.stop()
             outputError('TIMEOUT', 'Sync timed out. The platform may be experiencing issues.')
           } else {
@@ -179,7 +312,7 @@ export function registerSyncCommand(program: Command): void {
           }
         } else {
           const { code, message } = extractError(error, 'SYNC_FAILED')
-          if (isJSONMode()) {
+          if (jsonMode) {
             spinner.stop()
             outputError(code, message)
           } else {

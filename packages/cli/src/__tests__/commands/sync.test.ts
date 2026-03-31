@@ -1,6 +1,11 @@
 import { createCLIOutputSchema, syncResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createCredentials, createManifest, createManifestPackage } from '../helpers/fixtures'
+import {
+  createCredentials,
+  createLockfile,
+  createManifest,
+  createManifestPackage,
+} from '../helpers/fixtures'
 import type { PlatformMockHandle } from '../helpers/mock-platform'
 import { mockFetchResponse, setupPlatformMock } from '../helpers/mock-platform'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
@@ -11,6 +16,10 @@ import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 vi.mock('../../storage/manifest.js', () => ({
   readManifest: vi.fn(),
+}))
+
+vi.mock('../../storage/lockfile.js', () => ({
+  readLockfile: vi.fn(),
 }))
 
 vi.mock('../../registry/auth.js', () => ({
@@ -30,6 +39,21 @@ vi.mock('../../output.js', () => ({
   createSpinner: vi.fn(),
 }))
 
+vi.mock('../../storage/canonical.js', () => ({
+  resolveReadPath: vi.fn().mockReturnValue(null),
+}))
+
+vi.mock('../../storage/files.js', () => ({
+  ensureStorageDir: vi.fn(),
+  getStorageRoot: vi.fn().mockReturnValue('/tmp/agentver-test'),
+}))
+
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn().mockReturnValue(false),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+}))
+
 // ---------------------------------------------------------------------------
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
@@ -39,6 +63,7 @@ import { registerSyncCommand } from '../../commands/sync'
 import * as outputModule from '../../output.js'
 import * as authModule from '../../registry/auth.js'
 import * as configModule from '../../registry/config.js'
+import * as lockfileModule from '../../storage/lockfile.js'
 import * as manifestModule from '../../storage/manifest.js'
 
 // ---------------------------------------------------------------------------
@@ -77,6 +102,7 @@ describe('commands/sync', () => {
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+    vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
 
     platformMock = setupPlatformMock()
   })
@@ -323,7 +349,26 @@ describe('commands/sync', () => {
       const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typeof typed.machineId).toBe('string')
-      expect((typed.machineId as string).length).toBe(64) // SHA256 hex = 64 chars
+      expect((typed.machineId as string).length).toBe(36)
+    })
+  })
+
+  describe('--global', () => {
+    it('reads the global manifest when requested', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+
+      platformMock.addRoute({
+        method: 'POST',
+        path: /\/installations\/sync$/,
+        handler: () => mockFetchResponse(200, { synced: 0, removed: 0 }),
+      })
+
+      await runSync(['sync', '--global'])
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+      expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
     })
   })
 })

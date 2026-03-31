@@ -21,6 +21,14 @@ vi.mock('../../security/index.js', () => ({
   scanFiles: vi.fn(),
 }))
 
+vi.mock('../../storage/manifest.js', () => ({
+  readManifest: vi.fn(),
+}))
+
+vi.mock('../../storage/pair.js', () => ({
+  updateManifestAndLockfile: vi.fn(),
+}))
+
 vi.mock('chalk', () => {
   const identity = (s: string) => s
   const fn = Object.assign(identity, {
@@ -52,6 +60,8 @@ import { readFilesFromDirectory } from '../../git/fetcher.js'
 import * as outputModule from '../../output.js'
 import { platformFetch } from '../../registry/platform.js'
 import { scanFiles } from '../../security/index.js'
+import { readManifest } from '../../storage/manifest.js'
+import { updateManifestAndLockfile } from '../../storage/pair.js'
 import { createAuditScanResult, createFetchedFiles, createSkillMd } from '../helpers/fixtures'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
@@ -93,12 +103,16 @@ function captureOutput(): { stdout: string[]; stderr: string[] } {
 function setupHappyPath(): void {
   vi.mocked(existsSync).mockReturnValue(true)
   vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
+  vi.mocked(readManifest).mockReturnValue({ version: 2, packages: {} })
   vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
   vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
   vi.mocked(platformFetch).mockResolvedValue({
     version: '1.0.0',
     commitSha: 'abc1234567890',
   })
+  vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) =>
+    updater({ version: 2, packages: {} }, { version: 2, packages: {} })
+  )
 }
 
 // ---------------------------------------------------------------------------

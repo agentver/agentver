@@ -9,6 +9,7 @@ const logger = createLogger('api:save')
 
 const saveSchema = z.object({
   message: z.string().min(1, 'Commit message is required').max(500),
+  ref: z.string().min(1).optional(),
   files: z
     .array(
       z.object({
@@ -49,7 +50,7 @@ export async function POST(
     )
   }
 
-  const { message, files } = parsed.data
+  const { message, files, ref } = parsed.data
 
   // Verify the user has access to this organisation
   const membership = await prisma.organisationMember.findFirst({
@@ -68,7 +69,14 @@ export async function POST(
     let commitSha = ''
 
     for (const file of files) {
-      const result = await gitService.updateSkillFile(org, name, file.path, file.content, message)
+      const result = await gitService.updateSkillFile(
+        org,
+        name,
+        file.path,
+        file.content,
+        message,
+        ref
+      )
       commitSha = result.commitSha
     }
 

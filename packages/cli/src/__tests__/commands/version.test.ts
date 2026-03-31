@@ -475,6 +475,23 @@ describe('version command', () => {
       expect(stdout.join('')).toContain('v0.9.0')
     })
 
+    it('supports the top-level versions command alias', async () => {
+      setupIdentity()
+      vi.mocked(platformFetch).mockResolvedValue([
+        {
+          name: 'v1.0.0',
+          tag: 'v1.0.0',
+          commitSha: 'abc1234567',
+          message: 'Initial release',
+        },
+      ])
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'versions'])
+
+      expect(platformFetch).toHaveBeenCalledWith(expect.stringContaining('/versions'))
+    })
+
     // -----------------------------------------------------------------------
     // 2. No versions yet
     // -----------------------------------------------------------------------

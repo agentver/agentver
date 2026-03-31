@@ -1,12 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile } from '../storage/lockfile.js'
-import { readManifest } from '../storage/manifest.js'
 import { extractError, SEMVER_REGEX } from '../utils.js'
+import { resolveCurrentSkillIdentity } from './skill-context.js'
 
 type VersionInfo = {
   name: string
@@ -40,44 +38,92 @@ type VersionListResult = {
   versions: VersionInfo[]
 }
 
-/**
- * Resolve the skill identity from the current directory and manifest.
- */
+type VersionApiRecord = {
+  version?: string
+  changelog?: string | null
+  gitRef?: string | null
+  gitCommitSha?: string | null
+}
+
+type VersionListResponse = VersionInfo[] | { versions: Array<VersionInfo | VersionApiRecord> }
+
 function resolveSkillIdentity(): { org: string; name: string } | null {
-  const cwd = process.cwd()
-  const skillMdPath = join(cwd, 'SKILL.md')
+  return resolveCurrentSkillIdentity()
+}
 
-  let skillName: string | null = null
-
-  if (existsSync(skillMdPath)) {
-    const content = readFileSync(skillMdPath, 'utf-8')
-    const nameMatch = content.match(/^name:\s*(.+)$/m)
-    skillName = nameMatch?.[1]?.trim() ?? basename(cwd)
+function normaliseVersionEntry(version: VersionInfo | VersionApiRecord): VersionInfo {
+  if ('tag' in version && 'commitSha' in version && 'message' in version) {
+    return version
   }
 
-  if (!skillName) {
-    skillName = basename(cwd)
+  const resolvedVersion = version.version ?? 'unknown'
+  const tag = version.gitRef ?? `v/${resolvedVersion}`
+  return {
+    name: tag,
+    tag,
+    commitSha: version.gitCommitSha ?? 'unknown',
+    message: version.changelog ?? '',
   }
+}
 
-  const manifest = readManifest(cwd)
-  const entry = manifest.packages[skillName]
+function normaliseVersions(response: VersionListResponse): VersionInfo[] {
+  const versions = Array.isArray(response) ? response : response.versions
+  return versions.map(normaliseVersionEntry)
+}
 
-  if (entry?.source.type === 'git') {
-    const parts = entry.source.uri.split('/')
-    const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
-    if (org) {
-      return { org, name: skillName }
+async function listVersions(options: VersionListOptions): Promise<void> {
+  const jsonMode = isJSONMode() || options.json === true
+
+  const identity = resolveSkillIdentity()
+  if (!identity) {
+    const message = 'Could not determine skill identity. Run this from a skill directory.'
+    if (jsonMode) {
+      outputError('NOT_FOUND', message)
+    } else {
+      process.stderr.write(chalk.red(`${message}\n`))
     }
+    process.exit(1)
   }
 
-  // Fallback: directory structure
-  const pathParts = cwd.split('/')
-  const skillsIdx = pathParts.lastIndexOf('skills')
-  if (skillsIdx >= 0 && pathParts.length > skillsIdx + 2) {
-    return { org: pathParts[skillsIdx + 1]!, name: skillName }
-  }
+  const spinner = createSpinner('Fetching versions...').start()
 
-  return null
+  try {
+    const response = await platformFetch<VersionListResponse>(
+      `/skills/@${identity.org}/${identity.name}/versions`
+    )
+    const versions = normaliseVersions(response)
+
+    spinner.stop()
+
+    if (jsonMode) {
+      outputSuccess<VersionListResult>({ versions })
+      return
+    }
+
+    if (versions.length === 0) {
+      process.stdout.write(chalk.dim('No versions found.\n'))
+      return
+    }
+
+    process.stdout.write(chalk.bold(`\nVersions for @${identity.org}/${identity.name}:\n\n`))
+
+    for (const v of versions) {
+      process.stdout.write(
+        `  ${chalk.cyan(v.name)} ${chalk.dim(`(${v.commitSha.slice(0, 7)})`)} ${chalk.dim(v.message)}\n`
+      )
+    }
+
+    process.stdout.write('\n')
+  } catch (error) {
+    const { message } = extractError(error, 'VERSION_FAILED')
+    if (jsonMode) {
+      spinner.stop()
+      outputError('VERSION_FAILED', message)
+    } else {
+      spinner.fail(`Failed to list versions: ${message}`)
+    }
+    process.exit(1)
+  }
 }
 
 export function registerVersionCommand(program: Command): void {
@@ -173,57 +219,11 @@ export function registerVersionCommand(program: Command): void {
     .command('list')
     .description('List versions for the current skill')
     .option('--json', 'Output as JSON')
-    .action(async (_options: VersionListOptions) => {
-      const jsonMode = isJSONMode()
+    .action(listVersions)
 
-      const identity = resolveSkillIdentity()
-      if (!identity) {
-        const message = 'Could not determine skill identity. Run this from a skill directory.'
-        if (jsonMode) {
-          outputError('NOT_FOUND', message)
-        } else {
-          process.stderr.write(chalk.red(`${message}\n`))
-        }
-        process.exit(1)
-      }
-
-      const spinner = createSpinner('Fetching versions...').start()
-
-      try {
-        const versions = await platformFetch<VersionInfo[]>(
-          `/skills/@${identity.org}/${identity.name}/versions`
-        )
-
-        spinner.stop()
-
-        if (jsonMode) {
-          outputSuccess<VersionListResult>({ versions })
-          return
-        }
-
-        if (versions.length === 0) {
-          process.stdout.write(chalk.dim('No versions found.\n'))
-          return
-        }
-
-        process.stdout.write(chalk.bold(`\nVersions for @${identity.org}/${identity.name}:\n\n`))
-
-        for (const v of versions) {
-          process.stdout.write(
-            `  ${chalk.cyan(v.name)} ${chalk.dim(`(${v.commitSha.slice(0, 7)})`)} ${chalk.dim(v.message)}\n`
-          )
-        }
-
-        process.stdout.write('\n')
-      } catch (error) {
-        const { message } = extractError(error, 'VERSION_FAILED')
-        if (jsonMode) {
-          spinner.stop()
-          outputError('VERSION_FAILED', message)
-        } else {
-          spinner.fail(`Failed to list versions: ${message}`)
-        }
-        process.exit(1)
-      }
-    })
+  program
+    .command('versions')
+    .description('List published versions for the current skill')
+    .option('--json', 'Output as JSON')
+    .action(listVersions)
 }

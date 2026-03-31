@@ -70,6 +70,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const name = searchParams.get('name')
+  const requestedRef = searchParams.get('ref') ?? undefined
 
   if (!name) {
     return NextResponse.json({ error: 'Missing required query parameter: name' }, { status: 400 })
@@ -118,13 +119,13 @@ export async function GET(request: Request) {
 
   const latestVersion = pkg.versions[0]?.version
   const latestGitRef = pkg.versions[0]?.gitRef
-  const gitRef = latestGitRef ?? pkg.gitDefaultRef ?? latestVersion ?? 'main'
+  const gitRef = requestedRef ?? latestGitRef ?? pkg.gitDefaultRef ?? latestVersion ?? 'main'
 
   // For agentver-hosted packages, include file content so the CLI can install directly
   if (pkg.gitUri.startsWith('agentver://')) {
     try {
       const provider = getGitProvider()
-      const fileEntries = await provider.listSkillFiles(orgSlug, pkg.name)
+      const fileEntries = await provider.listSkillFiles(orgSlug, pkg.name, gitRef)
       if (fileEntries.length === 0) {
         logger.warn('Platform-hosted skill has no files', { org: orgSlug, package: pkg.name })
         return NextResponse.json(
@@ -140,7 +141,7 @@ export async function GET(request: Request) {
         fileEntries
           .filter((e) => e.type === 'file')
           .map(async (entry) => {
-            const content = await provider.getSkillFile(orgSlug, pkg.name, entry.path)
+            const content = await provider.getSkillFile(orgSlug, pkg.name, entry.path, gitRef)
             return { path: entry.path, content: content ?? '' }
           })
       )
