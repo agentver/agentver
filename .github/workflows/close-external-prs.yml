@@ -27,6 +27,13 @@ jobs:
               return;
             }
 
+            // Explicit allowlist for known maintainers
+            const maintainers = ['jaythegeek'];
+            if (maintainers.includes(author)) {
+              console.log(`${author} is in the maintainer allowlist — PR allowed`);
+              return;
+            }
+
             // Allow bots (dependabot, renovate, etc.)
             if (pr.user.type === 'Bot') {
               console.log(`${author} is a bot — PR allowed`);
