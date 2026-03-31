@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ExitError } from '../helpers/exit-error'
 import {
   createLockfile,
   createLockfilePackage,
@@ -32,6 +33,10 @@ vi.mock('../../storage/canonical', () => ({
   removeCanonicalDirectory: vi.fn(),
 }))
 
+vi.mock('../../storage/pair', () => ({
+  updateManifestAndLockfile: vi.fn(),
+}))
+
 vi.mock('../../registry/reporter.js', () => ({
   reportInstallation: vi.fn(),
   reportRemoval: vi.fn(),
@@ -42,6 +47,7 @@ vi.mock('../../output.js', () => ({
   outputSuccess: vi.fn(),
   outputError: vi.fn(),
   createSpinner: vi.fn(),
+  getLogLevel: vi.fn().mockReturnValue(4),
 }))
 
 vi.mock('@agentver/agent-definitions', () => ({
@@ -79,20 +85,13 @@ import * as outputModule from '../../output.js'
 import * as canonicalModule from '../../storage/canonical'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
+import * as pairModule from '../../storage/pair'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 const HOME = homedir()
-
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
-}
 
 type RemoveAction = (
   name: string,
@@ -133,6 +132,12 @@ function setupInstalledPackage(
   vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
   vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
   vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(true)
+
+  // updateManifestAndLockfile invokes its updater callback — execute it so the
+  // command logic runs, and return the updated result.
+  vi.mocked(pairModule.updateManifestAndLockfile).mockImplementation((_root, _scope, updater) =>
+    updater(manifest, lockfile)
+  )
 
   const basePath =
     options.scope === 'global'
@@ -193,28 +198,15 @@ describe('global scope — remove command', () => {
     expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
   })
 
-  it('passes global scope to writeManifest', async () => {
+  it('passes global scope to updateManifestAndLockfile', async () => {
     setupInstalledPackage('my-skill', { scope: 'global' })
 
     await removeAction('my-skill', { global: true })
 
-    expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+    expect(pairModule.updateManifestAndLockfile).toHaveBeenCalledWith(
       '/project',
-      expect.objectContaining({ version: 2 }),
-      'global'
-    )
-  })
-
-  it('passes global scope to readLockfile and writeLockfile', async () => {
-    setupInstalledPackage('my-skill', { scope: 'global' })
-
-    await removeAction('my-skill', { global: true })
-
-    expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'global')
-    expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
-      '/project',
-      expect.any(Object),
-      'global'
+      'global',
+      expect.any(Function)
     )
   })
 
@@ -227,17 +219,10 @@ describe('global scope — remove command', () => {
 
     await removeAction('my-skill', {})
 
-    expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'project')
-    expect(manifestModule.writeManifest).toHaveBeenCalledWith(
+    expect(pairModule.updateManifestAndLockfile).toHaveBeenCalledWith(
       '/project',
-      expect.any(Object),
-      'project'
-    )
-    expect(lockfileModule.readLockfile).toHaveBeenCalledWith('/project', 'project')
-    expect(lockfileModule.writeLockfile).toHaveBeenCalledWith(
-      '/project',
-      expect.any(Object),
-      'project'
+      'project',
+      expect.any(Function)
     )
   })
 
@@ -250,22 +235,9 @@ describe('global scope — remove command', () => {
 
     await removeAction('my-skill', { global: true })
 
-    const manifestReadCalls = vi.mocked(manifestModule.readManifest).mock.calls
-    const manifestWriteCalls = vi.mocked(manifestModule.writeManifest).mock.calls
-    const lockfileReadCalls = vi.mocked(lockfileModule.readLockfile).mock.calls
-    const lockfileWriteCalls = vi.mocked(lockfileModule.writeLockfile).mock.calls
-
-    for (const call of manifestReadCalls) {
+    const pairCalls = vi.mocked(pairModule.updateManifestAndLockfile).mock.calls
+    for (const call of pairCalls) {
       expect(call[1]).toBe('global')
-    }
-    for (const call of manifestWriteCalls) {
-      expect(call[2]).toBe('global')
-    }
-    for (const call of lockfileReadCalls) {
-      expect(call[1]).toBe('global')
-    }
-    for (const call of lockfileWriteCalls) {
-      expect(call[2]).toBe('global')
     }
   })
 
@@ -274,22 +246,9 @@ describe('global scope — remove command', () => {
 
     await removeAction('my-skill', {})
 
-    const manifestReadCalls = vi.mocked(manifestModule.readManifest).mock.calls
-    const manifestWriteCalls = vi.mocked(manifestModule.writeManifest).mock.calls
-    const lockfileReadCalls = vi.mocked(lockfileModule.readLockfile).mock.calls
-    const lockfileWriteCalls = vi.mocked(lockfileModule.writeLockfile).mock.calls
-
-    for (const call of manifestReadCalls) {
+    const pairCalls = vi.mocked(pairModule.updateManifestAndLockfile).mock.calls
+    for (const call of pairCalls) {
       expect(call[1]).toBe('project')
-    }
-    for (const call of manifestWriteCalls) {
-      expect(call[2]).toBe('project')
-    }
-    for (const call of lockfileReadCalls) {
-      expect(call[1]).toBe('project')
-    }
-    for (const call of lockfileWriteCalls) {
-      expect(call[2]).toBe('project')
     }
   })
 })

@@ -152,10 +152,8 @@ describe('parseGitSource', () => {
   })
 
   it('strips .git suffix from repo name when present in URL', () => {
-    // git source parsing doesn't strip .git — ensure the repo name is preserved as-is
     const result = parseGitSource('github.com/owner/repo.git')
-    // This should parse the third segment literally; the URL builder adds .git separately
-    expect(result.repo).toBe('repo.git')
+    expect(result.repo).toBe('repo')
   })
 })
 

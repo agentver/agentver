@@ -12,8 +12,7 @@ import type { InstallOptions, InstallResult } from '../commands/install.js'
 import type { FetchedFile } from '../git/types.js'
 import type { SpinnerLike } from '../output.js'
 import { computeSha256FromFiles } from '../storage/integrity'
-import { readLockfile, writeLockfile } from '../storage/lockfile'
-import { readManifest, writeManifest } from '../storage/manifest'
+import { updateManifestAndLockfile } from '../storage/pair'
 import type { ResolvedPackageRef } from './resolver.js'
 import { resolveBundle, validateBundleManifest } from './resolver.js'
 
@@ -48,6 +47,12 @@ type BundleSkippedPackage = {
   name: string
   type: string
   reason: string
+}
+
+type PendingStorageUpdate = {
+  name: string
+  manifestEntry: NonNullable<InstallResult['manifestEntry']>
+  lockfileEntry: NonNullable<InstallResult['lockfileEntry']>
 }
 
 /**
@@ -150,12 +155,9 @@ export async function installBundleFromFiles(
 
   const installed: BundleInstalledPackage[] = []
   const skipped: BundleSkippedPackage[] = []
+  const pendingStorageUpdates: PendingStorageUpdate[] = []
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
-
-  // Read manifest and lockfile once; accumulate changes in memory, write once after the loop
-  const manifestData = options.dryRun ? undefined : readManifest(projectRoot, scope)
-  const lockfileData = options.dryRun ? undefined : readLockfile(projectRoot, scope)
 
   // Install each constituent package
   for (const pkgRef of resolved.packages) {
@@ -170,19 +172,24 @@ export async function installBundleFromFiles(
           const { installLocalBundleConstituent } = await import('./local-install.js')
           await installLocalBundleConstituent(pkgRef.name, localFiles, agents, options, spinner)
 
-          const integrity = computeSha256FromFiles(localFiles)
-          manifestData!.packages[pkgRef.name] = {
-            source,
-            agents,
-            installedAt: new Date().toISOString(),
-            modified: false,
-            bundle: bundleName,
-            packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
-          }
-          lockfileData!.packages[pkgRef.name] = {
-            source,
-            integrity,
-            agents,
+          if (options.persist !== false) {
+            const integrity = computeSha256FromFiles(localFiles)
+            pendingStorageUpdates.push({
+              name: pkgRef.name,
+              manifestEntry: {
+                source,
+                agents,
+                installedAt: new Date().toISOString(),
+                modified: false,
+                bundle: bundleName,
+                packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
+              },
+              lockfileEntry: {
+                source,
+                integrity,
+                agents,
+              },
+            })
           }
         }
 
@@ -213,20 +220,24 @@ export async function installBundleFromFiles(
           ...options,
           // Skip audit for individual constituents — the bundle itself was audited
           skipAudit: true,
+          persist: false,
         })
 
-        // Update the manifest entry with bundle metadata.
-        // installPackageFn writes its own manifest entry, so re-read to pick it up
-        // before annotating with bundle metadata.
-        if (!options.dryRun) {
-          const freshManifest = readManifest(projectRoot, scope)
-          const entry = freshManifest.packages[result.name]
-          if (entry) {
-            entry.bundle = bundleName
-            entry.packageType = TYPE_PACKAGE_TYPE_MAP[pkgRef.type]
-            // Merge the platform-installed entry into our accumulated manifest
-            manifestData!.packages[result.name] = entry
-          }
+        if (
+          !options.dryRun &&
+          options.persist !== false &&
+          result.manifestEntry &&
+          result.lockfileEntry
+        ) {
+          pendingStorageUpdates.push({
+            name: result.name,
+            manifestEntry: {
+              ...result.manifestEntry,
+              bundle: bundleName,
+              packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
+            },
+            lockfileEntry: result.lockfileEntry,
+          })
         }
 
         installed.push({
@@ -248,10 +259,14 @@ export async function installBundleFromFiles(
     }
   }
 
-  // Write accumulated manifest and lockfile changes once
-  if (!options.dryRun) {
-    writeManifest(projectRoot, manifestData!, scope)
-    writeLockfile(projectRoot, lockfileData!, scope)
+  if (!options.dryRun && options.persist !== false && pendingStorageUpdates.length > 0) {
+    updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
+      for (const update of pendingStorageUpdates) {
+        manifest.packages[update.name] = update.manifestEntry
+        lockfile.packages[update.name] = update.lockfileEntry
+      }
+      return { manifest, lockfile }
+    })
   }
 
   // Log MCP server info (configuration deferred to a future phase)

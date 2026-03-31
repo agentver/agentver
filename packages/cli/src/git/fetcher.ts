@@ -28,8 +28,15 @@ const STRATEGIES: Array<{
   { name: 'clone', fn: fetchViaClone },
 ]
 
-export async function fetchFiles(resolved: ResolvedRef): Promise<FetchResult> {
-  const cached = getCachedFiles(resolved.source, resolved.commitSha)
+export type FetchFilesOptions = {
+  expectedIntegrity?: string
+}
+
+export async function fetchFiles(
+  resolved: ResolvedRef,
+  options: FetchFilesOptions = {}
+): Promise<FetchResult> {
+  const cached = getCachedFiles(resolved.source, resolved.commitSha, options.expectedIntegrity)
   if (cached) {
     logger.info('Using cached files')
     return { files: cached, commitSha: resolved.commitSha, source: resolved.source }

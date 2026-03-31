@@ -1,28 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 import type { LockfileV2 } from '@agentver/shared'
 import { lockfileAnySchema, lockfileV2PackageSchema, migrateLockfileV1ToV2 } from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
-import { serialiseDeterministic } from './serialise'
+import { ensureStorageDir, getLockfilePath, writeJsonFileAtomic } from './files'
 
 const logger = createCliLogger('lockfile')
-
-const LOCKFILE_DIR = '.agentver'
-const LOCKFILE_FILE = 'lockfile.json'
-
-function getLockfileRoot(projectRoot: string, scope: Scope): string {
-  if (scope === 'global') {
-    return join(homedir(), LOCKFILE_DIR)
-  }
-  return join(projectRoot, LOCKFILE_DIR)
-}
-
-function getLockfilePath(projectRoot: string, scope: Scope = 'project'): string {
-  return join(getLockfileRoot(projectRoot, scope), LOCKFILE_FILE)
-}
 
 export function readLockfile(projectRoot: string, scope: Scope = 'project'): LockfileV2 {
   const lockfilePath = getLockfilePath(projectRoot, scope)
@@ -102,21 +86,13 @@ export function writeLockfile(
  * Internal unlocked write — used by migration (already inside readLockfile)
  * and by writeLockfile (which acquires the lock itself).
  */
-function writeLockfileUnsafe(
+export function writeLockfileUnsafe(
   projectRoot: string,
   lockfile: LockfileV2,
   scope: Scope = 'project'
 ): void {
-  const dir = getLockfileRoot(projectRoot, scope)
-
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-
-  const filePath = getLockfilePath(projectRoot, scope)
-  const tmpPath = `${filePath}.tmp`
-  writeFileSync(tmpPath, serialiseDeterministic(lockfile))
-  renameSync(tmpPath, filePath)
+  ensureStorageDir(projectRoot, scope)
+  writeJsonFileAtomic(getLockfilePath(projectRoot, scope), lockfile)
 }
 
 /**

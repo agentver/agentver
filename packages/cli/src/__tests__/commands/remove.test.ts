@@ -1,5 +1,6 @@
 import { createCLIOutputSchema, removeResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ExitError } from '../helpers/exit-error'
 import {
   createLockfile,
   createLockfilePackage,
@@ -21,6 +22,10 @@ vi.mock('../../storage/manifest', () => ({
 vi.mock('../../storage/lockfile', () => ({
   readLockfile: vi.fn(),
   writeLockfile: vi.fn(),
+}))
+
+vi.mock('../../storage/pair', () => ({
+  updateManifestAndLockfile: vi.fn(),
 }))
 
 vi.mock('../../storage/canonical', () => ({
@@ -87,6 +92,7 @@ import * as reporterModule from '../../registry/reporter.js'
 import * as canonicalModule from '../../storage/canonical'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
+import * as pairModule from '../../storage/pair'
 
 // ---------------------------------------------------------------------------
 // Helper: extract the action callback from registerRemoveCommand
@@ -109,18 +115,6 @@ function getRemoveAction(): RemoveAction {
   registerRemoveCommand(mockProgram as never)
 
   return mockProgram.action.mock.calls[0]![0] as RemoveAction
-}
-
-// ---------------------------------------------------------------------------
-// Sentinel for process.exit
-// ---------------------------------------------------------------------------
-
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +178,16 @@ describe('commands/remove', () => {
     process.exit = vi.fn().mockImplementation((code: number) => {
       throw new ExitError(code)
     }) as never
+    vi.mocked(pairModule.updateManifestAndLockfile).mockImplementation(
+      (projectRoot, scope, updater) => {
+        const manifest = structuredClone(manifestModule.readManifest(projectRoot, scope))
+        const lockfile = structuredClone(lockfileModule.readLockfile(projectRoot, scope))
+        const updated = updater(manifest, lockfile)
+        manifestModule.writeManifest(projectRoot, updated.manifest, scope)
+        lockfileModule.writeLockfile(projectRoot, updated.lockfile, scope)
+        return updated
+      }
+    )
 
     vi.mocked(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>

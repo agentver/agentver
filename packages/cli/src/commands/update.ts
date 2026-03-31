@@ -6,7 +6,7 @@ import {
   getCommandPlacementPath,
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
-import type { UpdateResult } from '@agentver/shared'
+import type { ManifestV2Package, UpdateResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
@@ -15,14 +15,16 @@ import { fetchFiles, resolveRef } from '../git/index.js'
 import type { GitSource as CliGitSource, ResolvedRef } from '../git/types.js'
 import type { SpinnerLike } from '../output.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
+import { type PlatformResolveResponse, platformFetch } from '../registry/platform.js'
 import { getCanonicalSkillPath, resolveReadPath } from '../storage/canonical.js'
-import { computeSha256FromFiles } from '../storage/integrity'
+import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 import { extractError } from '../utils.js'
+import { fetchWellKnownIndex, fetchWellKnownSkill } from '../wellknown/index.js'
 import { installPackage } from './install'
 
 type UpdateInfo = {
@@ -32,6 +34,8 @@ type UpdateInfo = {
   ref: string
   sourceUri: string
   sourcePath: string
+  installSource: string
+  supportsPatch: boolean
   locallyModified: boolean
 }
 
@@ -67,6 +71,66 @@ function parseUriToCliSource(
     ref,
     commit,
   }
+}
+
+function buildInstallSource(uri: string, path: string, ref: string): string {
+  return path ? `${uri}/${path}@${ref}` : `${uri}@${ref}`
+}
+
+async function resolveLatestGitCommit(source: ManifestV2Package['source']): Promise<string | null> {
+  if (source.type !== 'git') return null
+  const cliSource = parseUriToCliSource(source.uri, source.path, source.ref)
+  if (!cliSource) return null
+  const resolved = await resolveRef(cliSource)
+  return resolved.commitSha
+}
+
+async function resolveLatestPlatformCommit(
+  source: ManifestV2Package['source']
+): Promise<string | null> {
+  if (source.type !== 'git' || !source.uri.startsWith('agentver://')) return null
+
+  const org = source.uri.slice('agentver://'.length).trim()
+  if (!org) return null
+
+  const resolveName = source.path ? `${org}/${source.path}` : org
+  const resolved = await platformFetch<PlatformResolveResponse>(
+    `/resolve?name=${encodeURIComponent(resolveName)}`
+  )
+
+  if (resolved.source === 'platform') {
+    if (!resolved.files || resolved.files.length === 0) return null
+    const integrity = computeSha256FromFiles(
+      resolved.files.map((file) => ({ path: file.path, content: file.content }))
+    )
+    return deriveCommitFromIntegrity(integrity)
+  }
+
+  const cliSource = parseUriToCliSource(
+    resolved.gitUri,
+    resolved.gitPath ?? source.path,
+    resolved.gitRef ?? source.ref
+  )
+  if (!cliSource) return null
+
+  const gitResolved = await resolveRef(cliSource)
+  return gitResolved.commitSha
+}
+
+async function resolveLatestWellKnownCommit(
+  source: ManifestV2Package['source']
+): Promise<string | null> {
+  if (source.type !== 'well-known') return null
+
+  const index = await fetchWellKnownIndex(source.baseUrl)
+  const entry = index.skills.find((skill) => skill.name === source.skillName)
+  if (!entry) return null
+
+  const fetchResult = await fetchWellKnownSkill(source.baseUrl, entry)
+  const integrity = computeSha256FromFiles(
+    fetchResult.files.map((file) => ({ path: file.path, content: file.content }))
+  )
+  return deriveCommitFromIntegrity(integrity)
 }
 
 async function checkLocalModifications(
@@ -173,7 +237,9 @@ async function handlePatchUpdate(
 
   let baseFiles: Array<{ path: string; content: string }>
   try {
-    const fetchResult = await fetchFiles(lockedResolved)
+    const fetchResult = await fetchFiles(lockedResolved, {
+      expectedIntegrity: lockEntry.integrity,
+    })
     baseFiles = fetchResult.files.map((f) => ({ path: f.path, content: f.content }))
   } catch (error) {
     spinner.warn(
@@ -279,355 +345,438 @@ export function registerUpdateCommand(program: Command): void {
     .command('update [name]')
     .description('Update installed skills to their latest upstream version')
     .option('--dry-run', 'Show what would be updated without making changes')
+    .option('-y, --yes', 'Accept update prompts non-interactively')
     .option('--global', 'Update skills installed at user level (~/.agents/skills/)')
-    .action(async (name: string | undefined, options: { dryRun?: boolean; global?: boolean }) => {
-      const jsonMode = isJSONMode()
-      const projectRoot = process.cwd()
-      const scope = options.global ? 'global' : 'project'
-      const manifest = readManifest(projectRoot, scope)
-      const packages = name ? { [name]: manifest.packages[name] } : manifest.packages
+    .action(
+      async (
+        name: string | undefined,
+        options: { dryRun?: boolean; global?: boolean; yes?: boolean }
+      ) => {
+        const jsonMode = isJSONMode()
+        const projectRoot = process.cwd()
+        const scope = options.global ? 'global' : 'project'
+        const manifest = readManifest(projectRoot, scope)
+        const packages = name ? { [name]: manifest.packages[name] } : manifest.packages
 
-      const packageNames = Object.keys(packages).filter((n) => packages[n])
+        const packageNames = Object.keys(packages).filter((n) => packages[n])
 
-      if (packageNames.length === 0) {
-        if (jsonMode) {
-          outputSuccess<UpdateResult>({ updated: [], skipped: [] })
-          return
-        }
-        console.log(
-          chalk.dim(name ? `Package "${name}" is not installed.` : 'No packages installed.')
-        )
-        return
-      }
-
-      const pinnedNames: string[] = []
-      const updatable = packageNames.filter((n) => {
-        const pkg = packages[n]
-        if (!pkg) return false
-        if (pkg.pinned === true) {
-          pinnedNames.push(n)
-          return false
-        }
-        return pkg.source.type === 'git' && pkg.source.uri !== 'unknown'
-      })
-
-      if (pinnedNames.length > 0 && !jsonMode) {
-        for (const pinnedName of pinnedNames) {
-          console.log(chalk.dim(`Skipping ${pinnedName} (pinned)`))
-        }
-      }
-
-      if (updatable.length === 0) {
-        if (jsonMode) {
-          outputSuccess<UpdateResult>({
-            updated: [],
-            skipped: [
-              ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
-              ...packageNames
-                .filter((n) => !pinnedNames.includes(n))
-                .map((n) => ({ name: n, reason: 'No known Git source' })),
-            ],
-          })
-          return
-        }
-        if (pinnedNames.length === 0) {
-          console.log(
-            chalk.dim(
-              'No packages with known Git sources. Reinstall packages using Git source URLs to enable updates.'
-            )
-          )
-        }
-        return
-      }
-
-      const spinner = createSpinner('Checking for upstream changes...').start()
-
-      try {
-        const updates: UpdateInfo[] = []
-
-        for (const pkgName of updatable) {
-          const pkg = packages[pkgName]!
-          if (pkg.source.type !== 'git') continue
-
-          const { uri, path, ref, commit: currentCommit } = pkg.source
-
-          const cliSource = parseUriToCliSource(uri, path, ref)
-          if (!cliSource) continue
-
-          try {
-            const resolved = await resolveRef(cliSource)
-
-            if (resolved.commitSha !== currentCommit) {
-              const locallyModified = await checkLocalModifications(
-                projectRoot,
-                pkgName,
-                pkg.agents,
-                scope,
-                pkg.packageType,
-                pkg.entryFile
-              )
-
-              updates.push({
-                name: pkgName,
-                currentCommit,
-                latestCommit: resolved.commitSha,
-                ref,
-                sourceUri: uri,
-                sourcePath: path,
-                locallyModified,
-              })
-            }
-          } catch {
-            spinner.warn(`Could not check upstream for ${pkgName}`)
-          }
-        }
-
-        spinner.stop()
-
-        if (updates.length === 0) {
+        if (packageNames.length === 0) {
           if (jsonMode) {
             outputSuccess<UpdateResult>({ updated: [], skipped: [] })
             return
           }
-          console.log(chalk.green('All packages are up to date.'))
+          console.log(
+            chalk.dim(name ? `Package "${name}" is not installed.` : 'No packages installed.')
+          )
           return
         }
 
-        if (!jsonMode) {
-          console.log(chalk.bold(`\nUpstream changes available (${updates.length}):\n`))
-
-          for (const update of updates) {
-            const modifiedIndicator = update.locallyModified
-              ? ` ${chalk.yellow('\u26a0 locally modified')}`
-              : ''
-            console.log(
-              `  ${chalk.green(update.name)}: ${chalk.dim(update.currentCommit.slice(0, 7))} \u2192 ${chalk.cyan(update.latestCommit.slice(0, 7))} ${chalk.dim(`(${update.ref})`)}${modifiedIndicator}`
-            )
+        const pinnedNames: string[] = []
+        const unsupportedNames: string[] = []
+        const updatable = packageNames.filter((n) => {
+          const pkg = packages[n]
+          if (!pkg) return false
+          if (pkg.pinned === true) {
+            pinnedNames.push(n)
+            return false
           }
+          if (pkg.source.type === 'git') {
+            if (pkg.source.uri === 'unknown') {
+              unsupportedNames.push(n)
+              return false
+            }
+            return true
+          }
+          if (pkg.source.type === 'well-known') {
+            return true
+          }
+          unsupportedNames.push(n)
+          return false
+        })
 
-          console.log()
+        if (pinnedNames.length > 0 && !jsonMode) {
+          for (const pinnedName of pinnedNames) {
+            console.log(chalk.dim(`Skipping ${pinnedName} (pinned)`))
+          }
         }
 
-        if (options.dryRun) {
+        if (updatable.length === 0) {
           if (jsonMode) {
             outputSuccess<UpdateResult>({
               updated: [],
-              skipped: updates.map((u) => ({ name: u.name, reason: 'dry-run' })),
+              skipped: [
+                ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
+                ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+              ],
             })
             return
           }
-          console.log(`${chalk.yellow('[dry-run]')} No changes made.`)
+          if (pinnedNames.length === 0) {
+            console.log(chalk.dim('No packages with known update sources.'))
+          }
           return
         }
 
-        if (!jsonMode) {
-          const { confirmed } = await prompts({
-            type: 'confirm',
-            name: 'confirmed',
-            message: `Update ${updates.length} package(s)?`,
-            initial: true,
-          })
+        const spinner = createSpinner('Checking for upstream changes...').start()
 
-          if (!confirmed) {
-            console.log(chalk.dim('Update cancelled.'))
+        try {
+          const updates: UpdateInfo[] = []
+          const resolutionSkips: UpdateResult['skipped'] = []
+          const lockfile = readLockfile(projectRoot, scope)
+
+          for (const pkgName of updatable) {
+            const pkg = packages[pkgName]!
+            try {
+              if (pkg.source.type === 'git') {
+                const installSource = buildInstallSource(
+                  pkg.source.uri,
+                  pkg.source.path,
+                  pkg.source.ref
+                )
+                const supportsPatch = !pkg.source.uri.startsWith('agentver://')
+                const latestCommit = pkg.source.uri.startsWith('agentver://')
+                  ? await resolveLatestPlatformCommit(pkg.source)
+                  : await resolveLatestGitCommit(pkg.source)
+
+                if (!latestCommit) {
+                  resolutionSkips.push({
+                    name: pkgName,
+                    reason: 'Could not resolve upstream source',
+                  })
+                  if (!jsonMode) {
+                    spinner.warn(`Could not check upstream for ${pkgName}`)
+                  }
+                  continue
+                }
+
+                if (latestCommit !== pkg.source.commit) {
+                  const locallyModified = supportsPatch
+                    ? await checkLocalModifications(
+                        projectRoot,
+                        pkgName,
+                        pkg.agents,
+                        scope,
+                        pkg.packageType,
+                        pkg.entryFile
+                      )
+                    : false
+
+                  updates.push({
+                    name: pkgName,
+                    currentCommit: pkg.source.commit,
+                    latestCommit,
+                    ref: pkg.source.ref,
+                    sourceUri: pkg.source.uri,
+                    sourcePath: pkg.source.path,
+                    installSource,
+                    supportsPatch,
+                    locallyModified,
+                  })
+                }
+                continue
+              }
+
+              const lockEntry = lockfile.packages[pkgName]
+              if (!lockEntry?.integrity) {
+                resolutionSkips.push({ name: pkgName, reason: 'No lockfile integrity found' })
+                if (!jsonMode) {
+                  spinner.warn(`Could not check upstream for ${pkgName}`)
+                }
+                continue
+              }
+
+              const latestCommit = await resolveLatestWellKnownCommit(pkg.source)
+              if (!latestCommit) {
+                resolutionSkips.push({
+                  name: pkgName,
+                  reason: 'Could not resolve well-known source',
+                })
+                if (!jsonMode) {
+                  spinner.warn(`Could not check upstream for ${pkgName}`)
+                }
+                continue
+              }
+
+              const currentCommit = deriveCommitFromIntegrity(lockEntry.integrity)
+              if (latestCommit !== currentCommit) {
+                updates.push({
+                  name: pkgName,
+                  currentCommit,
+                  latestCommit,
+                  ref: 'well-known',
+                  sourceUri: pkg.source.baseUrl,
+                  sourcePath: pkg.source.skillName,
+                  installSource: `${pkg.source.baseUrl}/${pkg.source.skillName}`,
+                  supportsPatch: false,
+                  locallyModified: false,
+                })
+              }
+            } catch {
+              resolutionSkips.push({ name: pkgName, reason: 'Could not resolve upstream source' })
+              spinner.warn(`Could not check upstream for ${pkgName}`)
+            }
+          }
+
+          spinner.stop()
+
+          if (updates.length === 0) {
+            if (jsonMode) {
+              outputSuccess<UpdateResult>({
+                updated: [],
+                skipped: [
+                  ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
+                  ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                  ...resolutionSkips,
+                ],
+              })
+              return
+            }
+            console.log(chalk.green('All packages are up to date.'))
             return
           }
-        }
 
-        const jsonUpdated: UpdateResult['updated'] = []
-        const jsonSkipped: UpdateResult['skipped'] = []
-        const results: Array<{ name: string; from: string; to: string; patched?: boolean }> = []
-        const failures: Array<{ name: string; error: string }> = []
-        const skipped: string[] = []
+          if (!jsonMode) {
+            console.log(chalk.bold(`\nUpstream changes available (${updates.length}):\n`))
 
-        for (const update of updates) {
-          const installedPkg = manifest.packages[update.name]
-          const agents = installedPkg?.agents ?? []
-          const installedPath = validateManifestPath(installedPkg?.path)
+            for (const update of updates) {
+              const modifiedIndicator = update.locallyModified
+                ? ` ${chalk.yellow('\u26a0 locally modified')}`
+                : ''
+              console.log(
+                `  ${chalk.green(update.name)}: ${chalk.dim(update.currentCommit.slice(0, 7))} \u2192 ${chalk.cyan(update.latestCommit.slice(0, 7))} ${chalk.dim(`(${update.ref})`)}${modifiedIndicator}`
+              )
+            }
 
-          if (update.locallyModified) {
-            let action: UpdateAction
+            console.log()
+          }
 
+          if (options.dryRun) {
             if (jsonMode) {
-              action = 'replace'
-            } else {
-              action = await promptUpdateAction(update.name)
+              outputSuccess<UpdateResult>({
+                updated: [],
+                skipped: [
+                  ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
+                  ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                  ...resolutionSkips,
+                  ...updates.map((u) => ({ name: u.name, reason: 'dry-run' })),
+                ],
+              })
+              return
             }
+            console.log(`${chalk.yellow('[dry-run]')} No changes made.`)
+            return
+          }
 
-            if (action === 'skip') {
-              skipped.push(update.name)
-              jsonSkipped.push({ name: update.name, reason: 'User skipped (locally modified)' })
-              continue
+          if (!jsonMode && !options.yes) {
+            const { confirmed } = await prompts({
+              type: 'confirm',
+              name: 'confirmed',
+              message: `Update ${updates.length} package(s)?`,
+              initial: true,
+            })
+
+            if (!confirmed) {
+              console.log(chalk.dim('Update cancelled.'))
+              return
             }
+          }
 
-            if (action === 'patch') {
-              const updateSpinner = createSpinner(
-                `Processing patch update for ${update.name}...`
-              ).start()
+          const jsonUpdated: UpdateResult['updated'] = []
+          const jsonSkipped: UpdateResult['skipped'] = []
+          const results: Array<{ name: string; from: string; to: string; patched?: boolean }> = []
+          const failures: Array<{ name: string; error: string }> = []
+          const skipped: string[] = []
 
-              try {
-                const patchResult = await handlePatchUpdate(
-                  update,
-                  projectRoot,
-                  agents,
-                  updateSpinner,
-                  scope,
-                  installedPath,
-                  installedPkg?.packageType,
-                  installedPkg?.entryFile
-                )
+          for (const update of updates) {
+            const installedPkg = manifest.packages[update.name]
+            const agents = installedPkg?.agents ?? []
+            const installedPath = validateManifestPath(installedPkg?.path)
 
-                if (patchResult) {
-                  results.push({
+            if (update.locallyModified) {
+              let action: UpdateAction
+
+              if (jsonMode || options.yes) {
+                action = 'replace'
+              } else {
+                action = await promptUpdateAction(update.name)
+              }
+
+              if (action === 'skip') {
+                skipped.push(update.name)
+                jsonSkipped.push({ name: update.name, reason: 'User skipped (locally modified)' })
+                continue
+              }
+
+              if (action === 'patch' && update.supportsPatch) {
+                const updateSpinner = createSpinner(
+                  `Processing patch update for ${update.name}...`
+                ).start()
+
+                try {
+                  const patchResult = await handlePatchUpdate(
+                    update,
+                    projectRoot,
+                    agents,
+                    updateSpinner,
+                    scope,
+                    installedPath,
+                    installedPkg?.packageType,
+                    installedPkg?.entryFile
+                  )
+
+                  if (patchResult) {
+                    results.push({
+                      name: update.name,
+                      from: update.currentCommit.slice(0, 7),
+                      to: patchResult.commitSha.slice(0, 7),
+                      patched: true,
+                    })
+                    jsonUpdated.push({
+                      name: update.name,
+                      fromRef: update.currentCommit.slice(0, 7),
+                      toRef: patchResult.commitSha.slice(0, 7),
+                      strategy: 'patch',
+                    })
+                    continue
+                  }
+                } catch (error) {
+                  updateSpinner.fail(
+                    `Patch update failed for ${update.name}: ${error instanceof Error ? error.message : String(error)}`
+                  )
+                  failures.push({
                     name: update.name,
-                    from: update.currentCommit.slice(0, 7),
-                    to: patchResult.commitSha.slice(0, 7),
-                    patched: true,
+                    error: error instanceof Error ? error.message : String(error),
                   })
-                  jsonUpdated.push({
+                  jsonSkipped.push({
                     name: update.name,
-                    fromRef: update.currentCommit.slice(0, 7),
-                    toRef: patchResult.commitSha.slice(0, 7),
-                    strategy: 'patch',
+                    reason: `Patch failed: ${error instanceof Error ? error.message : String(error)}`,
                   })
                   continue
                 }
-              } catch (error) {
-                updateSpinner.fail(
-                  `Patch update failed for ${update.name}: ${error instanceof Error ? error.message : String(error)}`
-                )
-                failures.push({
-                  name: update.name,
-                  error: error instanceof Error ? error.message : String(error),
-                })
-                jsonSkipped.push({
-                  name: update.name,
-                  reason: `Patch failed: ${error instanceof Error ? error.message : String(error)}`,
-                })
-                continue
               }
             }
-          }
 
-          const shortName = update.name.split('/').pop()!
-          const pkgType = installedPkg?.packageType
-          const isSingleFileUpdate = pkgType === 'AGENT' || pkgType === 'COMMAND'
+            const shortName = update.name.split('/').pop()!
+            const pkgType = installedPkg?.packageType
+            const isSingleFileUpdate = pkgType === 'AGENT' || pkgType === 'COMMAND'
 
-          let backupDir: string | null = null
-          if (isSingleFileUpdate) {
-            // Single-file packages: back up the parent directory containing the placed file
-            const getPlacement =
-              pkgType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
-            const entryFileName = installedPkg?.entryFile ?? `${shortName}.md`
-            if (agents[0]) {
-              const placement = getPlacement(agents[0] as AgentId, entryFileName, scope)
-              const resolvedPlacement = placement
-                ? resolvePlacementPath(placement, projectRoot, scope)
+            let backupDir: string | null = null
+            if (isSingleFileUpdate) {
+              // Single-file packages: back up the parent directory containing the placed file
+              const getPlacement =
+                pkgType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
+              const entryFileName = installedPkg?.entryFile ?? `${shortName}.md`
+              if (agents[0]) {
+                const placement = getPlacement(agents[0] as AgentId, entryFileName, scope)
+                const resolvedPlacement = placement
+                  ? resolvePlacementPath(placement, projectRoot, scope)
+                  : null
+                backupDir = resolvedPlacement ? dirname(resolvedPlacement) : null
+              }
+            } else {
+              const placementPath = agents[0]
+                ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
                 : null
-              backupDir = resolvedPlacement ? dirname(resolvedPlacement) : null
+              const fallbackDir = placementPath
+                ? resolvePlacementPath(placementPath, projectRoot, scope)
+                : null
+              backupDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
             }
-          } else {
-            const placementPath = agents[0]
-              ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
-              : null
-            const fallbackDir = placementPath
-              ? resolvePlacementPath(placementPath, projectRoot, scope)
-              : null
-            backupDir = resolveReadPath(projectRoot, shortName, agents, scope) ?? fallbackDir
-          }
 
-          let backup: BackupState | null = null
+            let backup: BackupState | null = null
 
-          try {
-            backup = createBackup(update.name, projectRoot, backupDir, scope)
+            try {
+              backup = createBackup(update.name, projectRoot, backupDir, scope)
 
-            const sourceUrl = update.sourcePath
-              ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
-              : `${update.sourceUri}@${update.ref}`
+              const typeOption = isSingleFileUpdate
+                ? { type: pkgType.toLowerCase() as 'agent' | 'command' }
+                : {}
 
-            const typeOption = isSingleFileUpdate
-              ? { type: pkgType.toLowerCase() as 'agent' | 'command' }
-              : {}
+              const result = await installPackage(update.installSource, {
+                ...(agents.length > 0 ? { agent: agents } : {}),
+                ...(scope === 'global' ? { global: true } : {}),
+                ...(installedPath ? { path: installedPath } : {}),
+                ...typeOption,
+              })
 
-            const result = await installPackage(sourceUrl, {
-              ...(agents.length > 0 ? { agent: agents } : {}),
-              ...(scope === 'global' ? { global: true } : {}),
-              ...(installedPath ? { path: installedPath } : {}),
-              ...typeOption,
-            })
+              cleanupBackup(backup)
 
-            cleanupBackup(backup)
-
-            results.push({
-              name: update.name,
-              from: update.currentCommit.slice(0, 7),
-              to: result.commitSha.slice(0, 7),
-            })
-            jsonUpdated.push({
-              name: update.name,
-              fromRef: update.currentCommit.slice(0, 7),
-              toRef: result.commitSha.slice(0, 7),
-              strategy: 'replace',
-            })
-          } catch (error) {
-            if (backup) {
-              try {
-                restoreBackup(backup)
-                cleanupBackup(backup)
-              } catch {
-                // Best-effort restore
+              results.push({
+                name: update.name,
+                from: update.currentCommit.slice(0, 7),
+                to: result.commitSha.slice(0, 7),
+              })
+              jsonUpdated.push({
+                name: update.name,
+                fromRef: update.currentCommit.slice(0, 7),
+                toRef: result.commitSha.slice(0, 7),
+                strategy: 'replace',
+              })
+            } catch (error) {
+              if (backup) {
+                try {
+                  restoreBackup(backup)
+                  cleanupBackup(backup)
+                } catch {
+                  // Best-effort restore
+                }
               }
+
+              failures.push({
+                name: update.name,
+                error: error instanceof Error ? error.message : String(error),
+              })
+              jsonSkipped.push({
+                name: update.name,
+                reason: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+              })
             }
-
-            failures.push({
-              name: update.name,
-              error: error instanceof Error ? error.message : String(error),
-            })
-            jsonSkipped.push({
-              name: update.name,
-              reason: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-            })
           }
-        }
 
-        if (jsonMode) {
-          outputSuccess<UpdateResult>({
-            updated: jsonUpdated,
-            skipped: [...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })), ...jsonSkipped],
-          })
-          return
-        }
+          if (jsonMode) {
+            outputSuccess<UpdateResult>({
+              updated: jsonUpdated,
+              skipped: [
+                ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
+                ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                ...resolutionSkips,
+                ...jsonSkipped,
+              ],
+            })
+            return
+          }
 
-        console.log(chalk.bold('\nUpdate summary:\n'))
+          console.log(chalk.bold('\nUpdate summary:\n'))
 
-        for (const result of results) {
-          const patchNote = result.patched ? chalk.dim(' (patch reapplied)') : ''
-          console.log(
-            `  ${chalk.green('\u2713')} ${result.name}: ${chalk.dim(result.from)} \u2192 ${chalk.cyan(result.to)}${patchNote}`
-          )
-        }
+          for (const result of results) {
+            const patchNote = result.patched ? chalk.dim(' (patch reapplied)') : ''
+            console.log(
+              `  ${chalk.green('\u2713')} ${result.name}: ${chalk.dim(result.from)} \u2192 ${chalk.cyan(result.to)}${patchNote}`
+            )
+          }
 
-        for (const skippedName of skipped) {
-          console.log(`  ${chalk.dim('\u2013')} ${skippedName}: ${chalk.dim('skipped')}`)
-        }
+          for (const skippedName of skipped) {
+            console.log(`  ${chalk.dim('\u2013')} ${skippedName}: ${chalk.dim('skipped')}`)
+          }
 
-        for (const failure of failures) {
-          console.log(`  ${chalk.red('\u2717')} ${failure.name}: ${failure.error}`)
-        }
+          for (const failure of failures) {
+            console.log(`  ${chalk.red('\u2717')} ${failure.name}: ${failure.error}`)
+          }
 
-        if (failures.length > 0) {
-          console.log(chalk.dim('\nFailed packages were rolled back to their previous versions.'))
-        }
+          if (failures.length > 0) {
+            console.log(chalk.dim('\nFailed packages were rolled back to their previous versions.'))
+          }
 
-        console.log()
-      } catch (error) {
-        const { code, message } = extractError(error, 'UPDATE_FAILED')
-        if (jsonMode) {
-          outputError(code, message)
+          console.log()
+        } catch (error) {
+          const { code, message } = extractError(error, 'UPDATE_FAILED')
+          if (jsonMode) {
+            outputError(code, message)
+            process.exit(1)
+          }
+          spinner.fail(`Update check failed: ${message}`)
           process.exit(1)
         }
-        spinner.fail(`Update check failed: ${message}`)
-        process.exit(1)
       }
-    })
+    )
 }

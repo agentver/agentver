@@ -2,164 +2,75 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import chalk from 'chalk'
-import type { Command } from 'commander'
+import type { Command, Option } from 'commander'
 import { isJSONMode, outputError, outputSuccess } from '../output'
 
 type CompletionOptions = {
   install?: boolean
 }
 
-const TOP_LEVEL_COMMANDS: readonly string[] = [
-  'adopt',
-  'agents',
-  'audit',
-  'completion',
-  'config',
-  'diff',
-  'doctor',
-  'draft',
-  'info',
-  'init',
-  'install',
-  'list',
-  'log',
-  'login',
-  'logout',
-  'pin',
-  'publish',
-  'remove',
-  'save',
-  'scan',
-  'search',
-  'status',
-  'suggest',
-  'suggestions',
-  'sync',
-  'unpin',
-  'update',
-  'upgrade',
-  'validate',
-  'verify',
-  'version',
-  'whoami',
-]
-
-const SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
-  draft: ['create', 'list', 'switch', 'publish', 'discard'],
-  version: ['create', 'list'],
-  config: ['list', 'get', 'set', 'unset', 'path'],
-  completion: ['bash', 'zsh', 'fish'],
-}
-
-const COMMON_FLAGS: readonly string[] = ['--json', '--global', '--dry-run', '--help']
-
-function generateBashScript(): string {
-  const subcmdCases = Object.entries(SUBCOMMANDS)
-    .map(
-      ([cmd, subs]) =>
-        `      ${cmd})\n        COMPREPLY=( $(compgen -W "${subs.join(' ')}" -- "$cur") )\n        return 0\n        ;;`
-    )
-    .join('\n')
-
-  return `# agentver bash completion
-_agentver() {
-  local cur prev commands
-  COMPREPLY=()
-  cur="\${COMP_WORDS[COMP_CWORD]}"
-  prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="${TOP_LEVEL_COMMANDS.join(' ')}"
-
-  if [[ "$COMP_CWORD" -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
-    return 0
-  fi
-
-  if [[ "$cur" == -* ]]; then
-    COMPREPLY=( $(compgen -W "${COMMON_FLAGS.join(' ')}" -- "$cur") )
-    return 0
-  fi
-
-  case "$prev" in
-${subcmdCases}
-  esac
-
-  return 0
-}
-
-complete -F _agentver agentver
-`
-}
-
-function generateZshScript(): string {
-  const subcmdCases = Object.entries(SUBCOMMANDS)
-    .map(
-      ([cmd, subs]) =>
-        `    ${cmd})\n      _values 'subcommand' ${subs.map((s) => `'${s}'`).join(' ')}\n      ;;`
-    )
-    .join('\n')
-
-  return `# agentver zsh completion
-_agentver() {
-  local -a commands
-  commands=(
-${TOP_LEVEL_COMMANDS.map((c) => `    '${c}'`).join('\n')}
-  )
-
-  _arguments -C \
-    '--json[Output results as structured JSON]' \
-    '--global[Apply globally]' \
-    '--dry-run[Preview changes without applying]' \
-    '--help[Show help]' \
-    '1:command:->cmd' \
-    '*::arg:->args'
-
-  case "$state" in
-    cmd)
-      _describe 'command' commands
-      ;;
-    args)
-      case "\${words[1]}" in
-${subcmdCases}
-      esac
-      ;;
-  esac
-}
-
-compdef _agentver agentver
-`
-}
-
-function generateFishScript(): string {
-  const topLevelCompletions = TOP_LEVEL_COMMANDS.map(
-    (cmd) => `complete -c agentver -n '__fish_use_subcommand' -a '${cmd}'`
-  ).join('\n')
-
-  const subcmdCompletions = Object.entries(SUBCOMMANDS)
-    .flatMap(([cmd, subs]) =>
-      subs.map((sub) => `complete -c agentver -n '__fish_seen_subcommand_from ${cmd}' -a '${sub}'`)
-    )
-    .join('\n')
-
-  const flagCompletions = [
-    "complete -c agentver -l json -d 'Output results as structured JSON'",
-    "complete -c agentver -l global -d 'Apply globally'",
-    "complete -c agentver -l dry-run -d 'Preview changes without applying'",
-    "complete -c agentver -l help -d 'Show help'",
-  ].join('\n')
-
-  return `# agentver fish completion
-${topLevelCompletions}
-${subcmdCompletions}
-${flagCompletions}
-`
-}
-
 type Shell = 'bash' | 'zsh' | 'fish'
 
-const SHELL_GENERATORS: Record<Shell, () => string> = {
-  bash: generateBashScript,
-  zsh: generateZshScript,
-  fish: generateFishScript,
+type CompletionMetadata = {
+  topLevelCommands: string[]
+  subcommands: Record<string, string[]>
+  commandFlags: Record<string, string[]>
+  nestedCommandFlags: Record<string, string[]>
+}
+
+const FALLBACK_COMPLETION_METADATA: CompletionMetadata = {
+  topLevelCommands: [
+    'adopt',
+    'agents',
+    'audit',
+    'completion',
+    'config',
+    'deprecate',
+    'detect',
+    'diff',
+    'doctor',
+    'draft',
+    'info',
+    'init',
+    'install',
+    'list',
+    'migrate',
+    'log',
+    'login',
+    'logout',
+    'pin',
+    'proposals',
+    'propose',
+    'publish',
+    'remove',
+    'save',
+    'scan',
+    'search',
+    'self-update',
+    'status',
+    'suggest',
+    'suggestions',
+    'sync',
+    'unpin',
+    'unpublish',
+    'update',
+    'upgrade',
+    'validate',
+    'verify',
+    'version',
+    'versions',
+    'whoami',
+  ],
+  subcommands: {
+    completion: ['bash', 'fish', 'zsh'],
+    config: ['get', 'list', 'path', 'set', 'unset'],
+    draft: ['create', 'discard', 'list', 'publish', 'switch'],
+    version: ['create', 'list'],
+  },
+  commandFlags: {
+    completion: ['--help', '--install'],
+  },
+  nestedCommandFlags: {},
 }
 
 const RC_PATHS: Record<Shell, string> = {
@@ -172,6 +83,217 @@ const EVAL_LINES: Record<Shell, string> = {
   bash: 'eval "$(agentver completion bash)"',
   zsh: 'eval "$(agentver completion zsh)"',
   fish: 'agentver completion fish | source',
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort()
+}
+
+function getCommandNames(command: Command): string[] {
+  return uniqueSorted([command.name(), ...command.aliases()])
+}
+
+function getLongFlags(options: readonly Option[]): string[] {
+  return uniqueSorted(
+    options
+      .map((option) => option.long)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  )
+}
+
+function buildCompletionMetadata(program: Command): CompletionMetadata {
+  const rootFlags = getLongFlags(program.options)
+  const topLevelCommands: string[] = []
+  const subcommands: Record<string, string[]> = {}
+  const commandFlags: Record<string, string[]> = {}
+  const nestedCommandFlags: Record<string, string[]> = {}
+
+  for (const command of program.commands) {
+    const names = getCommandNames(command)
+    const ownFlags = uniqueSorted([...rootFlags, ...getLongFlags(command.options)])
+
+    topLevelCommands.push(...names)
+    for (const name of names) {
+      commandFlags[name] = ownFlags
+    }
+
+    if (command.commands.length === 0) {
+      continue
+    }
+
+    const nestedNames = uniqueSorted(
+      command.commands.flatMap((subcommand) => getCommandNames(subcommand))
+    )
+    for (const name of names) {
+      subcommands[name] = nestedNames
+    }
+
+    for (const subcommand of command.commands) {
+      const subcommandNames = getCommandNames(subcommand)
+      const nestedFlags = uniqueSorted([...ownFlags, ...getLongFlags(subcommand.options)])
+
+      for (const name of names) {
+        for (const subcommandName of subcommandNames) {
+          nestedCommandFlags[`${name}:${subcommandName}`] = nestedFlags
+        }
+      }
+    }
+  }
+
+  return {
+    topLevelCommands: uniqueSorted(topLevelCommands),
+    subcommands,
+    commandFlags,
+    nestedCommandFlags,
+  }
+}
+
+function getCompletionMetadata(program: Command): CompletionMetadata {
+  const metadata = buildCompletionMetadata(program)
+  return metadata.topLevelCommands.length > 1 ? metadata : FALLBACK_COMPLETION_METADATA
+}
+
+function renderBashCaseStatements(entries: Record<string, string[]>): string {
+  return Object.entries(entries)
+    .map(([key, values]) => {
+      if (values.length === 0) {
+        return `      ${key})\n        return 0\n        ;;`
+      }
+      return `      ${key})\n        COMPREPLY=( $(compgen -W "${values.join(' ')}" -- "$cur") )\n        return 0\n        ;;`
+    })
+    .join('\n')
+}
+
+function generateBashScript(metadata: CompletionMetadata): string {
+  const subcommandCases = renderBashCaseStatements(metadata.subcommands)
+  const nestedFlagCases = renderBashCaseStatements(metadata.nestedCommandFlags)
+  const flagCases = renderBashCaseStatements(metadata.commandFlags)
+
+  return `# agentver bash completion
+_agentver() {
+  local cur prev command subcommand commands
+  COMPREPLY=()
+  cur="\${COMP_WORDS[COMP_CWORD]}"
+  prev="\${COMP_WORDS[COMP_CWORD-1]}"
+  command="\${COMP_WORDS[1]}"
+  subcommand="\${COMP_WORDS[2]}"
+  commands="${metadata.topLevelCommands.join(' ')}"
+
+  if [[ "$COMP_CWORD" -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    return 0
+  fi
+
+  if [[ "$cur" == -* ]]; then
+    case "$command:$subcommand" in
+${nestedFlagCases}
+    esac
+
+    case "$command" in
+${flagCases}
+    esac
+
+    return 0
+  fi
+
+  case "$prev" in
+${subcommandCases}
+  esac
+
+  return 0
+}
+
+complete -F _agentver agentver
+`
+}
+
+function zshValues(values: string[]): string {
+  return values.map((value) => `'${value}'`).join(' ')
+}
+
+function generateZshScript(metadata: CompletionMetadata): string {
+  const commandCases = Object.entries(metadata.subcommands)
+    .map(
+      ([command, subcommands]) =>
+        `    ${command})\n      _values 'subcommand' ${zshValues(subcommands)}\n      return\n      ;;`
+    )
+    .join('\n')
+
+  const nestedFlagCases = Object.entries(metadata.nestedCommandFlags)
+    .map(
+      ([key, flags]) =>
+        `    ${key})\n      _values 'flag' ${zshValues(flags)}\n      return\n      ;;`
+    )
+    .join('\n')
+
+  const flagCases = Object.entries(metadata.commandFlags)
+    .map(
+      ([command, flags]) =>
+        `    ${command})\n      _values 'flag' ${zshValues(flags)}\n      return\n      ;;`
+    )
+    .join('\n')
+
+  return `# agentver zsh completion
+_agentver() {
+  local curcontext="$curcontext" state line
+
+  _arguments -C \
+    '1:command:(${metadata.topLevelCommands.map((command) => `'${command}'`).join(' ')})' \
+    '2:subcommand:->subcommand' \
+    '*::arg:->args'
+
+  case "$state" in
+    subcommand)
+      case "$words[2]" in
+${commandCases}
+      esac
+      ;;
+    args)
+      if [[ "$words[CURRENT]" == -* ]]; then
+        case "$words[2]:$words[3]" in
+${nestedFlagCases}
+        esac
+
+        case "$words[2]" in
+${flagCases}
+        esac
+      fi
+      ;;
+  esac
+}
+
+compdef _agentver agentver
+`
+}
+
+function generateFishScript(metadata: CompletionMetadata): string {
+  const topLevelCompletions = metadata.topLevelCommands
+    .map((command) => `complete -c agentver -n '__fish_use_subcommand' -a '${command}'`)
+    .join('\n')
+
+  const subcommandCompletions = Object.entries(metadata.subcommands)
+    .flatMap(([command, subcommands]) =>
+      subcommands.map(
+        (subcommand) =>
+          `complete -c agentver -n '__fish_seen_subcommand_from ${command}' -a '${subcommand}'`
+      )
+    )
+    .join('\n')
+
+  const flagCompletions = Object.entries(metadata.commandFlags)
+    .flatMap(([command, flags]) =>
+      flags.map((flag) => {
+        const longFlag = flag.replace(/^--/, '')
+        return `complete -c agentver -n '__fish_seen_subcommand_from ${command}' -l '${longFlag}'`
+      })
+    )
+    .join('\n')
+
+  return `# agentver fish completion
+${topLevelCompletions}
+${subcommandCompletions}
+${flagCompletions}
+`
 }
 
 function installCompletion(shell: Shell): void {
@@ -207,15 +329,23 @@ export function registerCompletionCommand(program: Command): void {
         if (jsonMode) {
           outputError('INVALID_SHELL', `Unsupported shell "${shell}". Supported: bash, zsh, fish`)
           process.exit(1)
+          return
         }
         process.stderr.write(
           chalk.red(`Unsupported shell "${shell}". Supported: bash, zsh, fish\n`)
         )
         process.exit(1)
+        return
       }
 
       const validShell = shell as Shell
-      const script = SHELL_GENERATORS[validShell]()
+      const metadata = getCompletionMetadata(program)
+      const script =
+        validShell === 'bash'
+          ? generateBashScript(metadata)
+          : validShell === 'zsh'
+            ? generateZshScript(metadata)
+            : generateFishScript(metadata)
 
       if (options.install) {
         if (jsonMode) {

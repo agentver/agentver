@@ -1,6 +1,7 @@
 import { prisma } from '@agentver/database'
 import { createLogger } from '@agentver/shared'
 import { NextResponse } from 'next/server'
+import { isValidGitRef } from '@/lib/api/validation'
 import { authenticateRequest } from '@/lib/auth/api-auth'
 import { getGitProvider } from '@/lib/git'
 
@@ -70,9 +71,17 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const name = searchParams.get('name')
+  const requestedRef = searchParams.get('ref') ?? undefined
 
   if (!name) {
     return NextResponse.json({ error: 'Missing required query parameter: name' }, { status: 400 })
+  }
+
+  if (requestedRef && !isValidGitRef(requestedRef)) {
+    return NextResponse.json(
+      { error: 'Invalid ref query parameter. Expected a branch, tag, or 40-character commit SHA.' },
+      { status: 400 }
+    )
   }
 
   const parts = name.split('/').filter(Boolean)
@@ -118,13 +127,13 @@ export async function GET(request: Request) {
 
   const latestVersion = pkg.versions[0]?.version
   const latestGitRef = pkg.versions[0]?.gitRef
-  const gitRef = latestGitRef ?? pkg.gitDefaultRef ?? latestVersion ?? 'main'
+  const gitRef = requestedRef ?? latestGitRef ?? pkg.gitDefaultRef ?? latestVersion ?? 'main'
 
   // For agentver-hosted packages, include file content so the CLI can install directly
   if (pkg.gitUri.startsWith('agentver://')) {
     try {
       const provider = getGitProvider()
-      const fileEntries = await provider.listSkillFiles(orgSlug, pkg.name)
+      const fileEntries = await provider.listSkillFiles(orgSlug, pkg.name, gitRef)
       if (fileEntries.length === 0) {
         logger.warn('Platform-hosted skill has no files', { org: orgSlug, package: pkg.name })
         return NextResponse.json(
@@ -140,7 +149,7 @@ export async function GET(request: Request) {
         fileEntries
           .filter((e) => e.type === 'file')
           .map(async (entry) => {
-            const content = await provider.getSkillFile(orgSlug, pkg.name, entry.path)
+            const content = await provider.getSkillFile(orgSlug, pkg.name, entry.path, gitRef)
             return { path: entry.path, content: content ?? '' }
           })
       )

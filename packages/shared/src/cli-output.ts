@@ -134,22 +134,72 @@ export const updateResultSchema = z.object({
 
 export type UpdateResult = z.infer<typeof updateResultSchema>
 
+const scopeSchema = z.enum(['project', 'global'])
+
+export const listPackageEntrySchema = z.object({
+  name: z.string(),
+  scope: scopeSchema,
+  package: manifestV2PackageSchema,
+})
+
+export type ListPackageEntry = z.infer<typeof listPackageEntrySchema>
+
 export const listResultSchema = z.object({
-  packages: z.record(z.string(), manifestV2PackageSchema),
+  packages: z.array(listPackageEntrySchema),
 })
 
 export type ListResult = z.infer<typeof listResultSchema>
 
-export const searchResultSchema = z.object({
-  results: z.array(
+export const platformSearchResultSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string().nullable(),
+  type: z.string(),
+  tags: z.array(z.string()),
+  compatibilityAgents: z.array(z.string()),
+  starCount: z.number(),
+  installCount: z.number(),
+  organisation: z.object({
+    slug: z.string(),
+    name: z.string(),
+  }),
+  categories: z.array(
     z.object({
+      id: z.string(),
       name: z.string(),
-      description: z.string(),
-      type: z.string(),
-      source: z.string(),
-      url: z.string().optional(),
+      slug: z.string(),
+      icon: z.string().nullable(),
     })
   ),
+})
+
+export type PlatformSearchResult = z.infer<typeof platformSearchResultSchema>
+
+export const communitySearchResultSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  installCount: z.number(),
+  source: z.string(),
+  url: z.string().optional(),
+})
+
+export type CommunitySearchResult = z.infer<typeof communitySearchResultSchema>
+
+export const wellKnownSearchResultSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  url: z.string(),
+})
+
+export type WellKnownSearchResult = z.infer<typeof wellKnownSearchResultSchema>
+
+export const searchResultSchema = z.object({
+  platform: z.array(platformSearchResultSchema),
+  community: z.array(communitySearchResultSchema),
+  wellKnown: z.array(wellKnownSearchResultSchema),
+  total: z.number(),
 })
 
 export type SearchResult = z.infer<typeof searchResultSchema>
@@ -247,6 +297,36 @@ export const proposalsResultSchema = z.object({
 
 export type ProposalsResult = z.infer<typeof proposalsResultSchema>
 
+export const agentsResultSchema = z.object({
+  agents: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      configPath: z.string(),
+    })
+  ),
+  scope: scopeSchema,
+})
+
+export type AgentsResult = z.infer<typeof agentsResultSchema>
+
+export const logResultSchema = z.object({
+  commits: z.array(
+    z.object({
+      sha: z.string(),
+      message: z.string(),
+      author: z.object({
+        name: z.string(),
+        email: z.string(),
+        date: z.string(),
+      }),
+      createdAt: z.string(),
+    })
+  ),
+})
+
+export type LogResult = z.infer<typeof logResultSchema>
+
 export const syncResultSchema = z.object({
   synced: z.number(),
   machineId: z.string(),
@@ -301,6 +381,9 @@ export const infoResultSchema = z.object({
     count: z.number(),
     totalSize: z.number(),
   }),
+  pinned: z.boolean(),
+  packageType: z.string().optional(),
+  bundle: z.string().optional(),
   skill: z
     .object({
       title: z.string(),
@@ -310,6 +393,60 @@ export const infoResultSchema = z.object({
 })
 
 export type InfoResult = z.infer<typeof infoResultSchema>
+
+export const versionCreateResultSchema = z.object({
+  skill: z.string(),
+  version: z.string(),
+  tag: z.string(),
+  commitSha: z.string(),
+})
+
+export type VersionCreateResult = z.infer<typeof versionCreateResultSchema>
+
+export const versionListEntrySchema = z.object({
+  name: z.string(),
+  tag: z.string(),
+  commitSha: z.string(),
+  message: z.string(),
+})
+
+export type VersionListEntry = z.infer<typeof versionListEntrySchema>
+
+export const versionListResultSchema = z.object({
+  versions: z.array(versionListEntrySchema),
+})
+
+export type VersionListResult = z.infer<typeof versionListResultSchema>
+
+export const deprecateResultSchema = z.object({
+  skill: z.string(),
+  target: z.enum(['package', 'version']),
+  version: z.string().optional(),
+  status: z.literal('DEPRECATED'),
+  message: z.string().optional(),
+})
+
+export type DeprecateResult = z.infer<typeof deprecateResultSchema>
+
+export const unpublishResultSchema = z.object({
+  skill: z.string(),
+  version: z.string(),
+  status: z.literal('YANKED'),
+})
+
+export type UnpublishResult = z.infer<typeof unpublishResultSchema>
+
+export const upgradeResultSchema = z.object({
+  current: z.string().optional(),
+  previous: z.string(),
+  latest: z.string(),
+  packageManager: z.enum(['bun', 'npm', 'pnpm', 'yarn']).optional(),
+  upToDate: z.boolean(),
+  checkedOnly: z.boolean(),
+  targetVersion: z.string().optional(),
+})
+
+export type UpgradeResult = z.infer<typeof upgradeResultSchema>
 
 export const doctorCheckSchema = z.object({
   name: z.string(),

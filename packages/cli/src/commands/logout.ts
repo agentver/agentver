@@ -4,7 +4,7 @@ import type { Command } from 'commander'
 import prompts from 'prompts'
 import { isJSONMode, outputError, outputSuccess } from '../output.js'
 import { clearCredentials, isAuthenticated } from '../registry/auth.js'
-import { getPlatformUrl, readConfig, writeConfig } from '../registry/config.js'
+import { getPlatformUrl } from '../registry/config.js'
 
 export function registerLogoutCommand(program: Command): void {
   program
@@ -46,12 +46,6 @@ export function registerLogoutCommand(program: Command): void {
       }
 
       clearCredentials()
-
-      if (platformUrl) {
-        const config = readConfig()
-        delete config.platformUrl
-        writeConfig(config)
-      }
 
       if (jsonMode) {
         outputSuccess<LogoutResult>({ cleared: true })

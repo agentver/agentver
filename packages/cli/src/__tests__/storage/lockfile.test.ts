@@ -171,6 +171,53 @@ describe('storage/lockfile', () => {
     })
   })
 
+  describe('updateLockfile', () => {
+    it('updates the current lockfile and returns the written value', () => {
+      const existingLockfile = {
+        version: 2 as const,
+        packages: {
+          existing: {
+            source: {
+              type: 'git' as const,
+              uri: 'github.com/org/repo',
+              path: '',
+              ref: 'main',
+              commit: 'abc1234567890abcdef1234567890abcdef123456',
+            },
+            integrity: 'sha256-existing',
+            agents: ['claude-code'],
+          },
+        },
+      }
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existingLockfile))
+
+      const result = lockfileModule.updateLockfile('/project', 'project', (lockfile) => ({
+        ...lockfile,
+        packages: {
+          ...lockfile.packages,
+          added: {
+            source: {
+              type: 'git',
+              uri: 'github.com/org/repo',
+              path: 'skills/added',
+              ref: 'main',
+              commit: 'def1234567890abcdef1234567890abcdef123456',
+            },
+            integrity: 'sha256-added',
+            agents: ['cursor'],
+          },
+        },
+      }))
+
+      expect(result.packages.added).toBeDefined()
+
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      expect(JSON.parse(written)).toEqual(result)
+    })
+  })
+
   describe('scope-aware paths', () => {
     it('writes to project .agentver/ when scope is project', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false)

@@ -3,6 +3,13 @@ import { useProject } from '../context/ProjectContext'
 import { useSearchSkills } from './useCLI'
 
 type TypeFilter = 'all' | 'skill' | 'config' | 'plugin' | 'script' | 'prompt'
+type BrowserSearchResult = {
+  name: string
+  description: string
+  type: string
+  source: string
+  url?: string
+}
 
 export function useSearch() {
   const { activeProject } = useProject()
@@ -38,7 +45,31 @@ export function useSearch() {
     }
   }, [])
 
-  const filteredResults = data?.results ?? []
+  const filteredResults: BrowserSearchResult[] = data
+    ? [
+        ...data.platform.map((result) => ({
+          name: `${result.organisation.slug}/${result.slug}`,
+          description: result.description ?? '',
+          type: result.type,
+          source: 'platform',
+          url: `agentver://${result.organisation.slug}/skills/${result.slug}`,
+        })),
+        ...data.community.map((result) => ({
+          name: result.name,
+          description: result.description ?? '',
+          type: 'SKILL',
+          source: 'community',
+          url: `github.com/${result.source}/${result.name}`,
+        })),
+        ...data.wellKnown.map((result) => ({
+          name: result.name,
+          description: result.description,
+          type: 'SKILL',
+          source: 'well-known',
+          url: result.url,
+        })),
+      ]
+    : []
 
   return {
     query,

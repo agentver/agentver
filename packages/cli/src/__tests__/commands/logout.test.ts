@@ -87,10 +87,10 @@ describe('logout command', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 1. Happy path — clears credentials and platform URL
+  // 1. Happy path — clears credentials and preserves platform URL
   // -------------------------------------------------------------------------
 
-  it('clears credentials and platform URL when logged in', async () => {
+  it('clears credentials and preserves platform URL when logged in', async () => {
     vi.mocked(isAuthenticated).mockResolvedValue(true)
     vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
     vi.mocked(readConfig).mockReturnValue({
@@ -102,9 +102,7 @@ describe('logout command', () => {
     await program.parseAsync(['node', 'agentver', 'logout'])
 
     expect(clearCredentials).toHaveBeenCalled()
-    expect(writeConfig).toHaveBeenCalledWith(
-      expect.not.objectContaining({ platformUrl: expect.anything() })
-    )
+    expect(writeConfig).not.toHaveBeenCalled()
   })
 
   it('shows success message including the disconnected URL', async () => {

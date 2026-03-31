@@ -12,6 +12,18 @@ export type PlatformRequestOptions = {
   timeout?: number
 }
 
+export type PlatformSilentRequestOptions = PlatformRequestOptions & {
+  rethrowAuthErrors?: boolean
+}
+
+export type PlatformResolveResponse = {
+  gitUri: string
+  gitPath?: string
+  gitRef?: string
+  source?: 'git' | 'platform'
+  files?: Array<{ path: string; content: string }>
+}
+
 export async function platformFetch<T>(
   path: string,
   options: PlatformRequestOptions = {}
@@ -60,11 +72,18 @@ export async function platformFetch<T>(
 
 export async function platformFetchSilent<T>(
   path: string,
-  options: PlatformRequestOptions = {}
+  options: PlatformSilentRequestOptions = {}
 ): Promise<T | null> {
   try {
     return await platformFetch<T>(path, options)
-  } catch {
+  } catch (error) {
+    if (
+      options.rethrowAuthErrors === true &&
+      error instanceof AgentverError &&
+      error.code === 'UNAUTHORISED'
+    ) {
+      throw error
+    }
     return null
   }
 }

@@ -175,6 +175,17 @@ describe('login command', () => {
     expect(saveCredentials).toHaveBeenCalledWith({ apiKey: 'sk-test-key' })
   })
 
+  it('rejects empty token values', async () => {
+    const stderrWriteSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const program = buildProgram()
+    await expect(
+      program.parseAsync(['node', 'agentver', 'login', '--token', '   '])
+    ).rejects.toThrow('process.exit called')
+    expect(saveCredentials).not.toHaveBeenCalled()
+    expect(stderrWriteSpy).toHaveBeenCalledWith('Token must not be empty.\n')
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
   // isJSONMode() reads process.argv directly — do NOT pass --json to parseAsync
   // as the login command does not register it as a commander option
   it('outputs valid JSON matching loginResultSchema when --token is used in JSON mode', async () => {

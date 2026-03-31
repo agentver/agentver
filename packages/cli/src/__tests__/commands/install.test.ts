@@ -1,6 +1,7 @@
 import { AgentverError, createCLIOutputSchema, installResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FetchedFile, FetchResult, ResolvedRef } from '../../git/types'
+import { ExitError } from '../helpers/exit-error'
 import {
   createAuditScanResult,
   createFetchedFiles,
@@ -31,17 +32,27 @@ vi.mock('../../storage/lockfile', () => ({
   writeLockfile: vi.fn(),
 }))
 
+vi.mock('../../storage/pair', () => ({
+  updateManifestAndLockfile: vi.fn(),
+}))
+
 vi.mock('../../storage/canonical', () => ({
   getCanonicalSkillPath: vi.fn(),
   createAgentSymlinks: vi.fn(),
+  findAgentSkillPlacementConflicts: vi.fn().mockReturnValue([]),
   isSymlinkedInstall: vi.fn(),
   removeAgentSymlinks: vi.fn(),
   removeCanonicalDirectory: vi.fn(),
 }))
 
-vi.mock('../../storage/integrity', () => ({
-  computeSha256FromFiles: vi.fn(),
-}))
+vi.mock('../../storage/integrity', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../storage/integrity')>('../../storage/integrity')
+  return {
+    ...actual,
+    computeSha256FromFiles: vi.fn(),
+  }
+})
 
 vi.mock('../../security/index.js', () => ({
   scanFiles: vi.fn(),
@@ -91,14 +102,18 @@ vi.mock('@agentver/agent-definitions', () => ({
 }))
 
 vi.mock('node:fs', () => ({
+  cpSync: vi.fn(),
   existsSync: vi.fn().mockReturnValue(false),
   mkdirSync: vi.fn(),
+  mkdtempSync: vi.fn().mockReturnValue('/tmp/agentver-test-backup'),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),
+  rmSync: vi.fn(),
 }))
 
 vi.mock('node:os', () => ({
   homedir: vi.fn().mockReturnValue('/mock-home'),
+  tmpdir: vi.fn().mockReturnValue('/tmp'),
 }))
 
 vi.mock('prompts', () => ({ default: vi.fn() }))
@@ -134,6 +149,7 @@ import * as canonicalModule from '../../storage/canonical'
 import * as integrityModule from '../../storage/integrity'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
+import * as pairModule from '../../storage/pair'
 import * as wellknownModule from '../../wellknown/index.js'
 
 // ---------------------------------------------------------------------------
@@ -145,15 +161,6 @@ const DERIVED_NAME = 'test-skill'
 const TEST_SOURCE = 'github.com/test-org/test-repo/skills/test-skill@main'
 const RESOLVED_SHA = 'abc1234567890abcdef1234567890abcdef1234567'
 const INTEGRITY_HASH = 'sha256-testIntegrityHash123'
-
-/** Sentinel error thrown by our process.exit mock to halt execution */
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
-}
 
 function setupHappyPathMocks() {
   const gitSource = createGitSource()
@@ -211,6 +218,18 @@ describe('commands/install', () => {
     )
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
     vi.mocked(wellknownModule.looksLikeWellKnownUrl).mockReturnValue(false)
+    vi.mocked(canonicalModule.findAgentSkillPlacementConflicts).mockReturnValue([])
+    vi.mocked(promptsDefault).mockResolvedValue({ proceed: true })
+    vi.mocked(pairModule.updateManifestAndLockfile).mockImplementation(
+      (projectRoot, scope, updater) => {
+        const manifest = structuredClone(manifestModule.readManifest(projectRoot, scope))
+        const lockfile = structuredClone(lockfileModule.readLockfile(projectRoot, scope))
+        const updated = updater(manifest, lockfile)
+        manifestModule.writeManifest(projectRoot, updated.manifest, scope)
+        lockfileModule.writeLockfile(projectRoot, updated.lockfile, scope)
+        return updated
+      }
+    )
   })
 
   afterEach(() => {
@@ -1762,6 +1781,105 @@ describe('commands/install', () => {
       const writeCalls = vi.mocked(nodeFs.writeFileSync).mock.calls
       const writtenPaths = writeCalls.map((c) => String(c[0]))
       expect(writtenPaths.some((p) => p.includes('.ssh/config'))).toBe(false)
+    })
+
+    it('requires confirmation before overwriting an unmanaged config file', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: '# My Config\n\nRules for the agent.\n',
+        },
+      ])
+      vi.mocked(nodeFs.existsSync).mockImplementation((path) => String(path).endsWith('CLAUDE.md'))
+      vi.mocked(nodeFs.readFileSync).mockReturnValue('# Hand written config\n')
+      vi.mocked(agentDefs.isComposedConfig).mockReturnValue(false)
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toMatchObject({
+        code: 'CONFIRMATION_REQUIRED',
+      })
+
+      expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
+    })
+
+    it('backs up and overwrites an unmanaged config file when --yes is passed', async () => {
+      setupHappyPathMocks()
+      const configFiles = createAgentConfigFiles()
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: configFiles,
+        commitSha: RESOLVED_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(agentDefs.translateConfig).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          filePath: 'CLAUDE.md',
+          content: '# My Config\n\nRules for the agent.\n',
+        },
+      ])
+      vi.mocked(nodeFs.existsSync).mockImplementation((path) => String(path).endsWith('CLAUDE.md'))
+      vi.mocked(nodeFs.readFileSync).mockReturnValue('# Hand written config\n')
+      vi.mocked(agentDefs.isComposedConfig).mockReturnValue(false)
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', yes: true })
+
+      expect(nodeFs.cpSync).toHaveBeenCalled()
+      expect(nodeFs.writeFileSync).toHaveBeenCalled()
+      expect(promptsDefault).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('unmanaged skill path conflicts', () => {
+    it('requires confirmation before replacing an unmanaged skill directory', async () => {
+      setupHappyPathMocks()
+      vi.mocked(canonicalModule.findAgentSkillPlacementConflicts).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          path: '/project/.claude/skills/test-skill',
+          kind: 'directory',
+        },
+      ])
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      await expect(installPackage(TEST_SOURCE, { agent: 'claude-code' })).rejects.toMatchObject({
+        code: 'CONFIRMATION_REQUIRED',
+      })
+
+      expect(nodeFs.writeFileSync).not.toHaveBeenCalled()
+      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
+    })
+
+    it('backs up and replaces an unmanaged skill directory when --yes is passed', async () => {
+      setupHappyPathMocks()
+      vi.mocked(canonicalModule.findAgentSkillPlacementConflicts).mockReturnValue([
+        {
+          agentId: 'claude-code',
+          path: '/project/.claude/skills/test-skill',
+          kind: 'directory',
+        },
+      ])
+      vi.mocked(nodeFs.existsSync).mockImplementation(
+        (path) =>
+          String(path) === '/project/.claude/skills/test-skill' ||
+          String(path) === '/project/.agents/skills/test-skill'
+      )
+
+      await installPackage(TEST_SOURCE, { agent: 'claude-code', yes: true })
+
+      expect(nodeFs.cpSync).toHaveBeenCalled()
+      expect(nodeFs.rmSync).toHaveBeenCalledWith('/project/.claude/skills/test-skill', {
+        force: true,
+        recursive: true,
+      })
+      expect(canonicalModule.createAgentSymlinks).toHaveBeenCalled()
     })
   })
 

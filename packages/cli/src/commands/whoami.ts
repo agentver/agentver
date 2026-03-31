@@ -1,10 +1,11 @@
 import type { WhoamiResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { isJSONMode, outputSuccess } from '../output.js'
+import { isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
 import { platformFetchSilent } from '../registry/platform.js'
+import { extractError } from '../utils.js'
 
 type MeResponse = {
   id: string
@@ -17,11 +18,13 @@ export function registerWhoamiCommand(program: Command): void {
   program
     .command('whoami')
     .description('Show authentication state')
-    .action(async () => {
+    .option('--json', 'Output as JSON')
+    .action(async (options: { json?: boolean }) => {
+      const jsonMode = isJSONMode() || options.json === true
       const credentials = await getCredentials()
 
       if (!credentials?.token && !credentials?.apiKey) {
-        if (isJSONMode()) {
+        if (jsonMode) {
           outputSuccess<WhoamiResult>({ authenticated: false })
           return
         }
@@ -29,19 +32,19 @@ export function registerWhoamiCommand(program: Command): void {
         return
       }
 
-      if (!isJSONMode()) {
-        if (credentials.apiKey) {
-          const prefix = credentials.apiKey.slice(0, 8)
-          console.log(`Authenticated via API key: ${chalk.green(`${prefix}...`)}`)
-        } else {
-          console.log(chalk.green('Authenticated via OAuth.'))
-        }
-      }
-
       const platformUrl = getPlatformUrl()
 
       if (!platformUrl) {
-        if (isJSONMode()) {
+        if (!jsonMode) {
+          if (credentials.apiKey) {
+            const prefix = credentials.apiKey.slice(0, 8)
+            console.log(`Authenticated via API key: ${chalk.green(`${prefix}...`)}`)
+          } else {
+            console.log(chalk.green('Authenticated via OAuth.'))
+          }
+        }
+
+        if (jsonMode) {
           outputSuccess<WhoamiResult>({ authenticated: true })
           return
         }
@@ -49,13 +52,37 @@ export function registerWhoamiCommand(program: Command): void {
         return
       }
 
-      if (!isJSONMode()) {
+      let me: MeResponse | null = null
+      let warning: string | undefined
+
+      try {
+        me = await platformFetchSilent<MeResponse>('/me', { rethrowAuthErrors: true })
+      } catch (error) {
+        const { code, message } = extractError(error, 'WHOAMI_FAILED')
+        if (code === 'UNAUTHORISED' || message.startsWith('Authentication expired')) {
+          if (jsonMode) {
+            outputError('UNAUTHORISED', message)
+          } else {
+            console.log(chalk.red(message))
+          }
+          process.exitCode = 1
+          return
+        }
+
+        warning = 'Could not verify identity against the platform.'
+      }
+
+      if (!jsonMode) {
+        if (credentials.apiKey) {
+          const prefix = credentials.apiKey.slice(0, 8)
+          console.log(`Authenticated via API key: ${chalk.green(`${prefix}...`)}`)
+        } else {
+          console.log(chalk.green('Authenticated via OAuth.'))
+        }
         console.log(`Platform: ${chalk.cyan(platformUrl)}`)
       }
 
-      const me = await platformFetchSilent<MeResponse>('/me')
-
-      if (isJSONMode()) {
+      if (jsonMode) {
         const result: WhoamiResult = {
           authenticated: true,
           platform: platformUrl,
@@ -66,11 +93,16 @@ export function registerWhoamiCommand(program: Command): void {
             result.organisation = me.organisations.map((o) => o.slug).join(', ')
           }
         }
-        outputSuccess(result)
+        outputSuccess(result, warning ? [warning] : undefined)
         return
       }
 
-      if (!me) return
+      if (!me) {
+        if (warning) {
+          console.log(chalk.yellow(warning))
+        }
+        return
+      }
 
       console.log(`User: ${me.email}`)
 

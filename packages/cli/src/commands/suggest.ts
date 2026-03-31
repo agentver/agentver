@@ -1,19 +1,15 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import type { ManifestV2Package, ProposeResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { readFilesFromDirectory } from '../git/fetcher.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
+import { platformFetch } from '../registry/platform.js'
+import { readInstalledPackageFiles } from '../storage/installed-package-files.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
 import { extractError } from '../utils.js'
-
-const HTTP_TIMEOUT_MS = 15_000
 
 type SuggestionFile = {
   path: string
@@ -39,75 +35,6 @@ type SuggestionOutcome = {
   error?: string
 }
 
-async function readLocalFiles(
-  projectRoot: string,
-  packageName: string,
-  agents: string[]
-): Promise<SuggestionFile[]> {
-  for (const agentId of agents) {
-    const placementPath = getSkillPlacementPath(agentId as AgentId, packageName, 'project')
-    if (!placementPath) continue
-
-    const fullPath = join(projectRoot, placementPath)
-    if (!existsSync(fullPath)) continue
-
-    const files = await readFilesFromDirectory(fullPath)
-    return files.map((f) => ({ path: f.path, content: f.content }))
-  }
-
-  return []
-}
-
-async function postToPlatform<T>(path: string, body: unknown): Promise<T> {
-  const platformUrl = getPlatformUrl()
-  if (!platformUrl) {
-    throw new Error('Not connected to a platform. Run `agentver login <url>` first.')
-  }
-
-  const creds = await getCredentials()
-  if (!creds?.token && !creds?.apiKey) {
-    throw new Error('Not connected to a platform. Run `agentver login <url>` first.')
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'User-Agent': 'agentver-cli',
-  }
-
-  if (creds.token) {
-    headers.Authorization = `Bearer ${creds.token}`
-  } else if (creds.apiKey) {
-    headers['X-API-Key'] = creds.apiKey
-  }
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
-
-  try {
-    const url = `${platformUrl}/api/v1${path}`
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => 'Unknown error')
-      throw new Error(`Platform returned ${response.status}: ${errorBody}`)
-    }
-
-    return (await response.json()) as T
-  } catch (error) {
-    clearTimeout(timeoutId)
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Platform request timed out')
-    }
-    throw error
-  }
-}
-
 function buildEndpoint(manifestEntry: ManifestV2Package, packageName: string): string {
   if (manifestEntry.source.type !== 'git') return ''
   const orgSlug = manifestEntry.source.uri.split('/')[1] ?? ''
@@ -121,7 +48,7 @@ async function submitSuggestion(
   title: string,
   description?: string
 ): Promise<{ localFiles: SuggestionFile[]; result: SuggestionResponse }> {
-  const localFiles = await readLocalFiles(projectRoot, packageName, manifestEntry.agents)
+  const localFiles = await readInstalledPackageFiles(projectRoot, packageName, manifestEntry.agents)
 
   if (localFiles.length === 0) {
     throw new Error(`No local files found for "${packageName}".`)
@@ -135,7 +62,10 @@ async function submitSuggestion(
     files: localFiles,
   }
 
-  const result = await postToPlatform<SuggestionResponse>(endpoint, requestBody)
+  const result = await platformFetch<SuggestionResponse>(endpoint, {
+    method: 'POST',
+    body: requestBody,
+  })
   return { localFiles, result }
 }
 
@@ -176,7 +106,7 @@ export function registerSuggestCommand(program: Command): void {
           if (!lockfileEntry) continue
 
           const { agents } = manifestEntry
-          const localFiles = await readLocalFiles(projectRoot, name, agents)
+          const localFiles = await readInstalledPackageFiles(projectRoot, name, agents)
           if (localFiles.length === 0) continue
 
           const currentIntegrity = computeSha256FromFiles(localFiles)
@@ -245,8 +175,12 @@ export function registerSuggestCommand(program: Command): void {
 
           for (const targetName of validTargets) {
             const manifestEntry = manifest.packages[targetName]!
-            const localFiles = await readLocalFiles(projectRoot, targetName, manifestEntry.agents)
-            const endpoint = `/api/v1${buildEndpoint(manifestEntry, targetName)}`
+            const localFiles = await readInstalledPackageFiles(
+              projectRoot,
+              targetName,
+              manifestEntry.agents
+            )
+            const endpoint = buildEndpoint(manifestEntry, targetName)
 
             dryRunResults.push({
               package: targetName,

@@ -3,6 +3,7 @@ import { type Prisma, prisma } from '@agentver/database'
 import { createLogger } from '@agentver/shared'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { semverSchema } from '@/lib/api/validation'
 import { authenticateRequest } from '@/lib/auth/api-auth'
 import { getGitProvider } from '@/lib/git'
 
@@ -59,7 +60,7 @@ export async function GET(
 
 /** Original platform publish schema — includes full content. */
 const publishVersionSchema = z.object({
-  version: z.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'Must be valid semver'),
+  version: semverSchema,
   changelog: z.string().max(5000).optional(),
   content: z.string().min(1, 'Content is required').max(5_242_880, 'Content must be under 5MB'),
   fileManifest: z.record(z.string(), z.unknown()).default({}),
@@ -67,7 +68,7 @@ const publishVersionSchema = z.object({
 
 /** CLI tag-based version schema — references an existing commit. */
 const cliVersionSchema = z.object({
-  version: z.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'Must be valid semver'),
+  version: semverSchema,
   notes: z.string().max(5000).optional(),
   commitSha: z.string().min(1, 'Commit SHA is required'),
 })

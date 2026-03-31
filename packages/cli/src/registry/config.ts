@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ScanSeverity } from '../security/types.js'
@@ -45,7 +45,13 @@ export function readConfig(): AgentverConfig {
 
 export function writeConfig(config: AgentverConfig): void {
   if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true })
+    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 })
+  }
+
+  try {
+    chmodSync(CONFIG_DIR, 0o700)
+  } catch (error) {
+    logger.debug(`Could not update permissions for ${CONFIG_DIR}: ${String(error)}`)
   }
 
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 })

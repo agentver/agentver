@@ -64,6 +64,16 @@ describe('SCAN_RULES', () => {
       testPattern('DC007', 'system("ls")', true)
       testPattern('DC007', 'the system is running', false)
     })
+
+    it('DC016 matches os.system()', () => {
+      testPattern('DC016', 'os.system("rm -rf /tmp")', true)
+      testPattern('DC016', 'system("ls")', false)
+    })
+
+    it('DC017 matches subprocess.run()', () => {
+      testPattern('DC017', 'subprocess.run(["rm", "-rf", "/tmp"])', true)
+      testPattern('DC017', 'subprocess_runner()', false)
+    })
   })
 
   describe('DATA_EXFILTRATION', () => {
@@ -212,6 +222,21 @@ describe('SCAN_RULES', () => {
       testPattern('CE006', '"private_key": "-----BEGIN RSA PRIVATE KEY-----\\n..."', true)
       testPattern('CE006', "'private_key': '-----BEGIN PRIVATE KEY-----'", true)
       testPattern('CE006', '"private_key": "not-a-key"', false)
+    })
+
+    it('CE013 matches Anthropic API keys', () => {
+      testPattern('CE013', 'sk-ant-abcdefghijklmnopqrstuvwxyz123456', true)
+      testPattern('CE013', 'sk-ant-short', false)
+    })
+
+    it('CE014 matches GitLab PATs', () => {
+      testPattern('CE014', 'glpat-abcdefghijklmnopqrstuvwxyz123456', true)
+      testPattern('CE014', 'glpat-short', false)
+    })
+
+    it('CE015 matches npm tokens', () => {
+      testPattern('CE015', 'npm_abcdefghijklmnopqrstuvwxyz123456', true)
+      testPattern('CE015', 'npm_short', false)
     })
   })
 
@@ -443,6 +468,10 @@ describe('SCAN_RULES', () => {
       testPattern('UO004', 'clean text', false)
     })
 
+    it('UO005 matches variation selectors in the BMP range', () => {
+      testPattern('UO005', 'text\uFE00here', true)
+    })
+
     it('UO006 matches Unicode line separator (U+2028)', () => {
       testPattern('UO006', 'line\u2028separator', true)
     })
@@ -515,6 +544,19 @@ describe('SCAN_RULES', () => {
       testPattern('DC015', 'myFunction(arg)', false)
       testPattern('DC015', 'createFunction(params)', false)
       testPattern('DC015', 'asyncFunction(callback)', false)
+    })
+  })
+
+  describe('PATH_TRAVERSAL', () => {
+    it('PT001 matches traversal segments', () => {
+      testPattern('PT001', '../secrets.txt', true)
+      testPattern('PT001', '..\\\\secrets.txt', true)
+      testPattern('PT001', './safe/path', false)
+    })
+
+    it('PT002 matches path.join traversal usage', () => {
+      testPattern('PT002', 'path.join(baseDir, "../secrets.txt")', true)
+      testPattern('PT002', 'path.join(baseDir, "safe.txt")', false)
     })
   })
 })

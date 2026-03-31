@@ -1,74 +1,15 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import type { LogResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
-import { readManifest } from '../storage/manifest.js'
+import { resolveCurrentSkillIdentity } from './skill-context.js'
 
-type CommitEntry = {
-  sha: string
-  message: string
-  author: { name: string; email: string; date: string }
-  createdAt: string
-}
+type CommitEntry = LogResult['commits'][number]
 
 type LogOptions = {
   limit?: string
   json?: boolean
-}
-
-/**
- * Resolve the skill identity from a name argument or the current directory.
- */
-function resolveSkillIdentity(nameArg?: string): { org: string; name: string } | null {
-  const cwd = process.cwd()
-  const manifest = readManifest(cwd)
-
-  // If a name was provided, look it up in the manifest
-  if (nameArg) {
-    const entry = manifest.packages[nameArg]
-    if (entry?.source.type === 'git') {
-      const parts = entry.source.uri.split('/')
-      const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
-      if (org) {
-        return { org, name: nameArg }
-      }
-    }
-    return null
-  }
-
-  // No name provided — detect from current directory
-  const skillMdPath = join(cwd, 'SKILL.md')
-  let skillName: string | null = null
-
-  if (existsSync(skillMdPath)) {
-    const content = readFileSync(skillMdPath, 'utf-8')
-    const nameMatch = content.match(/^name:\s*(.+)$/m)
-    skillName = nameMatch?.[1]?.trim() ?? basename(cwd)
-  }
-
-  if (!skillName) {
-    skillName = basename(cwd)
-  }
-
-  const entry = manifest.packages[skillName]
-  if (entry?.source.type === 'git') {
-    const parts = entry.source.uri.split('/')
-    const org = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
-    if (org) {
-      return { org, name: skillName }
-    }
-  }
-
-  // Fallback: directory structure
-  const pathParts = cwd.split('/')
-  const skillsIdx = pathParts.lastIndexOf('skills')
-  if (skillsIdx >= 0 && pathParts.length > skillsIdx + 2) {
-    return { org: pathParts[skillsIdx + 1]!, name: skillName }
-  }
-
-  return null
 }
 
 function formatDate(dateStr: string): string {
@@ -91,7 +32,7 @@ export function registerLogCommand(program: Command): void {
     .option('--limit <n>', 'Number of entries to show', '20')
     .option('--json', 'Output as JSON')
     .action(async (nameArg: string | undefined, options: LogOptions) => {
-      const identity = resolveSkillIdentity(nameArg)
+      const identity = resolveCurrentSkillIdentity({ nameArg })
 
       const json = isJSONMode() || options.json
 
@@ -127,7 +68,7 @@ export function registerLogCommand(program: Command): void {
         spinner.stop()
 
         if (json) {
-          outputSuccess({ commits })
+          outputSuccess<LogResult>({ commits })
           return
         }
 

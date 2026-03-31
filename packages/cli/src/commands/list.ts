@@ -38,20 +38,18 @@ export function registerListCommand(program: Command): void {
     .option('--global', 'List globally installed packages')
     .option('--all', 'List both project and global packages')
     .option('--json', 'Output as JSON')
-    .action((options: { global?: boolean; all?: boolean }) => {
-      const jsonMode = isJSONMode()
+    .action((options: { global?: boolean; all?: boolean; json?: boolean }) => {
+      const jsonMode = isJSONMode() || options.json === true
       const scopes = resolveScopes(options)
       const projectRoot = process.cwd()
       const multiScope = scopes.length > 1
 
       if (jsonMode) {
-        const allPackages: ListResult['packages'] = {}
+        const allPackages: ListResult['packages'] = []
         for (const scope of scopes) {
           const manifest = readManifest(projectRoot, scope)
           for (const [name, pkg] of Object.entries(manifest.packages)) {
-            if (!(name in allPackages)) {
-              allPackages[name] = pkg
-            }
+            allPackages.push({ name, scope, package: pkg })
           }
         }
         outputSuccess<ListResult>({ packages: allPackages })

@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  rmSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }))
 
 vi.mock('../../registry/platform.js', () => ({
@@ -15,12 +18,29 @@ vi.mock('../../registry/platform.js', () => ({
 
 vi.mock('../../storage/lockfile.js', () => ({
   readLockfile: vi.fn(),
-  writeLockfile: vi.fn(),
 }))
 
 vi.mock('../../storage/manifest.js', () => ({
   readManifest: vi.fn(),
 }))
+
+vi.mock('../../storage/pair.js', () => ({
+  updateManifestAndLockfile: vi.fn(),
+}))
+
+vi.mock('../../storage/canonical.js', () => ({
+  getCanonicalSkillPath: vi.fn().mockReturnValue('/project/.agents/skills/test-skill'),
+}))
+
+vi.mock('../../storage/integrity.js', async () => {
+  const actual = await vi.importActual<typeof import('../../storage/integrity.js')>(
+    '../../storage/integrity.js'
+  )
+  return {
+    ...actual,
+    deriveCommitFromIntegrity: vi.fn().mockReturnValue('draftcommit1234567890'),
+  }
+})
 
 vi.mock('chalk', () => {
   const identity = (s: string) => s
@@ -51,8 +71,9 @@ import { Command } from 'commander'
 import { registerDraftCommand } from '../../commands/draft.js'
 import * as outputModule from '../../output.js'
 import { platformFetch } from '../../registry/platform.js'
-import { readLockfile, writeLockfile } from '../../storage/lockfile.js'
+import { readLockfile } from '../../storage/lockfile.js'
 import { readManifest } from '../../storage/manifest.js'
+import { updateManifestAndLockfile } from '../../storage/pair.js'
 import {
   createLockfile,
   createLockfilePackage,
@@ -122,7 +143,21 @@ function setupLockfileOnMain(): void {
       },
     })
   )
-  vi.mocked(writeLockfile).mockReturnValue(undefined)
+  vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+    const manifest = createManifest({
+      packages: {
+        'test-skill': createManifestPackage({ source: createSharedGitSource({ ref: 'main' }) }),
+      },
+    })
+    const lockfile = createLockfile({
+      packages: {
+        'test-skill': createLockfilePackage({
+          source: createSharedGitSource({ ref: 'main', commit: 'abc1234567' }),
+        }),
+      },
+    })
+    return updater(manifest, lockfile)
+  })
 }
 
 /** Sets up a lockfile with the skill on a draft branch. */
@@ -139,7 +174,29 @@ function setupLockfileOnDraft(draftName = 'my-feature'): void {
       },
     })
   )
-  vi.mocked(writeLockfile).mockReturnValue(undefined)
+  vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+    const manifest = createManifest({
+      packages: {
+        'test-skill': createManifestPackage({
+          source: createSharedGitSource({
+            ref: `draft/test-skill/${draftName}`,
+            commit: 'abc1234567',
+          }),
+        }),
+      },
+    })
+    const lockfile = createLockfile({
+      packages: {
+        'test-skill': createLockfilePackage({
+          source: createSharedGitSource({
+            ref: `draft/test-skill/${draftName}`,
+            commit: 'abc1234567',
+          }),
+        }),
+      },
+    })
+    return updater(manifest, lockfile)
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -330,27 +387,24 @@ describe('draft command', () => {
     it('updates the lockfile ref to the draft branch', async () => {
       setupIdentity()
       setupLockfileOnMain()
+      vi.mocked(platformFetch).mockResolvedValue({
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: VALID_SKILL_MD }],
+      })
 
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'draft', 'switch', 'my-feature'])
 
-      expect(writeLockfile).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          packages: expect.objectContaining({
-            'test-skill': expect.objectContaining({
-              source: expect.objectContaining({
-                ref: 'draft/test-skill/my-feature',
-              }),
-            }),
-          }),
-        })
-      )
+      expect(updateManifestAndLockfile).toHaveBeenCalled()
     })
 
     it('outputs a confirmation message with the new ref', async () => {
       setupIdentity()
       setupLockfileOnMain()
+      vi.mocked(platformFetch).mockResolvedValue({
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: VALID_SKILL_MD }],
+      })
       const { stdout } = captureOutput()
 
       const program = buildProgram()
@@ -362,6 +416,10 @@ describe('draft command', () => {
     it('outputs valid JSON with --json flag', async () => {
       setupIdentity()
       setupLockfileOnMain()
+      vi.mocked(platformFetch).mockResolvedValue({
+        source: 'platform',
+        files: [{ path: 'SKILL.md', content: VALID_SKILL_MD }],
+      })
 
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'draft', 'switch', 'my-feature', '--json'])
@@ -372,6 +430,7 @@ describe('draft command', () => {
       expect(data.skill).toEqual(expect.stringContaining('test-skill'))
       expect(data).toHaveProperty('draft', 'my-feature')
       expect(data).toHaveProperty('ref', 'draft/test-skill/my-feature')
+      expect(data).toHaveProperty('syncedFiles', true)
     })
 
     it('exits with error when skill is not in the lockfile', async () => {
@@ -426,19 +485,7 @@ describe('draft command', () => {
           }),
         })
       )
-      expect(writeLockfile).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          packages: expect.objectContaining({
-            'test-skill': expect.objectContaining({
-              source: expect.objectContaining({
-                ref: 'main',
-                commit: 'merged123abc',
-              }),
-            }),
-          }),
-        })
-      )
+      expect(updateManifestAndLockfile).toHaveBeenCalled()
     })
 
     it('exits with error when not on a draft branch', async () => {
@@ -531,18 +578,7 @@ describe('draft command', () => {
           }),
         })
       )
-      expect(writeLockfile).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          packages: expect.objectContaining({
-            'test-skill': expect.objectContaining({
-              source: expect.objectContaining({
-                ref: 'main',
-              }),
-            }),
-          }),
-        })
-      )
+      expect(updateManifestAndLockfile).toHaveBeenCalled()
     })
 
     it('exits with error when not on a draft branch', async () => {

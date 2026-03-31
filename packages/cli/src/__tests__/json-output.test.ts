@@ -112,7 +112,7 @@ describe('CLI --json output integration', () => {
       expect(parsed.success).toBe(true)
 
       const data = parsed.data as Record<string, unknown>
-      expect(data.packages).toEqual({})
+      expect(data.packages).toEqual([])
     })
 
     it('should validate against listResultSchema', () => {

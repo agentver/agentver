@@ -10,9 +10,11 @@ import type { ScanResult as SecurityScanResult } from '../security/index.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { readManifest } from '../storage/manifest.js'
+import type { Scope } from '../utils/paths.js'
 
 type AuditOptions = {
   path?: string
+  global?: boolean
 }
 
 const FALLBACK_SOURCE: GitSource = {
@@ -88,10 +90,12 @@ export function registerAuditCommand(program: Command): void {
   program
     .command('audit [name]')
     .description('Run a security scan on installed skills or an arbitrary directory')
+    .option('--global', 'Scan globally installed packages')
     .option('--path <path>', 'Scan an arbitrary directory instead of installed skills')
     .action(async (name: string | undefined, options: AuditOptions) => {
       const jsonMode = isJSONMode()
       const projectRoot = process.cwd()
+      const scope: Scope = options.global ? 'global' : 'project'
 
       // Scan arbitrary directory
       if (options.path) {
@@ -105,6 +109,7 @@ export function registerAuditCommand(program: Command): void {
         }
 
         const scanResult = await auditDirectory(targetPath, options.path, source)
+        const hasBlockFinding = scanResult?.verdict === 'BLOCK'
 
         if (jsonMode) {
           const passed =
@@ -121,11 +126,19 @@ export function registerAuditCommand(program: Command): void {
             })),
           }
           outputSuccess(auditResult)
+          if (!passed) {
+            process.exitCode = 1
+          }
+          return
+        }
+
+        if (hasBlockFinding) {
+          process.exitCode = 1
         }
         return
       }
 
-      const manifest = readManifest(projectRoot)
+      const manifest = readManifest(projectRoot, scope)
       const packageNames = name
         ? [name].filter((n) => manifest.packages[n])
         : Object.keys(manifest.packages)
@@ -158,10 +171,11 @@ export function registerAuditCommand(program: Command): void {
 
       const allFindings: AuditResult['findings'] = []
       let allPassed = true
+      let hasBlockFinding = false
 
       for (const pkgName of packageNames) {
         const pkg = manifest.packages[pkgName]
-        const canonicalPath = getCanonicalSkillPath(projectRoot, pkgName, 'project')
+        const canonicalPath = getCanonicalSkillPath(projectRoot, pkgName, scope)
         const source = buildSourceFromManifest(pkg)
 
         const scanResult = await auditDirectory(canonicalPath, pkgName, source)
@@ -180,6 +194,10 @@ export function registerAuditCommand(program: Command): void {
             })
           }
         }
+
+        if (scanResult?.verdict === 'BLOCK') {
+          hasBlockFinding = true
+        }
       }
 
       if (jsonMode) {
@@ -189,6 +207,10 @@ export function registerAuditCommand(program: Command): void {
           findings: allFindings,
         }
         outputSuccess(auditResult)
+      }
+
+      if (hasBlockFinding) {
+        process.exitCode = 1
       }
     })
 }

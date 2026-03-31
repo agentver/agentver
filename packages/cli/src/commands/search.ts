@@ -1,3 +1,4 @@
+import type { SearchResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
@@ -120,7 +121,7 @@ function renderNoResults(query: string): void {
 export function registerSearchCommand(program: Command): void {
   program
     .command('search <query>')
-    .description('Search for skills across registries')
+    .description('Search for packages across registries')
     .option('--type <type>', 'Filter by type (skill, agent, plugin, script, prompt)')
     .option('--category <category>', 'Filter by category slug (e.g. testing, devops)')
     .option(
@@ -136,8 +137,13 @@ Sources:
   community   Search skills.sh community registry only
   well-known  Fetch from a domain's /.well-known/skills/index.json`
     )
+    .option('--json', 'Output as JSON')
     .action(
-      async (query: string, options: { type?: string; category?: string; source?: string }) => {
+      async (
+        query: string,
+        options: { type?: string; category?: string; source?: string; json?: boolean }
+      ) => {
+        const json = isJSONMode() || options.json === true
         const connected = await isConnected()
 
         const requestedSource = (options.source as SearchSource | undefined) ?? undefined
@@ -145,7 +151,7 @@ Sources:
 
         if (requestedSource) {
           if (!['platform', 'community', 'well-known', 'all'].includes(requestedSource)) {
-            if (isJSONMode()) {
+            if (json) {
               outputError(
                 'INVALID_SOURCE',
                 `Invalid source "${requestedSource}". Use: platform, community, well-known, or all`
@@ -162,7 +168,7 @@ Sources:
           source = requestedSource as SearchSource
 
           if (source === 'platform' && !connected) {
-            if (isJSONMode()) {
+            if (json) {
               outputError(
                 'AUTH_REQUIRED',
                 'Not connected to a platform. Run `agentver login <url>` to connect.'
@@ -189,14 +195,23 @@ Sources:
 
             spinner.stop()
 
-            if (isJSONMode()) {
-              outputSuccess(index.skills)
+            if (json) {
+              outputSuccess<SearchResult>({
+                platform: [],
+                community: [],
+                wellKnown: index.skills.map((skill) => ({
+                  name: skill.name,
+                  description: skill.description,
+                  url: `${hostname}/${skill.name}`,
+                })),
+                total: index.skills.length,
+              })
             } else {
               renderWellKnownResults(hostname, index.skills)
             }
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
-            if (isJSONMode()) {
+            if (json) {
               spinner.stop()
               outputError('SEARCH_FAILED', message)
             } else {
@@ -208,7 +223,6 @@ Sources:
         }
 
         const spinner = createSpinner('Searching...').start()
-        const json = isJSONMode()
 
         try {
           let platformResults: PlatformSearchResult[] = []
@@ -263,9 +277,10 @@ Sources:
           const hasResults = platformResults.length > 0 || communityResults.length > 0
 
           if (json) {
-            outputSuccess({
+            outputSuccess<SearchResult>({
               platform: platformResults,
               community: communityResults,
+              wellKnown: [],
               total: platformTotal,
             })
             return

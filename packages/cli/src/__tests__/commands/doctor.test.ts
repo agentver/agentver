@@ -311,6 +311,31 @@ describe('doctor command', () => {
     expect(manifestCheck?.message).toContain('invalid JSON')
   })
 
+  it('reports fail when credentials have expired', async () => {
+    process.argv = ['node', 'agentver', 'doctor', '--json']
+    setupHealthyProject()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        return new Response(null, { status: 401 })
+      })
+    )
+
+    const { stdout } = captureOutput()
+    const program = buildProgram()
+
+    await expect(program.parseAsync(['node', 'agentver', 'doctor', '--json'])).rejects.toThrow(
+      'process.exit called'
+    )
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+
+    const parsed = JSON.parse(stdout.join('')) as DoctorOutput
+    const authCheck = findCheck(parsed.data.checks, 'authentication')
+    expect(authCheck?.status).toBe('fail')
+    expect(authCheck?.message).toContain('expired')
+  })
+
   // -------------------------------------------------------------------------
   // 4. Manifest/lockfile out of sync — reports FAIL
   // -------------------------------------------------------------------------

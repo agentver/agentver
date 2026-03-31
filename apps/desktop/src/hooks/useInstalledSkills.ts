@@ -27,9 +27,10 @@ export function useInstalledSkills(cwd?: string) {
     [remove.execute, effectiveCwd, refresh]
   )
 
-  const packages = list.data?.packages ?? {}
-  const skills = Object.entries(packages).map(([name, pkg]) => ({
+  const packages = list.data?.packages ?? []
+  const skills = packages.map(({ name, scope, package: pkg }) => ({
     name,
+    scope,
     ...pkg,
   }))
 

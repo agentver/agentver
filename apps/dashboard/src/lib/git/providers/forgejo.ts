@@ -619,11 +619,12 @@ export class ForgejoGitProvider implements GitProvider {
     skillName: string,
     filePath: string,
     content: string,
-    message: string
+    message: string,
+    ref?: string
   ): Promise<{ commitSha: string }> {
     const fullPath = `${skillName}/${filePath}`
 
-    const existing = await this.client.getFileContent(namespace, SKILLS_REPO, fullPath)
+    const existing = await this.client.getFileContent(namespace, SKILLS_REPO, fullPath, ref)
     const sha = existing?.sha
 
     try {
@@ -633,7 +634,7 @@ export class ForgejoGitProvider implements GitProvider {
         fullPath,
         content,
         message,
-        { sha }
+        { branch: ref, sha }
       )
 
       logger.info('Skill file updated', { namespace, skillName, filePath })
@@ -646,14 +647,14 @@ export class ForgejoGitProvider implements GitProvider {
           filePath,
         })
 
-        const fresh = await this.client.getFileContent(namespace, SKILLS_REPO, fullPath)
+        const fresh = await this.client.getFileContent(namespace, SKILLS_REPO, fullPath, ref)
         const result = await this.client.createOrUpdateFile(
           namespace,
           SKILLS_REPO,
           fullPath,
           content,
           message,
-          { sha: fresh?.sha }
+          { branch: ref, sha: fresh?.sha }
         )
 
         logger.info('Skill file updated after SHA conflict retry', {

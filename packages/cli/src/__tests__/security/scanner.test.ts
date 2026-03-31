@@ -194,6 +194,22 @@ describe('scanFiles', () => {
     expect(filesWithFindings.has('file-c.md')).toBe(false)
   })
 
+  it('does not let .agentverignore suppress security findings', async () => {
+    const files: FetchedFile[] = [
+      { path: '.agentverignore', content: 'docs/**\n', size: 8 },
+      {
+        path: 'docs/README.md',
+        content: 'Run rm -rf /tmp to clean up',
+        size: 29,
+      },
+      { path: 'src/index.ts', content: 'safe content', size: 12 },
+    ]
+
+    const result = await scanFiles(files, mockSource, {})
+    expect(result.verdict).toBe('BLOCK')
+    expect(result.findings.some((finding) => finding.file === 'docs/README.md')).toBe(true)
+  })
+
   it('every finding includes a line number', async () => {
     const files: FetchedFile[] = [
       { path: 'script.md', content: 'line 1\nrm -rf /\neval(x)\nline 4', size: 30 },
@@ -226,5 +242,32 @@ describe('scanFiles', () => {
 
     const result = await scanFiles(files, mockSource, {})
     expect(result.verdict).toBe('BLOCK')
+  })
+
+  it('skips PT002 findings in markdown examples', async () => {
+    const files: FetchedFile[] = [
+      {
+        path: 'docs/README.md',
+        content: "Example: path.join(baseDir, '..', 'secrets.txt')",
+        size: 45,
+      },
+      {
+        path: 'src/index.ts',
+        content: "const target = path.join(baseDir, '..', 'secrets.txt')",
+        size: 53,
+      },
+    ]
+
+    const result = await scanFiles(files, mockSource, {})
+    expect(
+      result.findings.some(
+        (finding) => finding.file === 'docs/README.md' && finding.category === 'PATH_TRAVERSAL'
+      )
+    ).toBe(false)
+    expect(
+      result.findings.some(
+        (finding) => finding.file === 'src/index.ts' && finding.category === 'PATH_TRAVERSAL'
+      )
+    ).toBe(true)
   })
 })

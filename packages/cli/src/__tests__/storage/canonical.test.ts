@@ -145,7 +145,7 @@ describe('storage/canonical', () => {
       expect(fs.symlinkSync).not.toHaveBeenCalled()
     })
 
-    it('removes existing path before creating symlink', () => {
+    it('throws when an unmanaged directory already exists at the target path', () => {
       vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/my-skill')
       vi.mocked(fs.existsSync).mockReturnValue(true)
       vi.mocked(fs.lstatSync).mockReturnValue({
@@ -153,10 +153,12 @@ describe('storage/canonical', () => {
         isDirectory: () => true,
       } as ReturnType<typeof fs.lstatSync>)
 
-      canonicalModule.createAgentSymlinks('/project', 'my-skill', ['claude'], 'project')
+      expect(() =>
+        canonicalModule.createAgentSymlinks('/project', 'my-skill', ['claude'], 'project')
+      ).toThrow('Refusing to replace existing directory')
 
-      expect(fs.rmSync).toHaveBeenCalled()
-      expect(fs.symlinkSync).toHaveBeenCalled()
+      expect(fs.rmSync).not.toHaveBeenCalled()
+      expect(fs.symlinkSync).not.toHaveBeenCalled()
     })
 
     it('replaces an existing symlink pointing to the wrong target', () => {
@@ -428,6 +430,56 @@ describe('storage/canonical', () => {
     })
   })
 
+  describe('findAgentSkillPlacementConflicts', () => {
+    it('returns unmanaged directories and files but ignores symlinks', () => {
+      vi.mocked(agentDefs.getSkillPlacementPath)
+        .mockReturnValueOnce('.claude/skills/dir-skill')
+        .mockReturnValueOnce('.claude/skills/link-skill')
+        .mockReturnValueOnce('.claude/skills/file-skill')
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.lstatSync)
+        .mockReturnValueOnce({
+          isSymbolicLink: () => false,
+        } as ReturnType<typeof fs.lstatSync>)
+        .mockReturnValueOnce({
+          isSymbolicLink: () => false,
+          isDirectory: () => true,
+        } as ReturnType<typeof fs.lstatSync>)
+        .mockReturnValueOnce({
+          isSymbolicLink: () => true,
+          isDirectory: () => false,
+        } as ReturnType<typeof fs.lstatSync>)
+        .mockReturnValueOnce({
+          isSymbolicLink: () => false,
+        } as ReturnType<typeof fs.lstatSync>)
+        .mockReturnValueOnce({
+          isSymbolicLink: () => false,
+          isDirectory: () => false,
+        } as ReturnType<typeof fs.lstatSync>)
+
+      const conflicts = canonicalModule.findAgentSkillPlacementConflicts(
+        '/project',
+        'ignored',
+        ['claude', 'cursor', 'codex'],
+        'project'
+      )
+
+      expect(conflicts).toEqual([
+        {
+          agentId: 'claude',
+          path: '/project/.claude/skills/dir-skill',
+          kind: 'directory',
+        },
+        {
+          agentId: 'codex',
+          path: '/project/.claude/skills/file-skill',
+          kind: 'file',
+        },
+      ])
+    })
+  })
+
   describe('getCanonicalFilePath', () => {
     it('returns project-scoped path for agents category', () => {
       const result = canonicalModule.getCanonicalFilePath(
@@ -587,7 +639,7 @@ describe('storage/canonical', () => {
       expect(symlinkTarget).toContain('..')
     })
 
-    it('removes existing file before creating symlink', () => {
+    it('throws when an unmanaged file already exists at the target path', () => {
       vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/')
       vi.mocked(fs.existsSync).mockReturnValue(true)
       vi.mocked(fs.lstatSync).mockReturnValue({
@@ -595,16 +647,18 @@ describe('storage/canonical', () => {
         isFile: () => true,
       } as ReturnType<typeof fs.lstatSync>)
 
-      canonicalModule.createFileSymlinks(
-        '/project',
-        'deep-research',
-        'agents',
-        ['claude-code'],
-        'project'
-      )
+      expect(() =>
+        canonicalModule.createFileSymlinks(
+          '/project',
+          'deep-research',
+          'agents',
+          ['claude-code'],
+          'project'
+        )
+      ).toThrow('Refusing to replace existing file')
 
-      expect(fs.rmSync).toHaveBeenCalled()
-      expect(fs.symlinkSync).toHaveBeenCalled()
+      expect(fs.rmSync).not.toHaveBeenCalled()
+      expect(fs.symlinkSync).not.toHaveBeenCalled()
     })
 
     it('skips agents with no placement path', () => {

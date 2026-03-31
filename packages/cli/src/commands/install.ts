@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
@@ -20,6 +19,8 @@ import {
   AgentverError,
   type BundleInstallResult,
   type GitSource,
+  type LockfileV2,
+  type ManifestV2,
   PACKAGE_STRUCTURES,
   type PackageSource,
   type WellKnownSource,
@@ -45,13 +46,25 @@ import {
 } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { readConfig } from '../registry/config.js'
+import type { PlatformResolveResponse } from '../registry/platform.js'
 import { reportInstallation } from '../registry/reporter.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
-import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical'
-import { computeSha256FromFiles } from '../storage/integrity'
-import { readLockfile, writeLockfile } from '../storage/lockfile'
-import { readManifest, writeManifest } from '../storage/manifest'
+import {
+  createAgentSymlinks,
+  findAgentSkillPlacementConflicts,
+  getCanonicalSkillPath,
+  type SkillPlacementConflict,
+} from '../storage/canonical'
+import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
+import { readManifest } from '../storage/manifest'
+import { updateManifestAndLockfile } from '../storage/pair'
+import {
+  cleanupBackup,
+  createFilesystemBackup,
+  type FilesystemBackupState,
+  restoreFilesystemBackup,
+} from '../utils/backup'
 import { resolvePlacementPath } from '../utils/paths'
 import { extractError } from '../utils.js'
 import {
@@ -68,10 +81,12 @@ export type InstallOptions = {
   agent?: string | string[]
   global?: boolean
   dryRun?: boolean
+  yes?: boolean
   path?: string
   detect?: boolean
   skipAudit?: boolean
   type?: 'agent' | 'command'
+  persist?: boolean
 }
 
 export type InstallResult = {
@@ -79,20 +94,23 @@ export type InstallResult = {
   ref: string
   commitSha: string
   agents: string[]
+  manifestEntry?: ManifestV2['packages'][string]
+  lockfileEntry?: LockfileV2['packages'][string]
 }
 
-type ResolveResponse = {
-  gitUri: string
-  gitPath: string
-  gitRef: string
-  source?: 'git' | 'platform'
-  files?: Array<{ path: string; content: string }>
-}
+type InstalledPackageType = NonNullable<ManifestV2['packages'][string]['packageType']>
 
 type AgentverUri = {
   org: string
   path: string
   ref: string
+}
+
+type ConfigWriteTarget = {
+  agentId: string
+  fullPath: string
+  content: string
+  requiresConfirmation: boolean
 }
 
 /**
@@ -128,17 +146,7 @@ export function parseAgentverUri(source: string): AgentverUri | null {
   }
 }
 
-/**
- * Derive a synthetic 40-char hex commit SHA from an integrity hash.
- *
- * Platform-hosted packages have no real git commit, but the manifest schema
- * requires a valid commit string (min 7 chars). We produce a deterministic
- * SHA-1 hex digest from the integrity value so downstream commands that
- * display or compare commit hashes work correctly.
- */
-export function deriveCommitFromIntegrity(integrity: string): string {
-  return createHash('sha1').update(integrity).digest('hex')
-}
+export { deriveCommitFromIntegrity } from '../storage/integrity'
 
 function buildAuditData(scanResult?: SecurityScanResult): InstallResultJSON['audit'] {
   if (!scanResult) {
@@ -161,6 +169,20 @@ function looksLikeGitUrl(source: string): boolean {
     .split('#')[0]!
   const segments = cleaned.split('/').filter(Boolean)
   return segments.length >= 3 && segments[0]!.includes('.')
+}
+
+function recordInstalledPackage(
+  projectRoot: string,
+  scope: 'project' | 'global',
+  name: string,
+  manifestEntry: ManifestV2['packages'][string],
+  lockfileEntry: LockfileV2['packages'][string]
+): void {
+  updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
+    manifest.packages[name] = manifestEntry
+    lockfile.packages[name] = lockfileEntry
+    return { manifest, lockfile }
+  })
 }
 
 async function fetchFromPlatform<T>(platformUrl: string, path: string): Promise<T> {
@@ -253,7 +275,7 @@ async function installFromWellKnown(
     const projectRoot = process.cwd()
     const requestedAgents = toAgentList(options.agent)
     let agents: string[] = []
-    let detectedWkType: string | undefined
+    let detectedWkType: InstalledPackageType | undefined
     let installedWkEntryFile: string | undefined
     const scope = options.global ? 'global' : 'project'
 
@@ -313,7 +335,7 @@ async function installFromWellKnown(
           integrity,
           jsonMode,
           projectRoot,
-          scope: scope as 'project' | 'global',
+          scope,
           ref: 'well-known',
           commitSha: '',
         })
@@ -363,20 +385,20 @@ async function installFromWellKnown(
       skillName: selectedEntry.name,
     }
 
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[selectedEntry.name] = {
+    const manifestEntry = {
       source: wellKnownSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND'
+      ...(detectedWkType === 'AGENT' ||
+      detectedWkType === 'COMMAND' ||
+      detectedWkType === 'AGENT_CONFIG'
         ? { packageType: detectedWkType, entryFile: installedWkEntryFile }
         : {}),
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
       ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
-    writeManifest(projectRoot, manifest, scope)
 
     const wkSingleFileIntegrity =
       installedWkEntryFile && (detectedWkType === 'AGENT' || detectedWkType === 'COMMAND')
@@ -391,13 +413,14 @@ async function installFromWellKnown(
           ])
         : integrity
 
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[selectedEntry.name] = {
+    const lockfileEntry = {
       source: wellKnownSourceRecord,
       integrity: wkSingleFileIntegrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile, scope)
+    if (options.persist !== false) {
+      recordInstalledPackage(projectRoot, scope, selectedEntry.name, manifestEntry, lockfileEntry)
+    }
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -420,7 +443,14 @@ async function installFromWellKnown(
       )
     }
 
-    return { name: selectedEntry.name, ref: 'well-known', commitSha: '', agents }
+    return {
+      name: selectedEntry.name,
+      ref: 'well-known',
+      commitSha: '',
+      agents,
+      manifestEntry,
+      lockfileEntry,
+    }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
@@ -449,7 +479,7 @@ async function installFromPlatform(
     const resolveName = parsed.path ? `${parsed.org}/${parsed.path}` : parsed.org
     spinner.text = `Resolving ${resolveName} via platform...`
 
-    const resolved = await fetchFromPlatform<ResolveResponse>(
+    const resolved = await fetchFromPlatform<PlatformResolveResponse>(
       config.platformUrl,
       `/resolve?name=${encodeURIComponent(resolveName)}`
     )
@@ -521,6 +551,8 @@ async function installFromPlatform(
       if (securityScanResult.verdict === 'WARN') {
         if (jsonMode) {
           // In JSON mode, proceed with warnings (no interactive prompt)
+        } else if (options.yes) {
+          spinner.start('Continuing installation...')
         } else {
           renderScanResult(securityScanResult, spinner as ReturnType<typeof ora>)
           const { proceed } = await prompts({
@@ -552,7 +584,7 @@ async function installFromPlatform(
     const scope = options.global ? 'global' : 'project'
     const sourceUri = `agentver://${parsed.org}`
     let agents: string[] = []
-    let detectedPlatformType: string | undefined
+    let detectedPlatformType: InstalledPackageType | undefined
     let installedPlatformEntryFile: string | undefined
 
     // Enforce dependsOn / conflictsWith before installing
@@ -658,20 +690,20 @@ async function installFromPlatform(
       commit: syntheticCommit,
     }
 
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[shortName] = {
+    const manifestEntry = {
       source: gitSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND'
+      ...(detectedPlatformType === 'AGENT' ||
+      detectedPlatformType === 'COMMAND' ||
+      detectedPlatformType === 'AGENT_CONFIG'
         ? { packageType: detectedPlatformType, entryFile: installedPlatformEntryFile }
         : {}),
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
       ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
-    writeManifest(projectRoot, manifest, scope)
 
     const platformSingleFileIntegrity =
       installedPlatformEntryFile &&
@@ -687,13 +719,14 @@ async function installFromPlatform(
           ])
         : integrity
 
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[shortName] = {
+    const lockfileEntry = {
       source: gitSourceRecord,
       integrity: platformSingleFileIntegrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile, scope)
+    if (options.persist !== false) {
+      recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
+    }
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -724,7 +757,14 @@ async function installFromPlatform(
       )
     }
 
-    return { name: shortName, ref, commitSha: syntheticCommit, agents }
+    return {
+      name: shortName,
+      ref,
+      commitSha: syntheticCommit,
+      agents,
+      manifestEntry,
+      lockfileEntry,
+    }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
@@ -832,6 +872,8 @@ export async function installPackage(
       if (scanResult.verdict === 'WARN') {
         if (jsonMode) {
           // In JSON mode, proceed with warnings (no interactive prompt)
+        } else if (options.yes) {
+          spinner.start('Continuing installation...')
         } else {
           renderScanResult(scanResult, spinner as ReturnType<typeof ora>)
           const { proceed } = await prompts({
@@ -863,7 +905,7 @@ export async function installPackage(
     const scope = options.global ? 'global' : 'project'
     const gitUri = `${gitSource.host}/${gitSource.owner}/${gitSource.repo}`
     let agents: string[] = []
-    let detectedType: string | undefined
+    let detectedType: InstalledPackageType | undefined
     let installedEntryFile: string | undefined
 
     // Enforce dependsOn / conflictsWith before installing
@@ -969,20 +1011,18 @@ export async function installPackage(
       commit: resolved.commitSha,
     }
 
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[shortName] = {
+    const manifestEntry = {
       source: gitSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedType === 'AGENT' || detectedType === 'COMMAND'
+      ...(detectedType === 'AGENT' || detectedType === 'COMMAND' || detectedType === 'AGENT_CONFIG'
         ? { packageType: detectedType, entryFile: installedEntryFile }
         : {}),
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
       ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
-    writeManifest(projectRoot, manifest, scope)
 
     const singleFileIntegrity =
       installedEntryFile && (detectedType === 'AGENT' || detectedType === 'COMMAND')
@@ -996,15 +1036,15 @@ export async function installPackage(
           ])
         : integrity
 
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[shortName] = {
+    const lockfileEntry = {
       source: gitSourceRecord,
       integrity: singleFileIntegrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile, scope)
-
-    reportInstallation(shortName, gitSourceRecord, agents, resolved.commitSha)
+    if (options.persist !== false) {
+      recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
+      reportInstallation(shortName, gitSourceRecord, agents, resolved.commitSha)
+    }
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -1035,7 +1075,14 @@ export async function installPackage(
       )
     }
 
-    return { name: shortName, ref: gitSource.ref, commitSha: resolved.commitSha, agents }
+    return {
+      name: shortName,
+      ref: gitSource.ref,
+      commitSha: resolved.commitSha,
+      agents,
+      manifestEntry,
+      lockfileEntry,
+    }
   } catch (error) {
     if (error instanceof AgentverError) throw error
     const { code, message } = extractError(error, 'INSTALL_FAILED')
@@ -1057,7 +1104,10 @@ function formatSource(source: { host: string; owner: string; repo: string; path:
   return source.path ? `${base}/${source.path}` : base
 }
 
-function detectPackageType(files: FetchedFile[], typeOverride?: 'agent' | 'command'): string {
+function detectPackageType(
+  files: FetchedFile[],
+  typeOverride?: 'agent' | 'command'
+): InstalledPackageType {
   if (typeOverride) {
     const normalised = typeOverride.toUpperCase()
     if (normalised === 'AGENT') return 'AGENT'
@@ -1068,7 +1118,7 @@ function detectPackageType(files: FetchedFile[], typeOverride?: 'agent' | 'comma
 
   for (const [type, structure] of Object.entries(PACKAGE_STRUCTURES)) {
     if (type === 'AGENT_CONFIG' || type === 'AGENT' || type === 'COMMAND') continue
-    if (filenames.has(structure.entryFile)) return type
+    if (filenames.has(structure.entryFile)) return type as InstalledPackageType
   }
 
   for (const cf of AGENT_CONFIG_FILES) {
@@ -1076,6 +1126,57 @@ function detectPackageType(files: FetchedFile[], typeOverride?: 'agent' | 'comma
   }
 
   return 'SKILL'
+}
+
+function formatSkillPlacementConflicts(conflicts: SkillPlacementConflict[]): string {
+  return conflicts.map((conflict) => `${conflict.agentId}:${conflict.path}`).join(', ')
+}
+
+function formatConfigOverwriteTargets(targets: ConfigWriteTarget[]): string {
+  return targets.map((target) => `${target.agentId}:${target.fullPath}`).join(', ')
+}
+
+async function confirmOverwrite(
+  message: string,
+  options: InstallOptions,
+  spinner: ReturnType<typeof ora> | SpinnerLike
+): Promise<void> {
+  const jsonMode = isJSONMode()
+
+  if (jsonMode && !options.yes) {
+    throw new AgentverError('CONFIRMATION_REQUIRED', `${message} Re-run with --yes to continue.`)
+  }
+
+  if (!jsonMode && !options.yes) {
+    spinner.stop()
+    const { proceed } = await prompts({
+      type: 'confirm',
+      name: 'proceed',
+      message,
+      initial: false,
+    })
+
+    if (!proceed) {
+      throw new AgentverError('CANCELLED', 'Installation cancelled by user')
+    }
+
+    spinner.start()
+  }
+}
+
+function backupExistingPaths(paths: string[]): FilesystemBackupState | null {
+  const existingPaths = [...new Set(paths)].filter((path) => existsSync(path))
+  if (existingPaths.length === 0) {
+    return null
+  }
+
+  return createFilesystemBackup(existingPaths)
+}
+
+function rollbackFilesystemBackup(backup: FilesystemBackupState | null): void {
+  if (!backup) return
+  restoreFilesystemBackup(backup)
+  cleanupBackup(backup)
 }
 
 async function installAgentConfig(
@@ -1107,6 +1208,7 @@ async function installAgentConfig(
   const configContent = contentFile.content
 
   const translations = translateConfig(configContent, name, agents as AgentId[])
+  const writeTargets: ConfigWriteTarget[] = []
 
   for (const translation of translations) {
     const fullConfigPath = options.global
@@ -1136,6 +1238,7 @@ async function installAgentConfig(
     }
 
     let finalContent = translation.content
+    let requiresConfirmation = false
     if (existsSync(fullConfigPath)) {
       const existingContent = readFileSync(fullConfigPath, 'utf-8')
 
@@ -1163,10 +1266,40 @@ async function installAgentConfig(
             ]
         const composed = composeConfigs(allConfigs)
         finalContent = composed.content
+      } else {
+        requiresConfirmation = true
       }
     }
 
-    writeFileSync(fullConfigPath, finalContent, 'utf-8')
+    writeTargets.push({
+      agentId: translation.agentId,
+      fullPath: fullConfigPath,
+      content: finalContent,
+      requiresConfirmation,
+    })
+  }
+
+  const overwriteTargets = writeTargets.filter((target) => target.requiresConfirmation)
+  if (overwriteTargets.length > 0) {
+    await confirmOverwrite(
+      `Installing ${name} will overwrite existing agent config files: ${formatConfigOverwriteTargets(overwriteTargets)}. Agentver will create a backup first. Continue?`,
+      options,
+      spinner
+    )
+  }
+
+  const backup = backupExistingPaths(writeTargets.map((target) => target.fullPath))
+
+  try {
+    for (const target of writeTargets) {
+      writeFileSync(target.fullPath, target.content, 'utf-8')
+    }
+    if (backup) {
+      cleanupBackup(backup)
+    }
+  } catch (error) {
+    rollbackFilesystemBackup(backup)
+    throw error
   }
 }
 
@@ -1229,29 +1362,56 @@ async function installStandardPackage(
 
   spinner.text = `Installing to canonical path and symlinking to ${agents.length} agent(s)...`
 
-  // Step 1: Write files to canonical directory
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
+  const placementConflicts = findAgentSkillPlacementConflicts(projectRoot, name, agents, scope)
 
-  if (!existsSync(canonicalPath)) {
+  if (placementConflicts.length > 0) {
+    await confirmOverwrite(
+      `Installing ${name} will replace existing unmanaged skill paths: ${formatSkillPlacementConflicts(placementConflicts)}. Agentver will create a backup first. Continue?`,
+      options,
+      spinner
+    )
+  }
+
+  const backup = backupExistingPaths([
+    canonicalPath,
+    ...placementConflicts.map((conflict) => conflict.path),
+  ])
+
+  try {
+    if (existsSync(canonicalPath)) {
+      rmSync(canonicalPath, { recursive: true, force: true })
+    }
+
+    for (const conflict of placementConflicts) {
+      rmSync(conflict.path, { recursive: true, force: true })
+    }
+
     mkdirSync(canonicalPath, { recursive: true })
-  }
 
-  for (const file of files) {
-    const resolvedFilePath = resolve(canonicalPath, file.path)
-    const relativePath = relative(canonicalPath, resolvedFilePath)
-    if (relativePath.startsWith('..') || resolve(resolvedFilePath) !== resolvedFilePath) {
-      continue
+    for (const file of files) {
+      const resolvedFilePath = resolve(canonicalPath, file.path)
+      const relativePath = relative(canonicalPath, resolvedFilePath)
+      if (relativePath.startsWith('..') || resolve(resolvedFilePath) !== resolvedFilePath) {
+        continue
+      }
+
+      const dir = dirname(resolvedFilePath)
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+      }
+      writeFileSync(resolvedFilePath, file.content, 'utf-8')
     }
 
-    const dir = dirname(resolvedFilePath)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-    writeFileSync(resolvedFilePath, file.content, 'utf-8')
-  }
+    createAgentSymlinks(projectRoot, name, agents, scope)
 
-  // Step 2: Create symlinks from each agent's skill path to the canonical directory
-  createAgentSymlinks(projectRoot, name, agents, scope)
+    if (backup) {
+      cleanupBackup(backup)
+    }
+  } catch (error) {
+    rollbackFilesystemBackup(backup)
+    throw error
+  }
 }
 
 async function installSingleFilePackage(
@@ -1368,24 +1528,23 @@ async function installBundleFlow(
   )
 
   if (!options.dryRun) {
-    // Record the bundle itself in manifest/lockfile
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[bundleName] = {
-      source: sourceRecord,
-      agents,
-      installedAt: new Date().toISOString(),
-      modified: false,
-      packageType: 'BUNDLE',
-    }
-    writeManifest(projectRoot, manifest, scope)
-
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[bundleName] = {
-      source: sourceRecord,
-      integrity,
-      agents,
-    }
-    writeLockfile(projectRoot, lockfile, scope)
+    recordInstalledPackage(
+      projectRoot,
+      scope,
+      bundleName,
+      {
+        source: sourceRecord,
+        agents,
+        installedAt: new Date().toISOString(),
+        modified: false,
+        packageType: 'BUNDLE',
+      },
+      {
+        source: sourceRecord,
+        integrity,
+        agents,
+      }
+    )
   }
 
   const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -1413,7 +1572,11 @@ export function registerInstallCommand(program: Command): void {
   program
     .command('install <source>')
     .description('Install a skill from a Git repository or well-known domain')
-    .option('--agent <agent>', 'Target specific agent')
+    .option('--agent <agent>', 'Target specific agent', (value: string, previous?: string[]) => [
+      ...(previous ?? []),
+      value,
+    ])
+    .option('-y, --yes', 'Accept warning and overwrite prompts non-interactively')
     .option('--global', 'Install at user level (~/.agents/skills/) — available across all projects')
     .option('--dry-run', 'Show what would be installed without making changes')
     .option('--path <path>', 'Override placement path (relative to cwd or absolute)')

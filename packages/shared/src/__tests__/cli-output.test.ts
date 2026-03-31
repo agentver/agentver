@@ -5,6 +5,7 @@ import {
   auditResultSchema,
   cliErrorSchema,
   createCLIOutputSchema,
+  deprecateResultSchema,
   diffResultSchema,
   initResultSchema,
   installResultSchema,
@@ -18,6 +19,7 @@ import {
   searchResultSchema,
   statusResultSchema,
   syncResultSchema,
+  unpublishResultSchema,
   updateResultSchema,
   whoamiResultSchema,
 } from '../cli-output'
@@ -251,34 +253,36 @@ describe('updateResultSchema', () => {
 
 describe('listResultSchema', () => {
   it('should accept empty packages record', () => {
-    const result = listResultSchema.parse({ packages: {} })
-    expect(result.packages).toEqual({})
+    const result = listResultSchema.parse({ packages: [] })
+    expect(result.packages).toEqual([])
   })
 
   it('should accept packages with valid manifest entries', () => {
     const result = listResultSchema.parse({
-      packages: {
-        'my-skill': {
-          source: {
-            type: 'git',
-            uri: 'https://github.com/org/repo',
-            path: '',
-            ref: 'main',
-            commit: 'abc1234',
+      packages: [
+        {
+          name: 'my-skill',
+          scope: 'project',
+          package: {
+            source: {
+              type: 'git',
+              uri: 'https://github.com/org/repo',
+              path: '',
+              ref: 'main',
+              commit: 'abc1234',
+            },
+            agents: ['claude'],
+            installedAt: new Date().toISOString(),
           },
-          agents: ['claude'],
-          installedAt: new Date().toISOString(),
         },
-      },
+      ],
     })
-    expect(Object.keys(result.packages)).toHaveLength(1)
+    expect(result.packages).toHaveLength(1)
   })
 
   it('should reject packages with invalid source', () => {
     const result = listResultSchema.safeParse({
-      packages: {
-        'bad-skill': { source: { type: 'invalid' }, agents: [] },
-      },
+      packages: [{ name: 'bad-skill', scope: 'project', package: { source: { type: 'invalid' } } }],
     })
     expect(result.success).toBe(false)
   })
@@ -287,29 +291,41 @@ describe('listResultSchema', () => {
 describe('searchResultSchema', () => {
   it('should accept valid search results', () => {
     const result = searchResultSchema.parse({
-      results: [{ name: 'skill-a', description: 'A skill', type: 'SKILL', source: 'registry' }],
+      platform: [],
+      community: [],
+      wellKnown: [{ name: 'skill-a', description: 'A skill', url: 'https://example.com/skill-a' }],
+      total: 1,
     })
-    expect(result.results).toHaveLength(1)
+    expect(result.wellKnown).toHaveLength(1)
   })
 
   it('should accept empty results', () => {
-    const result = searchResultSchema.parse({ results: [] })
-    expect(result.results).toHaveLength(0)
+    const result = searchResultSchema.parse({
+      platform: [],
+      community: [],
+      wellKnown: [],
+      total: 0,
+    })
+    expect(result.platform).toHaveLength(0)
   })
 
   it('should accept results with optional url', () => {
     const result = searchResultSchema.parse({
-      results: [
+      platform: [],
+      community: [
         {
+          id: 'community-1',
           name: 'skill-a',
           description: 'A skill',
-          type: 'SKILL',
           source: 'registry',
+          installCount: 10,
           url: 'https://example.com',
         },
       ],
+      wellKnown: [],
+      total: 1,
     })
-    expect(result.results[0]?.url).toBe('https://example.com')
+    expect(result.community[0]?.url).toBe('https://example.com')
   })
 })
 
@@ -598,5 +614,46 @@ describe('adoptResultSchema', () => {
     })
     expect(result.adopted).toHaveLength(2)
     expect(result.skipped).toHaveLength(2)
+  })
+})
+
+describe('deprecateResultSchema', () => {
+  it('should accept package deprecation output', () => {
+    const result = deprecateResultSchema.parse({
+      skill: '@test-org/test-skill',
+      target: 'package',
+      status: 'DEPRECATED',
+      message: 'Use @test-org/new-skill instead',
+    })
+    expect(result.target).toBe('package')
+    expect(result.status).toBe('DEPRECATED')
+  })
+
+  it('should reject missing skill', () => {
+    const result = deprecateResultSchema.safeParse({
+      target: 'version',
+      status: 'DEPRECATED',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('unpublishResultSchema', () => {
+  it('should accept valid unpublish output', () => {
+    const result = unpublishResultSchema.parse({
+      skill: '@test-org/test-skill',
+      version: '1.2.3',
+      status: 'YANKED',
+    })
+    expect(result.version).toBe('1.2.3')
+    expect(result.status).toBe('YANKED')
+  })
+
+  it('should reject missing version', () => {
+    const result = unpublishResultSchema.safeParse({
+      skill: '@test-org/test-skill',
+      status: 'YANKED',
+    })
+    expect(result.success).toBe(false)
   })
 })

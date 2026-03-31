@@ -23,6 +23,10 @@ vi.mock('../../storage/lockfile', () => ({
   writeLockfile: vi.fn(),
 }))
 
+vi.mock('../../storage/pair', () => ({
+  updateManifestAndLockfile: vi.fn(),
+}))
+
 vi.mock('../../storage/integrity', () => ({
   computeSha256FromBuffer: vi.fn().mockReturnValue('sha256-test-hash'),
 }))
@@ -51,6 +55,7 @@ import { adoptSkills } from '../../commands/adopt'
 import * as outputModule from '../../output.js'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
+import * as pairModule from '../../storage/pair'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -87,6 +92,16 @@ describe('commands/adopt', () => {
     vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
     vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
     vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+    vi.mocked(pairModule.updateManifestAndLockfile).mockImplementation(
+      (projectRoot, scope, updater) => {
+        const manifest = structuredClone(manifestModule.readManifest(projectRoot, scope))
+        const lockfile = structuredClone(lockfileModule.readLockfile(projectRoot, scope))
+        const updated = updater(manifest, lockfile)
+        manifestModule.writeManifest(projectRoot, updated.manifest, scope)
+        lockfileModule.writeLockfile(projectRoot, updated.lockfile, scope)
+        return updated
+      }
+    )
     vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([])
     vi.mocked(agentDefs.scanGlobalSkillFiles).mockReturnValue([])
   })

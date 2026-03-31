@@ -11,6 +11,7 @@ import {
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
+import { AgentverError } from '@agentver/shared'
 import chalk from 'chalk'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
@@ -20,6 +21,12 @@ const logger = createCliLogger('canonical')
 const CANONICAL_DIR = '.agents/skills'
 
 export type CanonicalCategory = 'skills' | 'agents' | 'commands'
+
+export type SkillPlacementConflict = {
+  agentId: string
+  path: string
+  kind: 'directory' | 'file'
+}
 
 const CANONICAL_CATEGORY_DIRS: Record<CanonicalCategory, string> = {
   skills: '.agents/skills',
@@ -132,9 +139,15 @@ export function createAgentSymlinks(
     const agentSkillPath = resolvePlacementPath(placementPath, projectRoot, scope)
     if (!agentSkillPath) continue
 
-    // If this path already exists (file, directory, or symlink), remove it first
-    if (existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
+    if (isSymlink(agentSkillPath)) {
       rmSync(agentSkillPath, { recursive: true, force: true })
+    } else if (existsSync(agentSkillPath)) {
+      const stats = lstatSync(agentSkillPath)
+      const kind = stats.isDirectory() ? 'directory' : 'file'
+      throw new AgentverError(
+        'CONFLICT_DETECTED',
+        `Refusing to replace existing ${kind} at ${agentSkillPath}. Move it first or re-run install with confirmation so Agentver can back it up.`
+      )
     }
 
     // Ensure the parent directory exists
@@ -182,9 +195,13 @@ export function createFileSymlinks(
     const agentFilePath = resolvePlacementPath(placementPath, projectRoot, scope)
     if (!agentFilePath) continue
 
-    // If this path already exists (file or symlink), remove it first
-    if (existsSync(agentFilePath) || isSymlink(agentFilePath)) {
+    if (isSymlink(agentFilePath)) {
       rmSync(agentFilePath, { force: true })
+    } else if (existsSync(agentFilePath)) {
+      throw new AgentverError(
+        'CONFLICT_DETECTED',
+        `Refusing to replace existing file at ${agentFilePath}. Move it first before creating a canonical symlink.`
+      )
     }
 
     // Ensure the parent directory exists
@@ -297,6 +314,36 @@ export function removeCanonicalDirectory(projectRoot: string, name: string, scop
   // Clean up empty parent directories
   const stopAt = scope === 'global' ? homedir() : projectRoot
   cleanupEmptyParents(dirname(canonicalPath), stopAt)
+}
+
+export function findAgentSkillPlacementConflicts(
+  projectRoot: string,
+  name: string,
+  agents: string[],
+  scope: Scope
+): SkillPlacementConflict[] {
+  const conflicts: SkillPlacementConflict[] = []
+
+  for (const agentId of agents) {
+    const placementPath = getSkillPlacementPath(agentId as AgentId, name, scope)
+    if (!placementPath) continue
+
+    const agentSkillPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!agentSkillPath) continue
+
+    if (!existsSync(agentSkillPath) || isSymlink(agentSkillPath)) {
+      continue
+    }
+
+    const stats = lstatSync(agentSkillPath)
+    conflicts.push({
+      agentId,
+      path: agentSkillPath,
+      kind: stats.isDirectory() ? 'directory' : 'file',
+    })
+  }
+
+  return conflicts
 }
 
 /**

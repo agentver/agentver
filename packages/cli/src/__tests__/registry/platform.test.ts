@@ -116,6 +116,24 @@ describe('registry/platform', () => {
       const result = await platformModule.platformFetchSilent('/test')
       expect(result).toEqual({ data: 'silent-result' })
     })
+
+    it('rethrows unauthorised errors when rethrowAuthErrors is true', async () => {
+      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://platform.com')
+      vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'expired-token' })
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 401,
+          text: vi.fn().mockResolvedValue('expired'),
+        })
+      )
+
+      await expect(
+        platformModule.platformFetchSilent('/test', { rethrowAuthErrors: true })
+      ).rejects.toThrow('Authentication expired')
+    })
   })
 
   describe('isPlatformAvailable', () => {

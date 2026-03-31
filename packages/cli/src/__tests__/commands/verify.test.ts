@@ -288,6 +288,7 @@ describe('commands/verify', () => {
         'NO_SKILL',
         expect.stringContaining('No skill name provided')
       )
+      expect(process.exitCode).toBe(1)
     })
   })
 
@@ -373,6 +374,7 @@ describe('commands/verify', () => {
         'AMBIGUOUS_SKILL',
         expect.stringContaining('Multiple packages')
       )
+      expect(process.exitCode).toBe(1)
     })
   })
 

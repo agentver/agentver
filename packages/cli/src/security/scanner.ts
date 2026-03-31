@@ -1,3 +1,4 @@
+import { extname } from 'node:path'
 import type { FetchedFile, GitSource } from '../git/types.js'
 import { readConfig } from '../registry/config.js'
 import { checkFilePolicy, isBinaryContent } from './file-policy.js'
@@ -48,6 +49,11 @@ function scanPatterns(files: FetchedFile[]): ScanFinding[] {
       const line = lines[lineIdx]!
 
       for (const rule of SCAN_RULES) {
+        const fileExtension = extname(file.path).toLowerCase()
+        if (rule.fileExtensions && !rule.fileExtensions.includes(fileExtension)) {
+          continue
+        }
+
         if (rule.pattern.test(line)) {
           const evidence = `[${rule.category}] line ${lineIdx + 1}`
 
@@ -152,11 +158,13 @@ export async function scanFiles(
     }
   }
 
+  const filteredFiles = files.filter((file) => file.path !== '.agentverignore')
+
   // Run file policy checks
-  const policyFindings = checkFilePolicy(files)
+  const policyFindings = checkFilePolicy(filteredFiles)
 
   // Run pattern matching on text files
-  const patternFindings = scanPatterns(files)
+  const patternFindings = scanPatterns(filteredFiles)
 
   // Aggregate all findings
   const allFindings = [...policyFindings, ...patternFindings]

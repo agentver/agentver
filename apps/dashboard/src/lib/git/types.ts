@@ -84,7 +84,8 @@ export type GitProvider = {
     skillName: string,
     filePath: string,
     content: string,
-    message: string
+    message: string,
+    ref?: string
   ): Promise<{ commitSha: string }>
 
   getSkillFile(

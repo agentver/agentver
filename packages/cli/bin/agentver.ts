@@ -9,6 +9,7 @@ import { registerAgentsCommand } from '../src/commands/agents'
 import { registerAuditCommand } from '../src/commands/audit'
 import { registerCompletionCommand } from '../src/commands/completion'
 import { registerConfigCommand } from '../src/commands/config'
+import { registerDeprecateCommand } from '../src/commands/deprecate'
 import { registerDiffCommand } from '../src/commands/diff'
 import { registerDoctorCommand } from '../src/commands/doctor'
 import { registerDraftCommand } from '../src/commands/draft'
@@ -19,6 +20,7 @@ import { registerListCommand } from '../src/commands/list'
 import { registerLogCommand } from '../src/commands/log'
 import { registerLoginCommand } from '../src/commands/login'
 import { registerLogoutCommand } from '../src/commands/logout'
+import { registerMigrateCommand } from '../src/commands/migrate'
 import { registerPinCommand, registerUnpinCommand } from '../src/commands/pin'
 import { registerPublishCommand } from '../src/commands/publish'
 import { registerRemoveCommand } from '../src/commands/remove'
@@ -29,6 +31,7 @@ import { registerStatusCommand } from '../src/commands/status'
 import { registerSuggestCommand } from '../src/commands/suggest'
 import { registerSuggestionsCommand } from '../src/commands/suggestions'
 import { registerSyncCommand } from '../src/commands/sync'
+import { registerUnpublishCommand } from '../src/commands/unpublish'
 import { registerUpdateCommand } from '../src/commands/update'
 import { registerUpgradeCommand } from '../src/commands/upgrade'
 import { registerValidateCommand } from '../src/commands/validate'
@@ -72,6 +75,7 @@ registerAgentsCommand(program)
 registerAuditCommand(program)
 registerCompletionCommand(program)
 registerConfigCommand(program)
+registerDeprecateCommand(program)
 registerDiffCommand(program)
 registerDoctorCommand(program)
 registerDraftCommand(program)
@@ -82,6 +86,7 @@ registerListCommand(program)
 registerLogCommand(program)
 registerLoginCommand(program)
 registerLogoutCommand(program)
+registerMigrateCommand(program)
 registerPinCommand(program)
 registerPublishCommand(program)
 registerRemoveCommand(program)
@@ -93,6 +98,7 @@ registerSuggestCommand(program)
 registerSuggestionsCommand(program)
 registerSyncCommand(program)
 registerUnpinCommand(program)
+registerUnpublishCommand(program)
 registerUpdateCommand(program)
 registerUpgradeCommand(program)
 registerValidateCommand(program)

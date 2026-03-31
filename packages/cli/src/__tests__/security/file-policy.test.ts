@@ -67,6 +67,35 @@ describe('checkFilePolicy', () => {
     }
   })
 
+  it('flags private key file extensions', () => {
+    const privateKeyFiles = ['id_rsa.pem', 'service.key', 'certificate.p12', 'backup.pfx']
+    for (const filePath of privateKeyFiles) {
+      const files: FetchedFile[] = [{ path: filePath, content: 'secret', size: 6 }]
+      const findings = checkFilePolicy(files)
+      const keyFindings = findings.filter((f) => f.category === 'CREDENTIAL_FILE')
+      expect(keyFindings.length).toBeGreaterThanOrEqual(1)
+      expect(keyFindings[0]!.severity).toBe('HIGH')
+    }
+  })
+
+  it('flags credential file paths', () => {
+    const credentialPaths = [
+      '.aws/credentials',
+      '.ssh/id_rsa',
+      '.ssh/id_ed25519',
+      '.kube/config',
+      'nested/.aws/credentials',
+    ]
+
+    for (const filePath of credentialPaths) {
+      const files: FetchedFile[] = [{ path: filePath, content: 'secret', size: 6 }]
+      const findings = checkFilePolicy(files)
+      const credentialFindings = findings.filter((f) => f.category === 'CREDENTIAL_FILE')
+      expect(credentialFindings.length).toBeGreaterThanOrEqual(1)
+      expect(credentialFindings[0]!.severity).toBe('CRITICAL')
+    }
+  })
+
   it('flags files exceeding 1MB', () => {
     const files: FetchedFile[] = [{ path: 'big-file.txt', content: 'x', size: 2 * 1024 * 1024 }]
     const findings = checkFilePolicy(files)

@@ -1,20 +1,67 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { createCliLogger } from '../utils.js'
 
 const logger = createCliLogger('auth')
 
-type Credentials = {
-  token?: string
-  apiKey?: string
+const credentialsSchema = z
+  .object({
+    token: z.string().trim().min(1).optional(),
+    apiKey: z.string().trim().min(1).optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.token ?? value.apiKey), {
+    message: 'Credentials must include a non-empty token or API key.',
+  })
+
+export type Credentials = z.infer<typeof credentialsSchema>
+
+function getAgentverDir(): string {
+  return join(homedir(), '.agentver')
 }
 
 function getCredentialsPath(): string {
-  return join(homedir(), '.agentver', 'credentials.json')
+  return join(getAgentverDir(), 'credentials.json')
+}
+
+function ensureAgentverDir(): void {
+  const dir = getAgentverDir()
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+
+  try {
+    chmodSync(dir, 0o700)
+  } catch (error) {
+    logger.debug(`Could not update permissions for ${dir}: ${String(error)}`)
+  }
+}
+
+function normaliseCredentials(input: unknown): Credentials | null {
+  const result = credentialsSchema.safeParse(input)
+  if (!result.success) {
+    return null
+  }
+
+  return result.data
+}
+
+function getEnvironmentCredentials(): Credentials | null {
+  const token = process.env.AGENTVER_TOKEN?.trim()
+  const apiKey = process.env.AGENTVER_API_KEY?.trim()
+
+  return normaliseCredentials({
+    ...(token ? { token } : {}),
+    ...(apiKey ? { apiKey } : {}),
+  })
 }
 
 export async function getCredentials(): Promise<Credentials | null> {
+  const environmentCredentials = getEnvironmentCredentials()
+  if (environmentCredentials) {
+    return environmentCredentials
+  }
+
   const credPath = getCredentialsPath()
 
   if (!existsSync(credPath)) {
@@ -24,7 +71,15 @@ export async function getCredentials(): Promise<Credentials | null> {
   const raw = readFileSync(credPath, 'utf-8')
 
   try {
-    return JSON.parse(raw) as Credentials
+    const parsed = JSON.parse(raw) as unknown
+    const credentials = normaliseCredentials(parsed)
+    if (!credentials) {
+      logger.warn(
+        `Credentials at ${credPath} are invalid. Re-authenticate with \`agentver login\`.`
+      )
+      return null
+    }
+    return credentials
   } catch {
     logger.warn(
       `Could not parse credentials at ${credPath}. Re-authenticate with \`agentver login\`.`
@@ -34,14 +89,15 @@ export async function getCredentials(): Promise<Credentials | null> {
 }
 
 export function saveCredentials(credentials: Credentials): void {
-  const credPath = getCredentialsPath()
-  const dir = join(homedir(), '.agentver')
-
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
+  const validatedCredentials = normaliseCredentials(credentials)
+  if (!validatedCredentials) {
+    throw new Error('Credentials must include a non-empty token or API key.')
   }
 
-  writeFileSync(credPath, JSON.stringify(credentials, null, 2), { mode: 0o600 })
+  const credPath = getCredentialsPath()
+  ensureAgentverDir()
+
+  writeFileSync(credPath, JSON.stringify(validatedCredentials, null, 2), { mode: 0o600 })
 }
 
 export function clearCredentials(): void {
