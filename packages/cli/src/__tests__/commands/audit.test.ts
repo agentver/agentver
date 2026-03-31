@@ -74,12 +74,14 @@ describe('commands/audit', () => {
   const originalCwd = process.cwd
   const originalArgv = process.argv
   const originalExit = process.exit
+  const originalExitCode = process.exitCode
 
   beforeEach(() => {
     vi.clearAllMocks()
     process.cwd = vi.fn().mockReturnValue('/project')
     process.argv = ['node', 'agentver', 'audit']
     process.exit = vi.fn() as never
+    process.exitCode = undefined
 
     vi.mocked(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
@@ -97,6 +99,7 @@ describe('commands/audit', () => {
     process.cwd = originalCwd
     process.argv = originalArgv
     process.exit = originalExit
+    process.exitCode = originalExitCode
   })
 
   // -------------------------------------------------------------------------
@@ -160,6 +163,15 @@ describe('commands/audit', () => {
 
       expect(fetcherModule.readFilesFromDirectory).toHaveBeenCalledWith('/project/custom/dir')
       expect(manifestModule.readManifest).not.toHaveBeenCalled()
+    })
+
+    it('sets process.exitCode to 1 for BLOCK findings when using --path in non-JSON mode', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
+
+      await runAudit(['audit', '--path', 'custom/dir'])
+
+      expect(process.exitCode).toBe(1)
     })
   })
 
@@ -225,6 +237,20 @@ describe('commands/audit', () => {
       expect(typed.findings[0]!.severity).toBe('CRITICAL')
       expect(typed.findings[0]!.file).toBe('SKILL.md')
       expect(typed.findings[0]!.line).toBe(42)
+    })
+
+    it('sets process.exitCode to 1 in non-JSON mode when BLOCK findings are present', async () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: { 'risky-skill': createManifestPackage() },
+        })
+      )
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
+
+      await runAudit(['audit'])
+
+      expect(process.exitCode).toBe(1)
     })
   })
 

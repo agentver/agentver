@@ -136,7 +136,23 @@ function applyFilePatch(projectRoot: string, filePatch: FilePatch): boolean {
   }
 
   if (hasOnlyDeletions && existsSync(fullPath)) {
-    rmSync(fullPath)
+    const currentContent = readFileSync(fullPath, 'utf-8')
+    const currentLines = currentContent.split('\n')
+    const deletionResult = applyHunksToLines(currentLines, filePatch)
+    if (!deletionResult.success) {
+      return false
+    }
+
+    const isEmptyAfterPatch =
+      deletionResult.lines.length === 0 || deletionResult.lines.every((l) => l === '')
+    if (isEmptyAfterPatch) {
+      rmSync(fullPath)
+      return true
+    }
+
+    const tmpPath = `${fullPath}.tmp`
+    writeFileSync(tmpPath, deletionResult.lines.join('\n'), 'utf-8')
+    renameSync(tmpPath, fullPath)
     return true
   }
 
@@ -145,21 +161,31 @@ function applyFilePatch(projectRoot: string, filePatch: FilePatch): boolean {
   }
 
   const currentContent = readFileSync(fullPath, 'utf-8')
-  const currentLines = currentContent.split('\n')
+  const applyResult = applyHunksToLines(currentContent.split('\n'), filePatch)
+  if (!applyResult.success) return false
+
+  const tmpPath = `${fullPath}.tmp`
+  writeFileSync(tmpPath, applyResult.lines.join('\n'), 'utf-8')
+  renameSync(tmpPath, fullPath)
+  return true
+}
+
+function applyHunksToLines(
+  lines: string[],
+  filePatch: FilePatch
+): { success: boolean; lines: string[] } {
+  const nextLines = [...lines]
   let offset = 0
 
   for (const hunk of filePatch.hunks) {
-    const result = applyHunk(currentLines, hunk, offset)
+    const result = applyHunk(nextLines, hunk, offset)
     if (!result.success) {
-      return false
+      return { success: false, lines }
     }
     offset = result.offset
   }
 
-  const tmpPath = `${fullPath}.tmp`
-  writeFileSync(tmpPath, currentLines.join('\n'), 'utf-8')
-  renameSync(tmpPath, fullPath)
-  return true
+  return { success: true, lines: nextLines }
 }
 
 function applyHunk(

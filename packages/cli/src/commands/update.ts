@@ -6,7 +6,7 @@ import {
   getCommandPlacementPath,
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
-import type { UpdateResult } from '@agentver/shared'
+import type { ManifestV2Package, UpdateResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
@@ -15,6 +15,7 @@ import { fetchFiles, resolveRef } from '../git/index.js'
 import type { GitSource as CliGitSource, ResolvedRef } from '../git/types.js'
 import type { SpinnerLike } from '../output.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
+import { platformFetch } from '../registry/platform.js'
 import { getCanonicalSkillPath, resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity'
 import { readLockfile } from '../storage/lockfile'
@@ -23,7 +24,8 @@ import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/pa
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 import { extractError } from '../utils.js'
-import { installPackage } from './install'
+import { fetchWellKnownIndex, fetchWellKnownSkill } from '../wellknown/index.js'
+import { deriveCommitFromIntegrity, installPackage } from './install'
 
 type UpdateInfo = {
   name: string
@@ -32,10 +34,20 @@ type UpdateInfo = {
   ref: string
   sourceUri: string
   sourcePath: string
+  installSource: string
+  supportsPatch: boolean
   locallyModified: boolean
 }
 
 type UpdateAction = 'replace' | 'patch' | 'skip'
+
+type ResolveResponse = {
+  gitUri: string
+  gitPath?: string
+  gitRef?: string
+  source?: 'git' | 'platform'
+  files?: Array<{ path: string; content: string }>
+}
 
 /**
  * Validate a path read from the manifest before passing it to installPackage.
@@ -67,6 +79,66 @@ function parseUriToCliSource(
     ref,
     commit,
   }
+}
+
+function buildInstallSource(uri: string, path: string, ref: string): string {
+  return path ? `${uri}/${path}@${ref}` : `${uri}@${ref}`
+}
+
+async function resolveLatestGitCommit(source: ManifestV2Package['source']): Promise<string | null> {
+  if (source.type !== 'git') return null
+  const cliSource = parseUriToCliSource(source.uri, source.path, source.ref)
+  if (!cliSource) return null
+  const resolved = await resolveRef(cliSource)
+  return resolved.commitSha
+}
+
+async function resolveLatestPlatformCommit(
+  source: ManifestV2Package['source']
+): Promise<string | null> {
+  if (source.type !== 'git' || !source.uri.startsWith('agentver://')) return null
+
+  const org = source.uri.slice('agentver://'.length).trim()
+  if (!org) return null
+
+  const resolveName = source.path ? `${org}/${source.path}` : org
+  const resolved = await platformFetch<ResolveResponse>(
+    `/resolve?name=${encodeURIComponent(resolveName)}`
+  )
+
+  if (resolved.source === 'platform') {
+    if (!resolved.files || resolved.files.length === 0) return null
+    const integrity = computeSha256FromFiles(
+      resolved.files.map((file) => ({ path: file.path, content: file.content }))
+    )
+    return deriveCommitFromIntegrity(integrity)
+  }
+
+  const cliSource = parseUriToCliSource(
+    resolved.gitUri,
+    resolved.gitPath ?? source.path,
+    resolved.gitRef ?? source.ref
+  )
+  if (!cliSource) return null
+
+  const gitResolved = await resolveRef(cliSource)
+  return gitResolved.commitSha
+}
+
+async function resolveLatestWellKnownCommit(
+  source: ManifestV2Package['source']
+): Promise<string | null> {
+  if (source.type !== 'well-known') return null
+
+  const index = await fetchWellKnownIndex(source.baseUrl)
+  const entry = index.skills.find((skill) => skill.name === source.skillName)
+  if (!entry) return null
+
+  const fetchResult = await fetchWellKnownSkill(source.baseUrl, entry)
+  const integrity = computeSha256FromFiles(
+    fetchResult.files.map((file) => ({ path: file.path, content: file.content }))
+  )
+  return deriveCommitFromIntegrity(integrity)
 }
 
 async function checkLocalModifications(
@@ -301,6 +373,7 @@ export function registerUpdateCommand(program: Command): void {
       }
 
       const pinnedNames: string[] = []
+      const unsupportedNames: string[] = []
       const updatable = packageNames.filter((n) => {
         const pkg = packages[n]
         if (!pkg) return false
@@ -308,7 +381,18 @@ export function registerUpdateCommand(program: Command): void {
           pinnedNames.push(n)
           return false
         }
-        return pkg.source.type === 'git' && pkg.source.uri !== 'unknown'
+        if (pkg.source.type === 'git') {
+          if (pkg.source.uri === 'unknown') {
+            unsupportedNames.push(n)
+            return false
+          }
+          return true
+        }
+        if (pkg.source.type === 'well-known') {
+          return true
+        }
+        unsupportedNames.push(n)
+        return false
       })
 
       if (pinnedNames.length > 0 && !jsonMode) {
@@ -323,19 +407,13 @@ export function registerUpdateCommand(program: Command): void {
             updated: [],
             skipped: [
               ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
-              ...packageNames
-                .filter((n) => !pinnedNames.includes(n))
-                .map((n) => ({ name: n, reason: 'No known Git source' })),
+              ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
             ],
           })
           return
         }
         if (pinnedNames.length === 0) {
-          console.log(
-            chalk.dim(
-              'No packages with known Git sources. Reinstall packages using Git source URLs to enable updates.'
-            )
-          )
+          console.log(chalk.dim('No packages with known update sources.'))
         }
         return
       }
@@ -344,40 +422,92 @@ export function registerUpdateCommand(program: Command): void {
 
       try {
         const updates: UpdateInfo[] = []
+        const resolutionSkips: UpdateResult['skipped'] = []
+        const lockfile = readLockfile(projectRoot, scope)
 
         for (const pkgName of updatable) {
           const pkg = packages[pkgName]!
-          if (pkg.source.type !== 'git') continue
-
-          const { uri, path, ref, commit: currentCommit } = pkg.source
-
-          const cliSource = parseUriToCliSource(uri, path, ref)
-          if (!cliSource) continue
-
           try {
-            const resolved = await resolveRef(cliSource)
-
-            if (resolved.commitSha !== currentCommit) {
-              const locallyModified = await checkLocalModifications(
-                projectRoot,
-                pkgName,
-                pkg.agents,
-                scope,
-                pkg.packageType,
-                pkg.entryFile
+            if (pkg.source.type === 'git') {
+              const installSource = buildInstallSource(
+                pkg.source.uri,
+                pkg.source.path,
+                pkg.source.ref
               )
+              const supportsPatch = !pkg.source.uri.startsWith('agentver://')
+              const latestCommit = pkg.source.uri.startsWith('agentver://')
+                ? await resolveLatestPlatformCommit(pkg.source)
+                : await resolveLatestGitCommit(pkg.source)
 
+              if (!latestCommit) {
+                resolutionSkips.push({ name: pkgName, reason: 'Could not resolve upstream source' })
+                if (!jsonMode) {
+                  spinner.warn(`Could not check upstream for ${pkgName}`)
+                }
+                continue
+              }
+
+              if (latestCommit !== pkg.source.commit) {
+                const locallyModified = supportsPatch
+                  ? await checkLocalModifications(
+                      projectRoot,
+                      pkgName,
+                      pkg.agents,
+                      scope,
+                      pkg.packageType,
+                      pkg.entryFile
+                    )
+                  : false
+
+                updates.push({
+                  name: pkgName,
+                  currentCommit: pkg.source.commit,
+                  latestCommit,
+                  ref: pkg.source.ref,
+                  sourceUri: pkg.source.uri,
+                  sourcePath: pkg.source.path,
+                  installSource,
+                  supportsPatch,
+                  locallyModified,
+                })
+              }
+              continue
+            }
+
+            const lockEntry = lockfile.packages[pkgName]
+            if (!lockEntry?.integrity) {
+              resolutionSkips.push({ name: pkgName, reason: 'No lockfile integrity found' })
+              if (!jsonMode) {
+                spinner.warn(`Could not check upstream for ${pkgName}`)
+              }
+              continue
+            }
+
+            const latestCommit = await resolveLatestWellKnownCommit(pkg.source)
+            if (!latestCommit) {
+              resolutionSkips.push({ name: pkgName, reason: 'Could not resolve well-known source' })
+              if (!jsonMode) {
+                spinner.warn(`Could not check upstream for ${pkgName}`)
+              }
+              continue
+            }
+
+            const currentCommit = deriveCommitFromIntegrity(lockEntry.integrity)
+            if (latestCommit !== currentCommit) {
               updates.push({
                 name: pkgName,
                 currentCommit,
-                latestCommit: resolved.commitSha,
-                ref,
-                sourceUri: uri,
-                sourcePath: path,
-                locallyModified,
+                latestCommit,
+                ref: 'well-known',
+                sourceUri: pkg.source.baseUrl,
+                sourcePath: pkg.source.skillName,
+                installSource: `${pkg.source.baseUrl}/${pkg.source.skillName}`,
+                supportsPatch: false,
+                locallyModified: false,
               })
             }
           } catch {
+            resolutionSkips.push({ name: pkgName, reason: 'Could not resolve upstream source' })
             spinner.warn(`Could not check upstream for ${pkgName}`)
           }
         }
@@ -386,7 +516,14 @@ export function registerUpdateCommand(program: Command): void {
 
         if (updates.length === 0) {
           if (jsonMode) {
-            outputSuccess<UpdateResult>({ updated: [], skipped: [] })
+            outputSuccess<UpdateResult>({
+              updated: [],
+              skipped: [
+                ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
+                ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                ...resolutionSkips,
+              ],
+            })
             return
           }
           console.log(chalk.green('All packages are up to date.'))
@@ -412,7 +549,12 @@ export function registerUpdateCommand(program: Command): void {
           if (jsonMode) {
             outputSuccess<UpdateResult>({
               updated: [],
-              skipped: updates.map((u) => ({ name: u.name, reason: 'dry-run' })),
+              skipped: [
+                ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
+                ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                ...resolutionSkips,
+                ...updates.map((u) => ({ name: u.name, reason: 'dry-run' })),
+              ],
             })
             return
           }
@@ -460,7 +602,7 @@ export function registerUpdateCommand(program: Command): void {
               continue
             }
 
-            if (action === 'patch') {
+            if (action === 'patch' && update.supportsPatch) {
               const updateSpinner = createSpinner(
                 `Processing patch update for ${update.name}...`
               ).start()
@@ -541,15 +683,11 @@ export function registerUpdateCommand(program: Command): void {
           try {
             backup = createBackup(update.name, projectRoot, backupDir, scope)
 
-            const sourceUrl = update.sourcePath
-              ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
-              : `${update.sourceUri}@${update.ref}`
-
             const typeOption = isSingleFileUpdate
               ? { type: pkgType.toLowerCase() as 'agent' | 'command' }
               : {}
 
-            const result = await installPackage(sourceUrl, {
+            const result = await installPackage(update.installSource, {
               ...(agents.length > 0 ? { agent: agents } : {}),
               ...(scope === 'global' ? { global: true } : {}),
               ...(installedPath ? { path: installedPath } : {}),
@@ -593,7 +731,12 @@ export function registerUpdateCommand(program: Command): void {
         if (jsonMode) {
           outputSuccess<UpdateResult>({
             updated: jsonUpdated,
-            skipped: [...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })), ...jsonSkipped],
+            skipped: [
+              ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
+              ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+              ...resolutionSkips,
+              ...jsonSkipped,
+            ],
           })
           return
         }

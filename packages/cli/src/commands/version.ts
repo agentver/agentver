@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { createSpinner } from '../output.js'
+import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
@@ -27,6 +27,17 @@ type VersionListOptions = {
 type VersionCreateOptions = {
   notes?: string
   json?: boolean
+}
+
+type VersionCreateResult = {
+  skill: string
+  version: string
+  tag: string
+  commitSha: string
+}
+
+type VersionListResult = {
+  versions: VersionInfo[]
 }
 
 /**
@@ -79,20 +90,26 @@ export function registerVersionCommand(program: Command): void {
     .option('--notes <text>', 'Release notes')
     .option('--json', 'Output as JSON')
     .action(async (semver: string, options: VersionCreateOptions) => {
+      const jsonMode = isJSONMode()
+
       if (!SEMVER_REGEX.test(semver)) {
-        process.stderr.write(
-          chalk.red(
-            `Invalid semver "${semver}". Expected format: 1.0.0, 1.0.0-beta.1, or 1.0.0+build.42\n`
-          )
-        )
+        const message = `Invalid semver "${semver}". Expected format: 1.0.0, 1.0.0-beta.1, or 1.0.0+build.42`
+        if (jsonMode) {
+          outputError('VALIDATION_ERROR', message)
+        } else {
+          process.stderr.write(chalk.red(`${message}\n`))
+        }
         process.exit(1)
       }
 
       const identity = resolveSkillIdentity()
       if (!identity) {
-        process.stderr.write(
-          chalk.red('Could not determine skill identity. Run this from a skill directory.\n')
-        )
+        const message = 'Could not determine skill identity. Run this from a skill directory.'
+        if (jsonMode) {
+          outputError('NOT_FOUND', message)
+        } else {
+          process.stderr.write(chalk.red(`${message}\n`))
+        }
         process.exit(1)
       }
 
@@ -102,7 +119,12 @@ export function registerVersionCommand(program: Command): void {
       const commitSha = lockEntry?.source.type === 'git' ? lockEntry.source.commit : undefined
 
       if (!commitSha || commitSha === 'unknown') {
-        process.stderr.write(chalk.red('No commit SHA found in lockfile. Save changes first.\n'))
+        const message = 'No commit SHA found in lockfile. Save changes first.'
+        if (jsonMode) {
+          outputError('NOT_FOUND', message)
+        } else {
+          process.stderr.write(chalk.red(`${message}\n`))
+        }
         process.exit(1)
       }
 
@@ -121,20 +143,14 @@ export function registerVersionCommand(program: Command): void {
           }
         )
 
-        if (options.json) {
+        if (jsonMode) {
           spinner.stop()
-          console.log(
-            JSON.stringify(
-              {
-                skill: `@${identity.org}/${identity.name}`,
-                version: semver,
-                tag: result.tag,
-                commitSha: result.commitSha,
-              },
-              null,
-              2
-            )
-          )
+          outputSuccess<VersionCreateResult>({
+            skill: `@${identity.org}/${identity.name}`,
+            version: semver,
+            tag: result.tag,
+            commitSha: result.commitSha,
+          })
         } else {
           spinner.succeed(
             `Version ${chalk.cyan(semver)} created ${chalk.dim(`(${result.commitSha.slice(0, 7)})`)}`
@@ -142,7 +158,12 @@ export function registerVersionCommand(program: Command): void {
         }
       } catch (error) {
         const { message } = extractError(error, 'VERSION_FAILED')
-        spinner.fail(`Failed to create version: ${message}`)
+        if (jsonMode) {
+          spinner.stop()
+          outputError('VERSION_FAILED', message)
+        } else {
+          spinner.fail(`Failed to create version: ${message}`)
+        }
         process.exit(1)
       }
     })
@@ -152,12 +173,17 @@ export function registerVersionCommand(program: Command): void {
     .command('list')
     .description('List versions for the current skill')
     .option('--json', 'Output as JSON')
-    .action(async (options: VersionListOptions) => {
+    .action(async (_options: VersionListOptions) => {
+      const jsonMode = isJSONMode()
+
       const identity = resolveSkillIdentity()
       if (!identity) {
-        process.stderr.write(
-          chalk.red('Could not determine skill identity. Run this from a skill directory.\n')
-        )
+        const message = 'Could not determine skill identity. Run this from a skill directory.'
+        if (jsonMode) {
+          outputError('NOT_FOUND', message)
+        } else {
+          process.stderr.write(chalk.red(`${message}\n`))
+        }
         process.exit(1)
       }
 
@@ -170,8 +196,8 @@ export function registerVersionCommand(program: Command): void {
 
         spinner.stop()
 
-        if (options.json) {
-          console.log(JSON.stringify({ versions }, null, 2))
+        if (jsonMode) {
+          outputSuccess<VersionListResult>({ versions })
           return
         }
 
@@ -191,7 +217,12 @@ export function registerVersionCommand(program: Command): void {
         process.stdout.write('\n')
       } catch (error) {
         const { message } = extractError(error, 'VERSION_FAILED')
-        spinner.fail(`Failed to list versions: ${message}`)
+        if (jsonMode) {
+          spinner.stop()
+          outputError('VERSION_FAILED', message)
+        } else {
+          spinner.fail(`Failed to list versions: ${message}`)
+        }
         process.exit(1)
       }
     })

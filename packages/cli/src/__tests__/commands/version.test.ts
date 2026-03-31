@@ -143,17 +143,16 @@ function setupLockfileWithoutCommit(): void {
 
 describe('version command', () => {
   let processExitSpy: ReturnType<typeof vi.spyOn>
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     vi.clearAllMocks()
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.mocked(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
+    vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
   })
 
   afterEach(() => {
@@ -293,6 +292,7 @@ describe('version command', () => {
     it('outputs valid JSON with --json flag', async () => {
       setupIdentity()
       setupLockfileWithCommit()
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(platformFetch).mockResolvedValue({
         tag: 'v1.0.0',
         commitSha: 'abc1234567',
@@ -301,15 +301,32 @@ describe('version command', () => {
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'version', 'create', '1.0.0', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output).toHaveProperty('skill', '@test-org/test-skill')
-      expect(output).toHaveProperty('version', '1.0.0')
-      expect(output).toHaveProperty('tag', 'v1.0.0')
-      expect(output).toHaveProperty('commitSha', 'abc1234567')
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith({
+        skill: '@test-org/test-skill',
+        version: '1.0.0',
+        tag: 'v1.0.0',
+        commitSha: 'abc1234567',
+      })
+    })
+
+    it('uses JSON envelope when JSON mode is enabled without --json flag', async () => {
+      setupIdentity()
+      setupLockfileWithCommit()
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(platformFetch).mockResolvedValue({
+        tag: 'v1.0.0',
+        commitSha: 'abc1234567',
+      })
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'version', 'create', '1.0.0'])
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith({
+        skill: '@test-org/test-skill',
+        version: '1.0.0',
+        tag: 'v1.0.0',
+        commitSha: 'abc1234567',
+      })
     })
 
     // -----------------------------------------------------------------------
@@ -479,6 +496,7 @@ describe('version command', () => {
 
     it('outputs valid JSON with --json flag', async () => {
       setupIdentity()
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(platformFetch).mockResolvedValue([
         {
           name: 'v1.0.0',
@@ -491,32 +509,52 @@ describe('version command', () => {
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'version', 'list', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output).toHaveProperty('versions')
-      expect(Array.isArray(output.versions)).toBe(true)
-      const versions = output.versions as Array<Record<string, unknown>>
+      expect(outputModule.outputSuccess).toHaveBeenCalled()
+      const [output] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typed = output as Record<string, unknown>
+      expect(typed).toHaveProperty('versions')
+      expect(Array.isArray(typed.versions)).toBe(true)
+      const versions = typed.versions as Array<Record<string, unknown>>
       expect(versions[0]).toHaveProperty('name', 'v1.0.0')
       expect(versions[0]).toHaveProperty('commitSha', 'abc1234567')
     })
 
     it('outputs valid JSON with empty version list', async () => {
       setupIdentity()
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(platformFetch).mockResolvedValue([])
 
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'version', 'list', '--json'])
 
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const output = JSON.parse(consoleLogSpy.mock.calls[0]![0] as string) as Record<
-        string,
-        unknown
-      >
-      expect(output).toHaveProperty('versions')
-      expect(output.versions).toEqual([])
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith({ versions: [] })
+    })
+
+    it('uses JSON envelope for list when JSON mode is enabled without --json flag', async () => {
+      setupIdentity()
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      vi.mocked(platformFetch).mockResolvedValue([
+        {
+          name: 'v1.0.0',
+          tag: 'v1.0.0',
+          commitSha: 'abc1234567',
+          message: 'Initial release',
+        },
+      ])
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'version', 'list'])
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith({
+        versions: [
+          {
+            name: 'v1.0.0',
+            tag: 'v1.0.0',
+            commitSha: 'abc1234567',
+            message: 'Initial release',
+          },
+        ],
+      })
     })
 
     // -----------------------------------------------------------------------

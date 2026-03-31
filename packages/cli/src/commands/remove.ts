@@ -5,7 +5,7 @@ import {
   getCommandPlacementPath,
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
-import type { RemoveResult } from '@agentver/shared'
+import type { LockfileV2, RemoveResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
@@ -19,8 +19,8 @@ import {
   removeAgentSymlinks,
   removeCanonicalDirectory,
 } from '../storage/canonical'
-import { readLockfile, writeLockfile } from '../storage/lockfile'
-import { readManifest, writeManifest } from '../storage/manifest'
+import { readManifest } from '../storage/manifest'
+import { updateManifestAndLockfile } from '../storage/pair'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 /**
@@ -82,7 +82,7 @@ function removePackageFiles(
   pkg: { agents: string[] },
   scope: Scope,
   manifest: ReturnType<typeof readManifest>,
-  lockfile: ReturnType<typeof readLockfile>
+  lockfile: LockfileV2
 ): void {
   const hasCanonical = isSymlinkedInstall(projectRoot, shortName, scope)
 
@@ -351,30 +351,44 @@ export function registerRemoveCommand(program: Command): void {
         }
 
         const spinner = createSpinner(`Removing ${name}...`).start()
-        const lockfile = readLockfile(projectRoot, scope)
 
-        // Remove constituents first if this is a bundle
-        if (isBundle && constituents.length > 0) {
-          for (const cName of constituents) {
-            const cPkg = manifest.packages[cName]
-            if (cPkg) {
-              removePackageFiles(projectRoot, cName, cName, cPkg, scope, manifest, lockfile)
-              reportRemoval(cName)
+        updateManifestAndLockfile(projectRoot, scope, (currentManifest, currentLockfile) => {
+          if (isBundle && constituents.length > 0) {
+            for (const cName of constituents) {
+              const cPkg = currentManifest.packages[cName]
+              if (cPkg) {
+                removePackageFiles(
+                  projectRoot,
+                  cName,
+                  cName,
+                  cPkg,
+                  scope,
+                  currentManifest,
+                  currentLockfile
+                )
+                reportRemoval(cName)
+              }
             }
           }
-        }
 
-        // Remove the package itself
-        if (isSingleFile) {
-          removeSingleFilePackage(projectRoot, shortName, pkg, scope)
-          delete manifest.packages[manifestKey]
-          delete lockfile.packages[manifestKey]
-        } else {
-          removePackageFiles(projectRoot, manifestKey, shortName, pkg, scope, manifest, lockfile)
-        }
+          if (isSingleFile) {
+            removeSingleFilePackage(projectRoot, shortName, pkg, scope)
+            delete currentManifest.packages[manifestKey]
+            delete currentLockfile.packages[manifestKey]
+          } else {
+            removePackageFiles(
+              projectRoot,
+              manifestKey,
+              shortName,
+              pkg,
+              scope,
+              currentManifest,
+              currentLockfile
+            )
+          }
 
-        writeManifest(projectRoot, manifest, scope)
-        writeLockfile(projectRoot, lockfile, scope)
+          return { manifest: currentManifest, lockfile: currentLockfile }
+        })
 
         reportRemoval(name)
 

@@ -19,6 +19,10 @@ vi.mock('../../storage/lockfile', () => ({
   writeLockfile: vi.fn(),
 }))
 
+vi.mock('../../storage/pair', () => ({
+  updateManifestAndLockfile: vi.fn(),
+}))
+
 vi.mock('../../storage/integrity', () => ({
   computeSha256FromFiles: vi.fn().mockReturnValue('sha256-test'),
 }))
@@ -54,6 +58,7 @@ version: 0.1.0
 const { installBundleFromFiles } = await import('../../bundle/installer')
 const { readManifest, writeManifest } = await import('../../storage/manifest')
 const { readLockfile, writeLockfile } = await import('../../storage/lockfile')
+const { updateManifestAndLockfile } = await import('../../storage/pair')
 const { installLocalBundleConstituent } = await import('../../bundle/local-install.js')
 
 function createBundleFile(yaml: string): FetchedFile {
@@ -92,6 +97,14 @@ describe('installBundleFromFiles', () => {
     vi.clearAllMocks()
     vi.mocked(readManifest).mockReturnValue(createManifest())
     vi.mocked(readLockfile).mockReturnValue(createLockfile())
+    vi.mocked(updateManifestAndLockfile).mockImplementation((projectRoot, scope, updater) => {
+      const manifest = structuredClone(readManifest(projectRoot, scope))
+      const lockfile = structuredClone(readLockfile(projectRoot, scope))
+      const updated = updater(manifest, lockfile)
+      writeManifest(projectRoot, updated.manifest, scope)
+      writeLockfile(projectRoot, updated.lockfile, scope)
+      return updated
+    })
   })
 
   afterEach(() => {

@@ -125,6 +125,7 @@ export function registerVerifyCommand(program: Command): void {
         if (packageNames.length === 0) {
           if (jsonMode) {
             outputError('NO_SKILL', 'No skill name provided and no packages installed')
+            process.exitCode = 1
             return
           }
           process.stderr.write(chalk.red('No skill name provided and no packages installed.\n'))
@@ -140,6 +141,7 @@ export function registerVerifyCommand(program: Command): void {
               'AMBIGUOUS_SKILL',
               `Multiple packages installed. Specify one: ${packageNames.join(', ')}`
             )
+            process.exitCode = 1
             return
           }
           process.stderr.write(
@@ -160,6 +162,7 @@ export function registerVerifyCommand(program: Command): void {
             'INVALID_NAME',
             `Invalid skill name "${skillName}". Expected format: @org/skill-name`
           )
+          process.exitCode = 1
           return
         }
         process.stderr.write(

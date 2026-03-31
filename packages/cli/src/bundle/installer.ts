@@ -12,8 +12,7 @@ import type { InstallOptions, InstallResult } from '../commands/install.js'
 import type { FetchedFile } from '../git/types.js'
 import type { SpinnerLike } from '../output.js'
 import { computeSha256FromFiles } from '../storage/integrity'
-import { readLockfile, writeLockfile } from '../storage/lockfile'
-import { readManifest, writeManifest } from '../storage/manifest'
+import { updateManifestAndLockfile } from '../storage/pair'
 import type { ResolvedPackageRef } from './resolver.js'
 import { resolveBundle, validateBundleManifest } from './resolver.js'
 
@@ -153,10 +152,6 @@ export async function installBundleFromFiles(
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
 
-  // Read manifest and lockfile once; accumulate changes in memory, write once after the loop
-  const manifestData = options.dryRun ? undefined : readManifest(projectRoot, scope)
-  const lockfileData = options.dryRun ? undefined : readLockfile(projectRoot, scope)
-
   // Install each constituent package
   for (const pkgRef of resolved.packages) {
     const localFiles = extractLocalPackageFiles(files, pkgRef.name, pkgRef.type)
@@ -171,19 +166,22 @@ export async function installBundleFromFiles(
           await installLocalBundleConstituent(pkgRef.name, localFiles, agents, options, spinner)
 
           const integrity = computeSha256FromFiles(localFiles)
-          manifestData!.packages[pkgRef.name] = {
-            source,
-            agents,
-            installedAt: new Date().toISOString(),
-            modified: false,
-            bundle: bundleName,
-            packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
-          }
-          lockfileData!.packages[pkgRef.name] = {
-            source,
-            integrity,
-            agents,
-          }
+          updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
+            manifest.packages[pkgRef.name] = {
+              source,
+              agents,
+              installedAt: new Date().toISOString(),
+              modified: false,
+              bundle: bundleName,
+              packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
+            }
+            lockfile.packages[pkgRef.name] = {
+              source,
+              integrity,
+              agents,
+            }
+            return { manifest, lockfile }
+          })
         }
 
         installed.push({
@@ -215,18 +213,15 @@ export async function installBundleFromFiles(
           skipAudit: true,
         })
 
-        // Update the manifest entry with bundle metadata.
-        // installPackageFn writes its own manifest entry, so re-read to pick it up
-        // before annotating with bundle metadata.
         if (!options.dryRun) {
-          const freshManifest = readManifest(projectRoot, scope)
-          const entry = freshManifest.packages[result.name]
-          if (entry) {
-            entry.bundle = bundleName
-            entry.packageType = TYPE_PACKAGE_TYPE_MAP[pkgRef.type]
-            // Merge the platform-installed entry into our accumulated manifest
-            manifestData!.packages[result.name] = entry
-          }
+          updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
+            const entry = manifest.packages[result.name]
+            if (entry) {
+              entry.bundle = bundleName
+              entry.packageType = TYPE_PACKAGE_TYPE_MAP[pkgRef.type]
+            }
+            return { manifest, lockfile }
+          })
         }
 
         installed.push({
@@ -246,12 +241,6 @@ export async function installBundleFromFiles(
         }
       }
     }
-  }
-
-  // Write accumulated manifest and lockfile changes once
-  if (!options.dryRun) {
-    writeManifest(projectRoot, manifestData!, scope)
-    writeLockfile(projectRoot, lockfileData!, scope)
   }
 
   // Log MCP server info (configuration deferred to a future phase)

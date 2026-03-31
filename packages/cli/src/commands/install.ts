@@ -20,6 +20,8 @@ import {
   AgentverError,
   type BundleInstallResult,
   type GitSource,
+  type LockfileV2,
+  type ManifestV2,
   PACKAGE_STRUCTURES,
   type PackageSource,
   type WellKnownSource,
@@ -50,8 +52,8 @@ import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
 import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical'
 import { computeSha256FromFiles } from '../storage/integrity'
-import { readLockfile, writeLockfile } from '../storage/lockfile'
-import { readManifest, writeManifest } from '../storage/manifest'
+import { readManifest } from '../storage/manifest'
+import { updateManifestAndLockfile } from '../storage/pair'
 import { resolvePlacementPath } from '../utils/paths'
 import { extractError } from '../utils.js'
 import {
@@ -80,6 +82,8 @@ export type InstallResult = {
   commitSha: string
   agents: string[]
 }
+
+type InstalledPackageType = NonNullable<ManifestV2['packages'][string]['packageType']>
 
 type ResolveResponse = {
   gitUri: string
@@ -161,6 +165,20 @@ function looksLikeGitUrl(source: string): boolean {
     .split('#')[0]!
   const segments = cleaned.split('/').filter(Boolean)
   return segments.length >= 3 && segments[0]!.includes('.')
+}
+
+function recordInstalledPackage(
+  projectRoot: string,
+  scope: 'project' | 'global',
+  name: string,
+  manifestEntry: ManifestV2['packages'][string],
+  lockfileEntry: LockfileV2['packages'][string]
+): void {
+  updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
+    manifest.packages[name] = manifestEntry
+    lockfile.packages[name] = lockfileEntry
+    return { manifest, lockfile }
+  })
 }
 
 async function fetchFromPlatform<T>(platformUrl: string, path: string): Promise<T> {
@@ -253,7 +271,7 @@ async function installFromWellKnown(
     const projectRoot = process.cwd()
     const requestedAgents = toAgentList(options.agent)
     let agents: string[] = []
-    let detectedWkType: string | undefined
+    let detectedWkType: InstalledPackageType | undefined
     let installedWkEntryFile: string | undefined
     const scope = options.global ? 'global' : 'project'
 
@@ -363,8 +381,7 @@ async function installFromWellKnown(
       skillName: selectedEntry.name,
     }
 
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[selectedEntry.name] = {
+    const manifestEntry = {
       source: wellKnownSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
@@ -376,7 +393,6 @@ async function installFromWellKnown(
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
       ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
-    writeManifest(projectRoot, manifest, scope)
 
     const wkSingleFileIntegrity =
       installedWkEntryFile && (detectedWkType === 'AGENT' || detectedWkType === 'COMMAND')
@@ -391,13 +407,18 @@ async function installFromWellKnown(
           ])
         : integrity
 
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[selectedEntry.name] = {
+    const lockfileEntry = {
       source: wellKnownSourceRecord,
       integrity: wkSingleFileIntegrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile, scope)
+    recordInstalledPackage(
+      projectRoot,
+      scope as 'project' | 'global',
+      selectedEntry.name,
+      manifestEntry,
+      lockfileEntry
+    )
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -552,7 +573,7 @@ async function installFromPlatform(
     const scope = options.global ? 'global' : 'project'
     const sourceUri = `agentver://${parsed.org}`
     let agents: string[] = []
-    let detectedPlatformType: string | undefined
+    let detectedPlatformType: InstalledPackageType | undefined
     let installedPlatformEntryFile: string | undefined
 
     // Enforce dependsOn / conflictsWith before installing
@@ -658,8 +679,7 @@ async function installFromPlatform(
       commit: syntheticCommit,
     }
 
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[shortName] = {
+    const manifestEntry = {
       source: gitSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
@@ -671,7 +691,6 @@ async function installFromPlatform(
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
       ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
-    writeManifest(projectRoot, manifest, scope)
 
     const platformSingleFileIntegrity =
       installedPlatformEntryFile &&
@@ -687,13 +706,12 @@ async function installFromPlatform(
           ])
         : integrity
 
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[shortName] = {
+    const lockfileEntry = {
       source: gitSourceRecord,
       integrity: platformSingleFileIntegrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile, scope)
+    recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
 
     const target = options.path ?? agents.join(', ')
     const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -863,7 +881,7 @@ export async function installPackage(
     const scope = options.global ? 'global' : 'project'
     const gitUri = `${gitSource.host}/${gitSource.owner}/${gitSource.repo}`
     let agents: string[] = []
-    let detectedType: string | undefined
+    let detectedType: InstalledPackageType | undefined
     let installedEntryFile: string | undefined
 
     // Enforce dependsOn / conflictsWith before installing
@@ -969,8 +987,7 @@ export async function installPackage(
       commit: resolved.commitSha,
     }
 
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[shortName] = {
+    const manifestEntry = {
       source: gitSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
@@ -982,7 +999,6 @@ export async function installPackage(
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
       ...(depMeta.conflictsWith.length > 0 ? { conflictsWith: depMeta.conflictsWith } : {}),
     }
-    writeManifest(projectRoot, manifest, scope)
 
     const singleFileIntegrity =
       installedEntryFile && (detectedType === 'AGENT' || detectedType === 'COMMAND')
@@ -996,13 +1012,12 @@ export async function installPackage(
           ])
         : integrity
 
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[shortName] = {
+    const lockfileEntry = {
       source: gitSourceRecord,
       integrity: singleFileIntegrity,
       agents,
     }
-    writeLockfile(projectRoot, lockfile, scope)
+    recordInstalledPackage(projectRoot, scope, shortName, manifestEntry, lockfileEntry)
 
     reportInstallation(shortName, gitSourceRecord, agents, resolved.commitSha)
 
@@ -1057,7 +1072,10 @@ function formatSource(source: { host: string; owner: string; repo: string; path:
   return source.path ? `${base}/${source.path}` : base
 }
 
-function detectPackageType(files: FetchedFile[], typeOverride?: 'agent' | 'command'): string {
+function detectPackageType(
+  files: FetchedFile[],
+  typeOverride?: 'agent' | 'command'
+): InstalledPackageType {
   if (typeOverride) {
     const normalised = typeOverride.toUpperCase()
     if (normalised === 'AGENT') return 'AGENT'
@@ -1068,7 +1086,7 @@ function detectPackageType(files: FetchedFile[], typeOverride?: 'agent' | 'comma
 
   for (const [type, structure] of Object.entries(PACKAGE_STRUCTURES)) {
     if (type === 'AGENT_CONFIG' || type === 'AGENT' || type === 'COMMAND') continue
-    if (filenames.has(structure.entryFile)) return type
+    if (filenames.has(structure.entryFile)) return type as InstalledPackageType
   }
 
   for (const cf of AGENT_CONFIG_FILES) {
@@ -1368,24 +1386,23 @@ async function installBundleFlow(
   )
 
   if (!options.dryRun) {
-    // Record the bundle itself in manifest/lockfile
-    const manifest = readManifest(projectRoot, scope)
-    manifest.packages[bundleName] = {
-      source: sourceRecord,
-      agents,
-      installedAt: new Date().toISOString(),
-      modified: false,
-      packageType: 'BUNDLE',
-    }
-    writeManifest(projectRoot, manifest, scope)
-
-    const lockfile = readLockfile(projectRoot, scope)
-    lockfile.packages[bundleName] = {
-      source: sourceRecord,
-      integrity,
-      agents,
-    }
-    writeLockfile(projectRoot, lockfile, scope)
+    recordInstalledPackage(
+      projectRoot,
+      scope,
+      bundleName,
+      {
+        source: sourceRecord,
+        agents,
+        installedAt: new Date().toISOString(),
+        modified: false,
+        packageType: 'BUNDLE',
+      },
+      {
+        source: sourceRecord,
+        integrity,
+        agents,
+      }
+    )
   }
 
   const scopeLabel = scope === 'global' ? 'user' : 'project'
@@ -1413,7 +1430,10 @@ export function registerInstallCommand(program: Command): void {
   program
     .command('install <source>')
     .description('Install a skill from a Git repository or well-known domain')
-    .option('--agent <agent>', 'Target specific agent')
+    .option('--agent <agent>', 'Target specific agent', (value: string, previous?: string[]) => [
+      ...(previous ?? []),
+      value,
+    ])
     .option('--global', 'Install at user level (~/.agents/skills/) — available across all projects')
     .option('--dry-run', 'Show what would be installed without making changes')
     .option('--path <path>', 'Override placement path (relative to cwd or absolute)')

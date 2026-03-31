@@ -8,8 +8,8 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { computeSha256FromBuffer } from '../storage/integrity'
-import { readLockfile, writeLockfile } from '../storage/lockfile'
-import { readManifest, writeManifest } from '../storage/manifest'
+import { readManifest } from '../storage/manifest'
+import { updateManifestAndLockfile } from '../storage/pair'
 
 export type AdoptOptions = {
   global?: boolean
@@ -35,6 +35,24 @@ type DeduplicatedFile = {
   name: string
   detectedType: ScannedFile['detectedType']
   agents: string[]
+}
+
+type PendingAdoption = {
+  name: string
+  path: string
+  type: string
+  agents: string[]
+  manifestEntry: {
+    source: GitSource
+    agents: string[]
+    installedAt: string
+    modified: false
+  }
+  lockfileEntry: {
+    source: GitSource
+    integrity: string
+    agents: string[]
+  }
 }
 
 function deduplicateByPath(files: ScannedFile[]): DeduplicatedFile[] {
@@ -127,9 +145,9 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
     const deduped = deduplicateByPath(allFiles)
 
     const manifest = readManifest(projectRoot)
-    const lockfile = readLockfile(projectRoot)
     const adopted: AdoptedEntry[] = []
     const skipped: SkippedEntry[] = []
+    const pendingAdoptions: PendingAdoption[] = []
 
     for (const file of deduped) {
       // Check if already in manifest
@@ -154,18 +172,23 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
       }
 
       if (!options.dryRun) {
-        manifest.packages[file.name] = {
-          source,
+        pendingAdoptions.push({
+          name: file.name,
+          path: file.path,
+          type: file.detectedType,
           agents: file.agents,
-          installedAt: new Date().toISOString(),
-          modified: false,
-        }
-
-        lockfile.packages[file.name] = {
-          source,
-          integrity,
-          agents: file.agents,
-        }
+          manifestEntry: {
+            source,
+            agents: file.agents,
+            installedAt: new Date().toISOString(),
+            modified: false,
+          },
+          lockfileEntry: {
+            source,
+            integrity,
+            agents: file.agents,
+          },
+        })
       }
 
       adopted.push({
@@ -176,10 +199,33 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
       })
     }
 
-    // Write manifest and lockfile
-    if (!options.dryRun && adopted.length > 0) {
-      writeManifest(projectRoot, manifest)
-      writeLockfile(projectRoot, lockfile)
+    if (!options.dryRun && pendingAdoptions.length > 0) {
+      const committed = new Set<string>()
+
+      updateManifestAndLockfile(projectRoot, 'project', (currentManifest, currentLockfile) => {
+        for (const adoption of pendingAdoptions) {
+          if (currentManifest.packages[adoption.name]) {
+            skipped.push({
+              name: adoption.name,
+              path: adoption.path,
+              reason: 'Already managed by Agentver',
+            })
+            continue
+          }
+
+          currentManifest.packages[adoption.name] = { ...adoption.manifestEntry }
+          currentLockfile.packages[adoption.name] = { ...adoption.lockfileEntry }
+          committed.add(adoption.name)
+        }
+
+        return { manifest: currentManifest, lockfile: currentLockfile }
+      })
+
+      if (committed.size !== pendingAdoptions.length) {
+        const committedAdoptions = adopted.filter((entry) => committed.has(entry.name))
+        adopted.length = 0
+        adopted.push(...committedAdoptions)
+      }
     }
 
     // Output results

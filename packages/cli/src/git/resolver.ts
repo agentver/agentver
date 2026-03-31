@@ -59,7 +59,7 @@ export function parseGitSource(source: string): GitSource {
 
   const hostRaw = segments[0]!
   const owner = segments[1]!
-  const repo = segments[2]!
+  const repo = segments[2]!.replace(/\.git$/i, '')
   const pathParts = segments.slice(3)
   return {
     host: hostRaw,

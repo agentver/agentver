@@ -105,6 +105,7 @@ export function registerAuditCommand(program: Command): void {
         }
 
         const scanResult = await auditDirectory(targetPath, options.path, source)
+        const hasBlockFinding = scanResult?.verdict === 'BLOCK'
 
         if (jsonMode) {
           const passed =
@@ -121,6 +122,14 @@ export function registerAuditCommand(program: Command): void {
             })),
           }
           outputSuccess(auditResult)
+          if (!passed) {
+            process.exitCode = 1
+          }
+          return
+        }
+
+        if (hasBlockFinding) {
+          process.exitCode = 1
         }
         return
       }
@@ -158,6 +167,7 @@ export function registerAuditCommand(program: Command): void {
 
       const allFindings: AuditResult['findings'] = []
       let allPassed = true
+      let hasBlockFinding = false
 
       for (const pkgName of packageNames) {
         const pkg = manifest.packages[pkgName]
@@ -180,6 +190,10 @@ export function registerAuditCommand(program: Command): void {
             })
           }
         }
+
+        if (scanResult?.verdict === 'BLOCK') {
+          hasBlockFinding = true
+        }
       }
 
       if (jsonMode) {
@@ -189,6 +203,10 @@ export function registerAuditCommand(program: Command): void {
           findings: allFindings,
         }
         outputSuccess(auditResult)
+      }
+
+      if (hasBlockFinding) {
+        process.exitCode = 1
       }
     })
 }

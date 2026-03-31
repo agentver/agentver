@@ -8,6 +8,7 @@ import {
   createManifest,
   createManifestPackage,
   createSharedGitSource,
+  createWellKnownSource,
 } from '../helpers/fixtures'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
@@ -67,6 +68,7 @@ vi.mock('../../utils/backup', () => ({
 
 vi.mock('../../commands/install', () => ({
   installPackage: vi.fn(),
+  deriveCommitFromIntegrity: vi.fn((integrity: string) => `derived-${integrity}`),
 }))
 
 vi.mock('../../registry/auth.js', () => ({
@@ -84,9 +86,18 @@ vi.mock('../../registry/reporter.js', () => ({
   reportRemoval: vi.fn(),
 }))
 
+vi.mock('../../registry/platform.js', () => ({
+  platformFetch: vi.fn(),
+}))
+
 vi.mock('../../security/index.js', () => ({
   scanFiles: vi.fn(),
   renderScanResult: vi.fn(),
+}))
+
+vi.mock('../../wellknown/index.js', () => ({
+  fetchWellKnownIndex: vi.fn(),
+  fetchWellKnownSkill: vi.fn(),
 }))
 
 vi.mock('../../output.js', () => ({
@@ -124,12 +135,14 @@ import { installPackage } from '../../commands/install'
 import * as fetcherModule from '../../git/fetcher.js'
 import * as gitIndex from '../../git/index.js'
 import * as outputModule from '../../output.js'
+import * as platformModule from '../../registry/platform.js'
 import * as canonicalModule from '../../storage/canonical.js'
 import * as integrityModule from '../../storage/integrity'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
 import * as patchesModule from '../../storage/patches.js'
 import * as backupModule from '../../utils/backup'
+import * as wellKnownModule from '../../wellknown/index.js'
 
 // ---------------------------------------------------------------------------
 // Helper: extract the action callback from registerUpdateCommand
@@ -918,26 +931,114 @@ describe('commands/update', () => {
     })
   })
 
-  describe('well-known source packages skipped', () => {
-    it('does not attempt to update packages with non-git sources', async () => {
+  describe('well-known and platform sources', () => {
+    it('updates a well-known package when fetched integrity differs', async () => {
+      const source = createWellKnownSource({
+        baseUrl: 'https://example.com',
+        hostname: 'example.com',
+        skillName: 'wk-skill',
+      })
       const manifest = createManifest({
         packages: {
           'wk-skill': createManifestPackage({
-            source: {
-              type: 'well-known',
-              baseUrl: 'https://example.com',
-              hostname: 'example.com',
-              skillName: 'wk-skill',
-            },
+            source,
+            agents: ['claude-code'],
+          }),
+        },
+      })
+      const lockfile = createLockfile({
+        packages: {
+          'wk-skill': createLockfilePackage({
+            source,
+            agents: ['claude-code'],
+            integrity: 'sha256-old',
+          }),
+        },
+      })
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(wellKnownModule.fetchWellKnownIndex).mockResolvedValue({
+        skills: [
+          {
+            name: 'wk-skill',
+            description: 'Well-known skill',
+            files: ['SKILL.md'],
+          },
+        ],
+      })
+      vi.mocked(wellKnownModule.fetchWellKnownSkill).mockResolvedValue({
+        name: 'wk-skill',
+        description: 'Well-known skill',
+        files: [{ path: 'SKILL.md', content: 'updated', size: 7 }],
+        sourceUrl: 'https://example.com/.well-known/skills/wk-skill',
+        hostname: 'example.com',
+      })
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-new')
+      vi.mocked(installPackage).mockResolvedValue({
+        name: 'wk-skill',
+        ref: 'well-known',
+        commitSha: NEW_SHA,
+        agents: ['claude-code'],
+      })
+
+      await updateAction(undefined, {})
+
+      expect(installPackage).toHaveBeenCalledWith(
+        'https://example.com/wk-skill',
+        expect.objectContaining({ agent: ['claude-code'] })
+      )
+      expect(gitIndex.resolveRef).not.toHaveBeenCalled()
+    })
+
+    it('updates a platform-hosted package via agentver:// source', async () => {
+      const source = createSharedGitSource({
+        uri: 'agentver://test-org',
+        path: 'skills/test-skill',
+        ref: 'main',
+        commit: OLD_SHA,
+      })
+      const manifest = createManifest({
+        packages: {
+          'test-skill': createManifestPackage({
+            source,
+            agents: ['claude-code'],
+          }),
+        },
+      })
+      const lockfile = createLockfile({
+        packages: {
+          'test-skill': createLockfilePackage({
+            source,
             agents: ['claude-code'],
           }),
         },
       })
       vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(platformModule.platformFetch).mockResolvedValue({
+        source: 'platform',
+        gitUri: 'agentver://test-org',
+        gitPath: 'skills/test-skill',
+        gitRef: 'main',
+        files: [{ path: 'SKILL.md', content: 'platform-update' }],
+      })
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-platform-new')
+      vi.mocked(installPackage).mockResolvedValue({
+        name: 'test-skill',
+        ref: 'main',
+        commitSha: NEW_SHA,
+        agents: ['claude-code'],
+      })
 
       await updateAction(undefined, {})
 
-      expect(gitIndex.resolveRef).not.toHaveBeenCalled()
+      expect(platformModule.platformFetch).toHaveBeenCalledWith(
+        '/resolve?name=test-org%2Fskills%2Ftest-skill'
+      )
+      expect(installPackage).toHaveBeenCalledWith(
+        'agentver://test-org/skills/test-skill@main',
+        expect.objectContaining({ agent: ['claude-code'] })
+      )
     })
   })
 
