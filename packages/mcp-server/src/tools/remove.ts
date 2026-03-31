@@ -2,11 +2,38 @@ import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
-import { AgentverError } from '@agentver/shared'
+import { AgentverError, getPackageDisplayName } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
 import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
+
+function findPackageEntry(
+  packages: Record<
+    string,
+    {
+      name?: string
+      agents: string[]
+    }
+  >,
+  query: string
+): { key: string; displayName: string; pkg: { name?: string; agents: string[] } } | null {
+  if (query in packages) {
+    const pkg = packages[query]!
+    return { key: query, displayName: getPackageDisplayName(query, pkg), pkg }
+  }
+
+  const matches = Object.entries(packages).filter(
+    ([key, pkg]) => getPackageDisplayName(key, pkg) === query
+  )
+
+  if (matches.length !== 1) {
+    return null
+  }
+
+  const [key, pkg] = matches[0]!
+  return { key, displayName: getPackageDisplayName(key, pkg), pkg }
+}
 
 /** Expand a leading ~ to the user's home directory */
 function expandTilde(path: string): string {
@@ -46,13 +73,14 @@ export function registerRemoveTool(server: McpServer): void {
     async ({ package: packageName, global: isGlobal }) => {
       const root = isGlobal ? homedir() : getWorkingDirectory()
       const manifest = readManifest(root)
+      const packageEntry = findPackageEntry(manifest.packages, packageName)
 
-      const pkg = manifest.packages[packageName]
-      if (!pkg) {
+      if (!packageEntry) {
         throw new AgentverError('NOT_FOUND', `Package "${packageName}" is not installed.`)
       }
 
-      const shortName = packageName.split('/').pop()!
+      const { key: packageKey, displayName, pkg } = packageEntry
+      const shortName = displayName.split('/').pop()!
       const removedFrom: string[] = []
       const scope = isGlobal ? 'global' : 'project'
       const baseDir = isGlobal ? homedir() : getWorkingDirectory()
@@ -73,16 +101,16 @@ export function registerRemoveTool(server: McpServer): void {
       }
 
       // Update manifest
-      delete manifest.packages[packageName]
+      delete manifest.packages[packageKey]
       writeManifest(root, manifest)
 
       // Update lockfile
       const lockfile = readLockfile(root)
-      delete lockfile.packages[packageName]
+      delete lockfile.packages[packageKey]
       writeLockfile(root, lockfile)
 
       const summary = [
-        `Removed ${packageName}`,
+        `Removed ${displayName}`,
         removedFrom.length > 0
           ? `Cleaned up from: ${removedFrom.join(', ')}`
           : 'No agent directories required cleanup',

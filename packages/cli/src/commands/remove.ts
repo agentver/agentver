@@ -20,6 +20,11 @@ import {
   removeCanonicalDirectory,
 } from '../storage/canonical'
 import { readManifest } from '../storage/manifest'
+import {
+  getDisplayName,
+  resolveBundleDisplayName,
+  resolvePackageQuery,
+} from '../storage/package-identity'
 import { updateManifestAndLockfile } from '../storage/pair'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 
@@ -173,27 +178,27 @@ export function registerRemoveCommand(program: Command): void {
         const scope: Scope = options.global ? 'global' : 'project'
         const projectRoot = process.cwd()
         const manifest = readManifest(projectRoot, scope)
+        const lookup = resolvePackageQuery(manifest.packages, name)
 
-        const shortName = name.split('/').pop()!
-        const manifestKey =
-          name in manifest.packages ? name : shortName in manifest.packages ? shortName : null
-
-        if (!manifestKey) {
+        if (!lookup.ok) {
           const caseMatches = Object.keys(manifest.packages).filter(
             (key) =>
               (key.toLowerCase() === name.toLowerCase() ||
-                key.toLowerCase() === shortName.toLowerCase()) &&
-              key !== name &&
-              key !== shortName
+                getDisplayName(key, manifest.packages[key]!).toLowerCase() ===
+                  name.toLowerCase()) &&
+              key !== name
           )
 
           const otherScope: Scope = scope === 'project' ? 'global' : 'project'
           const otherManifest = readManifest(projectRoot, otherScope)
-          const foundInOther = name in otherManifest.packages || shortName in otherManifest.packages
+          const foundInOther = resolvePackageQuery(otherManifest.packages, name).ok
 
           const hints: string[] = []
           if (caseMatches.length > 0) {
             hints.push(`Did you mean: ${caseMatches.join(', ')}?`)
+          }
+          if (lookup.reason === 'ambiguous' && lookup.matches.length > 0) {
+            hints.push(`Matches: ${lookup.matches.join(', ')}`)
           }
           if (foundInOther) {
             if (otherScope === 'global') {
@@ -218,13 +223,20 @@ export function registerRemoveCommand(program: Command): void {
           process.exit(1)
         }
 
+        const manifestKey = lookup.key
+        const displayName = lookup.displayName
         const pkg = manifest.packages[manifestKey]!
         const isSingleFile = pkg.packageType === 'AGENT' || pkg.packageType === 'COMMAND'
         const isBundle = pkg.packageType === 'BUNDLE'
         const isConstituent = Boolean(pkg.bundle)
+        const bundleDisplayName = resolveBundleDisplayName(manifest.packages, pkg.bundle)
+        const shortName = displayName.split('/').pop()!
 
         // Collect constituents if this is a bundle
         const constituents = isBundle ? findBundleConstituents(manifest, manifestKey) : []
+        const constituentDisplayNames = constituents.map((key) =>
+          getDisplayName(key, manifest.packages[key]!)
+        )
 
         // Collect removal paths
         const removedPaths = isSingleFile
@@ -236,28 +248,36 @@ export function registerRemoveCommand(program: Command): void {
         for (const cName of constituents) {
           const cPkg = manifest.packages[cName]
           if (cPkg) {
-            constituentPaths[cName] = collectRemovalPaths(projectRoot, cName, cPkg, scope)
+            const constituentDisplayName = getDisplayName(cName, cPkg)
+            const constituentShortName = constituentDisplayName.split('/').pop()!
+            constituentPaths[constituentDisplayName] = collectRemovalPaths(
+              projectRoot,
+              constituentShortName,
+              cPkg,
+              scope
+            )
           }
         }
 
         if (options.dryRun) {
           if (jsonMode) {
             outputSuccess<RemoveResult>({
-              name,
+              name: displayName,
               removed: false,
               paths: removedPaths,
-              bundleConstituents: constituents.length > 0 ? constituents : undefined,
+              bundleConstituents:
+                constituentDisplayNames.length > 0 ? constituentDisplayNames : undefined,
             })
             return
           }
 
-          console.log(`${chalk.yellow('[dry-run]')} Would remove ${chalk.green(name)}`)
+          console.log(`${chalk.yellow('[dry-run]')} Would remove ${chalk.green(displayName)}`)
 
           if (isBundle && constituents.length > 0) {
             console.log(
               chalk.dim(`  Bundle — would also remove ${constituents.length} constituent(s):`)
             )
-            for (const cName of constituents) {
+            for (const cName of constituentDisplayNames) {
               console.log(chalk.dim(`    • ${cName}`))
             }
           }
@@ -297,24 +317,26 @@ export function registerRemoveCommand(program: Command): void {
           if (isBundle && constituents.length > 0) {
             console.log(
               chalk.yellow(
-                `\nRemoving bundle "${name}" will also remove ${constituents.length} constituent(s):`
+                `\nRemoving bundle "${displayName}" will also remove ${constituents.length} constituent(s):`
               )
             )
             for (const cName of constituents) {
-              console.log(`  ${chalk.dim('•')} ${cName}`)
+              console.log(`  ${chalk.dim('•')} ${getDisplayName(cName, manifest.packages[cName]!)}`)
             }
             console.log()
           } else if (isConstituent) {
             console.log(
               chalk.yellow(
-                `\n"${name}" was installed as part of bundle "${pkg.bundle}". Removing it individually.`
+                `\n"${displayName}" was installed as part of bundle "${bundleDisplayName ?? pkg.bundle ?? 'unknown'}". Removing it individually.`
               )
             )
           }
 
           if (reverseDeps.length > 0) {
             console.log(
-              chalk.yellow(`\nWarning: the following installed packages depend on "${name}":`)
+              chalk.yellow(
+                `\nWarning: the following installed packages depend on "${displayName}":`
+              )
             )
             for (const dep of reverseDeps) {
               console.log(`  ${chalk.dim('•')} ${dep.name}`)
@@ -327,9 +349,9 @@ export function registerRemoveCommand(program: Command): void {
         if (!options.yes && !jsonMode) {
           let confirmMessage: string
           if (isBundle && constituents.length > 0) {
-            confirmMessage = `Remove bundle ${chalk.bold(name)} and all constituents?`
+            confirmMessage = `Remove bundle ${chalk.bold(displayName)} and all constituents?`
           } else {
-            confirmMessage = `Remove ${chalk.bold(name)} and its agent symlinks?`
+            confirmMessage = `Remove ${chalk.bold(displayName)} and its agent symlinks?`
           }
 
           const { confirmed } = await prompts({
@@ -350,23 +372,25 @@ export function registerRemoveCommand(program: Command): void {
           process.exit(1)
         }
 
-        const spinner = createSpinner(`Removing ${name}...`).start()
+        const spinner = createSpinner(`Removing ${displayName}...`).start()
 
         updateManifestAndLockfile(projectRoot, scope, (currentManifest, currentLockfile) => {
           if (isBundle && constituents.length > 0) {
             for (const cName of constituents) {
               const cPkg = currentManifest.packages[cName]
               if (cPkg) {
+                const constituentDisplayName = getDisplayName(cName, cPkg)
+                const constituentShortName = constituentDisplayName.split('/').pop()!
                 removePackageFiles(
                   projectRoot,
                   cName,
-                  cName,
+                  constituentShortName,
                   cPkg,
                   scope,
                   currentManifest,
                   currentLockfile
                 )
-                reportRemoval(cName)
+                reportRemoval(constituentDisplayName)
               }
             }
           }
@@ -390,30 +414,31 @@ export function registerRemoveCommand(program: Command): void {
           return { manifest: currentManifest, lockfile: currentLockfile }
         })
 
-        reportRemoval(name)
+        reportRemoval(displayName)
 
         const allRemovedPaths = [...removedPaths, ...Object.values(constituentPaths).flat()]
 
         const reverseDepWarnings =
           reverseDeps.length > 0
             ? [
-                `Warning: ${reverseDeps.map((d) => d.name).join(', ')} depend(s) on "${name}" — they may be broken now.`,
+                `Warning: ${reverseDeps.map((d) => d.name).join(', ')} depend(s) on "${displayName}" — they may be broken now.`,
               ]
             : []
 
         if (jsonMode) {
           outputSuccess<RemoveResult>(
             {
-              name,
+              name: displayName,
               removed: true,
               paths: allRemovedPaths,
-              bundleConstituents: constituents.length > 0 ? constituents : undefined,
+              bundleConstituents:
+                constituentDisplayNames.length > 0 ? constituentDisplayNames : undefined,
             },
             reverseDepWarnings.length > 0 ? reverseDepWarnings : undefined
           )
         } else {
           const scopeLabel = scope === 'global' ? 'user' : 'project'
-          let msg = `Removed ${chalk.green(name)} ${chalk.dim(`(${scopeLabel})`)}`
+          let msg = `Removed ${chalk.green(displayName)} ${chalk.dim(`(${scopeLabel})`)}`
           if (isBundle && constituents.length > 0) {
             msg += ` and ${constituents.length} constituent(s)`
           }

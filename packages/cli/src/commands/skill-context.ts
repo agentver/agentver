@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { readManifest } from '../storage/manifest.js'
+import { resolvePackageQuery } from '../storage/package-identity.js'
 
 const ORG_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
 
@@ -76,12 +77,17 @@ export function resolveNamespace(options: ResolveNamespaceOptions): SkillNamespa
   }
 
   const manifest = readManifest(projectRoot)
-  const entry = manifest.packages[skillName]
+  const packageLookup = resolvePackageQuery(manifest.packages, skillName)
+  const entry = packageLookup.ok ? packageLookup.pkg : undefined
+  const resolvedSkillName = packageLookup.ok ? packageLookup.displayName : skillName
 
-  if (entry?.source.type === 'git') {
-    const org = extractOrgFromSourceUri(entry.source.uri)
+  const sourceUri =
+    entry?.source.type === 'git' || entry?.source.type === 'platform' ? entry.source.uri : null
+
+  if (sourceUri) {
+    const org = extractOrgFromSourceUri(sourceUri)
     if (org) {
-      return { org, name: skillName }
+      return { org, name: resolvedSkillName }
     }
   }
 
@@ -91,7 +97,7 @@ export function resolveNamespace(options: ResolveNamespaceOptions): SkillNamespa
     if (skillsIndex >= 0 && pathParts.length > skillsIndex + 2) {
       const org = pathParts[skillsIndex + 1]
       if (org) {
-        return { org, name: skillName }
+        return { org, name: resolvedSkillName }
       }
     }
   }

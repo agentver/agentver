@@ -146,11 +146,8 @@ describe('commands/migrate', () => {
       packages: {
         'test-skill': createManifestPackage({
           source: {
-            type: 'git',
-            uri: 'local',
+            type: 'local',
             path: '/project/.claude/skills/test-skill',
-            ref: 'local',
-            commit: 'adopted',
           },
         }),
       },
@@ -159,11 +156,8 @@ describe('commands/migrate', () => {
       packages: {
         'test-skill': {
           source: {
-            type: 'git',
-            uri: 'local',
+            type: 'local',
             path: '/project/.claude/skills/test-skill',
-            ref: 'local',
-            commit: 'adopted',
           },
           integrity: 'sha256-test',
           agents: ['claude-code'],
@@ -187,12 +181,12 @@ describe('commands/migrate', () => {
       ['claude-code'],
       'project'
     )
-    expect(manifest.packages['test-skill']?.source.type).toBe('git')
-    if (manifest.packages['test-skill']?.source.type === 'git') {
+    expect(manifest.packages['test-skill']?.source.type).toBe('local')
+    if (manifest.packages['test-skill']?.source.type === 'local') {
       expect(manifest.packages['test-skill'].source.path).toBe('/project/.agents/skills/test-skill')
     }
-    expect(lockfile.packages['test-skill']?.source.type).toBe('git')
-    if (lockfile.packages['test-skill']?.source.type === 'git') {
+    expect(lockfile.packages['test-skill']?.source.type).toBe('local')
+    if (lockfile.packages['test-skill']?.source.type === 'local') {
       expect(lockfile.packages['test-skill'].source.path).toBe('/project/.agents/skills/test-skill')
     }
   })
@@ -202,11 +196,8 @@ describe('commands/migrate', () => {
       packages: {
         'test-skill': createManifestPackage({
           source: {
-            type: 'git',
-            uri: 'local',
+            type: 'local',
             path: '/project/.claude/skills/test-skill',
-            ref: 'local',
-            commit: 'adopted',
           },
         }),
       },
@@ -215,11 +206,8 @@ describe('commands/migrate', () => {
       packages: {
         'test-skill': {
           source: {
-            type: 'git',
-            uri: 'local',
+            type: 'local',
             path: '/project/.claude/skills/test-skill',
-            ref: 'local',
-            commit: 'adopted',
           },
           integrity: 'sha256-test',
           agents: ['claude-code'],
@@ -252,11 +240,8 @@ describe('commands/migrate', () => {
       packages: {
         'test-skill': createManifestPackage({
           source: {
-            type: 'git',
-            uri: 'local',
+            type: 'local',
             path: '/project/.claude/skills/test-skill',
-            ref: 'local',
-            commit: 'adopted',
           },
         }),
       },
@@ -265,11 +250,8 @@ describe('commands/migrate', () => {
       packages: {
         'test-skill': {
           source: {
-            type: 'git',
-            uri: 'local',
+            type: 'local',
             path: '/project/.claude/skills/test-skill',
-            ref: 'local',
-            commit: 'adopted',
           },
           integrity: 'sha256-test',
           agents: ['claude-code'],

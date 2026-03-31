@@ -4,8 +4,9 @@ import type { LockfileV2, ManifestV2 } from '@agentver/shared'
 import {
   lockfileAnySchema,
   manifestAnySchema,
-  migrateLockfileV1ToV2,
-  migrateManifestV1ToV2,
+  normaliseLockfileV2,
+  normaliseManifestV2,
+  STORAGE_SCHEMA_VERSION,
 } from '@agentver/shared'
 import { logDebug } from './shared/context'
 
@@ -23,7 +24,7 @@ export function readManifest(projectRoot: string): ManifestV2 {
   const manifestPath = getManifestPath(projectRoot)
 
   if (!existsSync(manifestPath)) {
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const raw = readFileSync(manifestPath, 'utf-8')
@@ -32,23 +33,21 @@ export function readManifest(projectRoot: string): ManifestV2 {
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const result = manifestAnySchema.safeParse(parsed)
   if (!result.success) {
     logDebug(`Manifest at ${manifestPath} failed schema validation, treating as empty`)
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
-  if (result.data.version === 1) {
-    logDebug(`Migrating v1 manifest at ${manifestPath} to v2`)
-    const migrated = migrateManifestV1ToV2(result.data)
-    writeManifest(projectRoot, migrated)
-    return migrated
+  const normalised = normaliseManifestV2(result.data)
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    writeManifest(projectRoot, normalised)
   }
 
-  return result.data
+  return normalised
 }
 
 export function writeManifest(projectRoot: string, manifest: ManifestV2): void {
@@ -71,7 +70,7 @@ export function readLockfile(projectRoot: string): LockfileV2 {
   const lockfilePath = getLockfilePath(projectRoot)
 
   if (!existsSync(lockfilePath)) {
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const raw = readFileSync(lockfilePath, 'utf-8')
@@ -80,23 +79,21 @@ export function readLockfile(projectRoot: string): LockfileV2 {
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const result = lockfileAnySchema.safeParse(parsed)
   if (!result.success) {
     logDebug(`Lockfile at ${lockfilePath} failed schema validation, treating as empty`)
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
-  if (result.data.version === 1) {
-    logDebug(`Migrating v1 lockfile at ${lockfilePath} to v2`)
-    const migrated = migrateLockfileV1ToV2(result.data)
-    writeLockfile(projectRoot, migrated)
-    return migrated
+  const normalised = normaliseLockfileV2(result.data)
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    writeLockfile(projectRoot, normalised)
   }
 
-  return result.data
+  return normalised
 }
 
 export function writeLockfile(projectRoot: string, lockfile: LockfileV2): void {

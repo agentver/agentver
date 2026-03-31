@@ -10,6 +10,7 @@ import type { ScanResult as SecurityScanResult } from '../security/index.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { readManifest } from '../storage/manifest.js'
+import { getDisplayName, resolvePackageQuery } from '../storage/package-identity.js'
 import type { Scope } from '../utils/paths.js'
 
 type AuditOptions = {
@@ -139,9 +140,14 @@ export function registerAuditCommand(program: Command): void {
       }
 
       const manifest = readManifest(projectRoot, scope)
-      const packageNames = name
-        ? [name].filter((n) => manifest.packages[n])
-        : Object.keys(manifest.packages)
+      const packageNames = (() => {
+        if (!name) {
+          return Object.keys(manifest.packages)
+        }
+
+        const lookup = resolvePackageQuery(manifest.packages, name)
+        return lookup.ok ? [lookup.key] : []
+      })()
 
       if (packageNames.length === 0) {
         if (jsonMode) {
@@ -175,10 +181,16 @@ export function registerAuditCommand(program: Command): void {
 
       for (const pkgName of packageNames) {
         const pkg = manifest.packages[pkgName]
-        const canonicalPath = getCanonicalSkillPath(projectRoot, pkgName, scope)
+        if (!pkg) {
+          continue
+        }
+
+        const displayName = getDisplayName(pkgName, pkg)
+        const shortName = displayName.split('/').pop() ?? displayName
+        const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
         const source = buildSourceFromManifest(pkg)
 
-        const scanResult = await auditDirectory(canonicalPath, pkgName, source)
+        const scanResult = await auditDirectory(canonicalPath, displayName, source)
 
         if (jsonMode && scanResult) {
           if (scanResult.verdict === 'BLOCK') {

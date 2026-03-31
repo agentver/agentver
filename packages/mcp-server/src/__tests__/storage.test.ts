@@ -75,15 +75,19 @@ describe('storage', () => {
 
       const manifest = readManifest(tempDir)
       expect(manifest.version).toBe(2)
-      expect(manifest.packages['org/skill']).toBeDefined()
-      expect(manifest.packages['org/skill']!.source.type).toBe('git')
+      expect(
+        manifest.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
+      ).toBeDefined()
+      expect(
+        manifest.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']!.source.type
+      ).toBe('git')
     })
 
-    it('migrates a v1 manifest to v2 and persists the migration', () => {
+    it('treats a legacy manifest schema as invalid local state', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
-      const v1Manifest = {
+      const legacyManifest = {
         version: 1 as const,
         packages: {
           'org/skill': {
@@ -95,13 +99,13 @@ describe('storage', () => {
         },
       }
 
-      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(v1Manifest), 'utf-8')
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(legacyManifest), 'utf-8')
 
       const manifest = readManifest(tempDir)
-      expect(manifest.version).toBe(2)
+      expect(manifest).toEqual({ version: 2, packages: {} })
 
       const persisted = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf-8'))
-      expect(persisted.version).toBe(2)
+      expect(persisted).toEqual(legacyManifest)
     })
   })
 
@@ -179,14 +183,16 @@ describe('storage', () => {
 
       const lockfile = readLockfile(tempDir)
       expect(lockfile.version).toBe(2)
-      expect(lockfile.packages['org/skill']).toBeDefined()
+      expect(
+        lockfile.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
+      ).toBeDefined()
     })
 
-    it('migrates a v1 lockfile to v2 and persists the migration', () => {
+    it('treats a legacy lockfile schema as invalid local state', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
-      const v1Lockfile = {
+      const legacyLockfile = {
         version: 1 as const,
         packages: {
           'org/skill': {
@@ -198,13 +204,13 @@ describe('storage', () => {
         },
       }
 
-      writeFileSync(join(dir, 'lockfile.json'), JSON.stringify(v1Lockfile), 'utf-8')
+      writeFileSync(join(dir, 'lockfile.json'), JSON.stringify(legacyLockfile), 'utf-8')
 
       const lockfile = readLockfile(tempDir)
-      expect(lockfile.version).toBe(2)
+      expect(lockfile).toEqual({ version: 2, packages: {} })
 
       const persisted = JSON.parse(readFileSync(join(dir, 'lockfile.json'), 'utf-8'))
-      expect(persisted.version).toBe(2)
+      expect(persisted).toEqual(legacyLockfile)
     })
   })
 

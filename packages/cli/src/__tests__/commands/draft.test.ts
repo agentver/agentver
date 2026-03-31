@@ -79,7 +79,7 @@ import {
   createLockfilePackage,
   createManifest,
   createManifestPackage,
-  createSharedGitSource,
+  createPlatformSource,
   createSkillMd,
 } from '../helpers/fixtures'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
@@ -99,10 +99,6 @@ const VALID_SKILL_MD = createSkillMd({
   name: 'test-skill',
   description: 'A test skill',
   version: '1.0.0',
-})
-
-const GIT_SOURCE = createSharedGitSource({
-  uri: 'https://github.com/test-org/test-repo',
 })
 
 function captureOutput(): { stdout: string[]; stderr: string[] } {
@@ -126,7 +122,16 @@ function setupIdentity(): void {
   vi.mocked(readManifest).mockReturnValue(
     createManifest({
       packages: {
-        'test-skill': createManifestPackage({ source: GIT_SOURCE }),
+        'platform:agentver-skill': Object.assign(
+          createManifestPackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              ref: 'main',
+              commit: 'abc1234567',
+            }),
+          }),
+          { name: 'test-skill' }
+        ),
       },
     })
   )
@@ -137,23 +142,46 @@ function setupLockfileOnMain(): void {
   vi.mocked(readLockfile).mockReturnValue(
     createLockfile({
       packages: {
-        'test-skill': createLockfilePackage({
-          source: createSharedGitSource({ ref: 'main', commit: 'abc1234567' }),
-        }),
+        'platform:agentver-skill': Object.assign(
+          createLockfilePackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              ref: 'main',
+              commit: 'abc1234567',
+            }),
+          }),
+          { name: 'test-skill' }
+        ),
       },
     })
   )
   vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
     const manifest = createManifest({
       packages: {
-        'test-skill': createManifestPackage({ source: createSharedGitSource({ ref: 'main' }) }),
+        'platform:agentver-skill': Object.assign(
+          createManifestPackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              ref: 'main',
+              commit: 'abc1234567',
+            }),
+          }),
+          { name: 'test-skill' }
+        ),
       },
     })
     const lockfile = createLockfile({
       packages: {
-        'test-skill': createLockfilePackage({
-          source: createSharedGitSource({ ref: 'main', commit: 'abc1234567' }),
-        }),
+        'platform:agentver-skill': Object.assign(
+          createLockfilePackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              ref: 'main',
+              commit: 'abc1234567',
+            }),
+          }),
+          { name: 'test-skill' }
+        ),
       },
     })
     return updater(manifest, lockfile)
@@ -165,34 +193,46 @@ function setupLockfileOnDraft(draftName = 'my-feature'): void {
   vi.mocked(readLockfile).mockReturnValue(
     createLockfile({
       packages: {
-        'test-skill': createLockfilePackage({
-          source: createSharedGitSource({
-            ref: `draft/test-skill/${draftName}`,
-            commit: 'abc1234567',
+        'platform:agentver-skill': Object.assign(
+          createLockfilePackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              ref: `draft/test-skill/${draftName}`,
+              commit: 'abc1234567',
+            }),
           }),
-        }),
+          { name: 'test-skill' }
+        ),
       },
     })
   )
   vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
     const manifest = createManifest({
       packages: {
-        'test-skill': createManifestPackage({
-          source: createSharedGitSource({
-            ref: `draft/test-skill/${draftName}`,
-            commit: 'abc1234567',
+        'platform:agentver-skill': Object.assign(
+          createManifestPackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              ref: `draft/test-skill/${draftName}`,
+              commit: 'abc1234567',
+            }),
           }),
-        }),
+          { name: 'test-skill' }
+        ),
       },
     })
     const lockfile = createLockfile({
       packages: {
-        'test-skill': createLockfilePackage({
-          source: createSharedGitSource({
-            ref: `draft/test-skill/${draftName}`,
-            commit: 'abc1234567',
+        'platform:agentver-skill': Object.assign(
+          createLockfilePackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              ref: `draft/test-skill/${draftName}`,
+              commit: 'abc1234567',
+            }),
           }),
-        }),
+          { name: 'test-skill' }
+        ),
       },
     })
     return updater(manifest, lockfile)

@@ -23,6 +23,7 @@ import {
   type ManifestV2,
   PACKAGE_STRUCTURES,
   type PackageSource,
+  type PlatformSource,
   type WellKnownSource,
 } from '@agentver/shared'
 import chalk from 'chalk'
@@ -58,6 +59,7 @@ import {
 } from '../storage/canonical'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readManifest } from '../storage/manifest'
+import { setLockfilePackage, setManifestPackage } from '../storage/package-identity'
 import { updateManifestAndLockfile } from '../storage/pair'
 import {
   cleanupBackup,
@@ -174,13 +176,13 @@ function looksLikeGitUrl(source: string): boolean {
 function recordInstalledPackage(
   projectRoot: string,
   scope: 'project' | 'global',
-  name: string,
+  displayName: string,
   manifestEntry: ManifestV2['packages'][string],
   lockfileEntry: LockfileV2['packages'][string]
 ): void {
   updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
-    manifest.packages[name] = manifestEntry
-    lockfile.packages[name] = lockfileEntry
+    setManifestPackage(manifest, displayName, manifestEntry)
+    setLockfilePackage(lockfile, displayName, lockfileEntry)
     return { manifest, lockfile }
   })
 }
@@ -615,7 +617,7 @@ async function installFromPlatform(
           outputSuccess<InstallResultJSON>(
             {
               name: shortName,
-              source: { type: 'git', uri: sourceUri },
+              source: { type: 'platform', uri: sourceUri },
               agents: [],
               path: '',
               scope,
@@ -632,15 +634,15 @@ async function installFromPlatform(
       detectedPlatformType = detectPackageType(files, options.type)
 
       if (detectedPlatformType === 'BUNDLE') {
-        const gitSourceRecord: GitSource = {
-          type: 'git',
+        const platformSourceRecord: PlatformSource = {
+          type: 'platform',
           uri: sourceUri,
           path: resolved.gitPath ?? '',
           ref,
           commit: syntheticCommit,
         }
         return installBundleFlow(shortName, files, agents, options, spinner, {
-          sourceRecord: gitSourceRecord,
+          sourceRecord: platformSourceRecord,
           integrity,
           securityScanResult,
           jsonMode,
@@ -672,7 +674,7 @@ async function installFromPlatform(
           : getCanonicalSkillPath(projectRoot, shortName, scope)
         outputSuccess<InstallResultJSON>({
           name: shortName,
-          source: { type: 'git', uri: sourceUri },
+          source: { type: 'platform', uri: sourceUri },
           agents,
           path: installPath,
           scope,
@@ -682,8 +684,8 @@ async function installFromPlatform(
       return { name: shortName, ref, commitSha: syntheticCommit, agents }
     }
 
-    const gitSourceRecord: GitSource = {
-      type: 'git',
+    const platformSourceRecord: PlatformSource = {
+      type: 'platform',
       uri: sourceUri,
       path: resolved.gitPath ?? '',
       ref,
@@ -691,7 +693,7 @@ async function installFromPlatform(
     }
 
     const manifestEntry = {
-      source: gitSourceRecord,
+      source: platformSourceRecord,
       agents,
       installedAt: new Date().toISOString(),
       modified: false,
@@ -720,7 +722,7 @@ async function installFromPlatform(
         : integrity
 
     const lockfileEntry = {
-      source: gitSourceRecord,
+      source: platformSourceRecord,
       integrity: platformSingleFileIntegrity,
       agents,
     }
@@ -743,7 +745,7 @@ async function installFromPlatform(
       outputSuccess<InstallResultJSON>(
         {
           name: shortName,
-          source: { type: 'git', uri: sourceUri },
+          source: { type: 'platform', uri: sourceUri },
           agents,
           path: installPath,
           scope,

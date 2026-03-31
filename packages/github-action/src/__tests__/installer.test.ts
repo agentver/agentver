@@ -153,12 +153,16 @@ describe('installer', () => {
 
       const result = readManifestFile(path)
       expect(result.version).toBe(2)
-      expect(result.packages['org/skill']).toBeDefined()
+      expect(result.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']).toEqual(
+        expect.objectContaining({
+          name: 'org/skill',
+        })
+      )
     })
 
-    it('migrates a v1 manifest to v2 and persists the result', () => {
+    it('rejects a legacy manifest schema', () => {
       const path = join(tempDir, 'manifest.json')
-      const v1Manifest = {
+      const legacyManifest = {
         version: 1,
         packages: {
           'org/skill': {
@@ -169,13 +173,10 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(v1Manifest), 'utf-8')
+      writeFileSync(path, JSON.stringify(legacyManifest), 'utf-8')
 
-      const result = readManifestFile(path)
-      expect(result.version).toBe(2)
-
-      const persisted = JSON.parse(readFileSync(path, 'utf-8'))
-      expect(persisted.version).toBe(2)
+      expect(() => readManifestFile(path)).toThrow('schema validation failed')
+      expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual(legacyManifest)
     })
   })
 
@@ -223,11 +224,18 @@ describe('installer', () => {
       const result = readLockfileFile(path)
       expect(result).not.toBeNull()
       expect(result!.version).toBe(2)
+      expect(
+        result!.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
+      ).toEqual(
+        expect.objectContaining({
+          name: 'org/skill',
+        })
+      )
     })
 
-    it('migrates a v1 lockfile to v2', () => {
+    it('returns null for a legacy lockfile schema', () => {
       const path = join(tempDir, 'lockfile.json')
-      const v1Lockfile = {
+      const legacyLockfile = {
         version: 1,
         packages: {
           'org/skill': {
@@ -238,11 +246,10 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(v1Lockfile), 'utf-8')
+      writeFileSync(path, JSON.stringify(legacyLockfile), 'utf-8')
 
-      const result = readLockfileFile(path)
-      expect(result).not.toBeNull()
-      expect(result!.version).toBe(2)
+      expect(readLockfileFile(path)).toBeNull()
+      expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual(legacyLockfile)
     })
   })
 
@@ -515,9 +522,10 @@ describe('installer', () => {
 
       const updated = updateLockfile(existingLockfile, results, resolvedData)
 
-      const pkg = updated.packages['org/skill']
+      const pkg = updated.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
       expect(pkg).toBeDefined()
       expect(pkg!.source.type).toBe('git')
+      expect(pkg!.name).toBe('org/skill')
       if (pkg!.source.type === 'git') {
         expect(pkg!.source.uri).toBe('https://github.com/org/repo')
       }

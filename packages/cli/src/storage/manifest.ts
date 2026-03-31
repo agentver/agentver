@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import type { ManifestV2 } from '@agentver/shared'
-import { manifestAnySchema, manifestV2PackageSchema, migrateManifestV1ToV2 } from '@agentver/shared'
+import {
+  manifestAnySchema,
+  manifestV2PackageSchema,
+  normaliseManifestV2,
+  STORAGE_SCHEMA_VERSION,
+} from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
@@ -12,7 +17,7 @@ export function readManifest(projectRoot: string, scope: Scope = 'project'): Man
   const manifestPath = getManifestPath(projectRoot, scope)
 
   if (!existsSync(manifestPath)) {
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const raw = readFileSync(manifestPath, 'utf-8')
@@ -22,7 +27,7 @@ export function readManifest(projectRoot: string, scope: Scope = 'project'): Man
     parsed = JSON.parse(raw)
   } catch {
     logger.warn(`Corrupt manifest at ${manifestPath} — could not parse JSON. Using empty manifest.`)
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const result = manifestAnySchema.safeParse(parsed)
@@ -30,7 +35,11 @@ export function readManifest(projectRoot: string, scope: Scope = 'project'): Man
     // Full-schema parse failed — attempt per-entry recovery so one bad entry
     // does not wipe the entire manifest (e.g. an empty commit from a platform install).
     const raw2 = parsed as Record<string, unknown>
-    if (raw2?.version === 2 && typeof raw2?.packages === 'object' && raw2.packages !== null) {
+    if (
+      raw2?.version === STORAGE_SCHEMA_VERSION &&
+      typeof raw2?.packages === 'object' &&
+      raw2.packages !== null
+    ) {
       const recovered: ManifestV2['packages'] = {}
       let dropped = 0
       for (const [name, entry] of Object.entries(raw2.packages as Record<string, unknown>)) {
@@ -46,22 +55,21 @@ export function readManifest(projectRoot: string, scope: Scope = 'project'): Man
         logger.warn(
           `Recovered ${Object.keys(recovered).length} entry/entries from manifest (${dropped} dropped)`
         )
-        return { version: 2, packages: recovered }
+        return normaliseManifestV2({ version: STORAGE_SCHEMA_VERSION, packages: recovered })
       }
     }
     logger.warn(
       `Invalid manifest at ${manifestPath} — schema validation failed. Using empty manifest.`
     )
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
-  if (result.data.version === 1) {
-    const migrated = migrateManifestV1ToV2(result.data)
-    writeManifestUnsafe(projectRoot, migrated, scope)
-    return migrated
+  const normalised = normaliseManifestV2(result.data)
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    writeManifestUnsafe(projectRoot, normalised, scope)
   }
 
-  return result.data
+  return normalised
 }
 
 /**
@@ -83,7 +91,7 @@ export function writeManifest(
 }
 
 /**
- * Internal unlocked write — used by migration (already inside readManifest)
+ * Internal unlocked write — used by normalisation (already inside readManifest)
  * and by writeManifest (which acquires the lock itself).
  */
 export function writeManifestUnsafe(

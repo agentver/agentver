@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import type { LockfileV2 } from '@agentver/shared'
-import { lockfileAnySchema, lockfileV2PackageSchema, migrateLockfileV1ToV2 } from '@agentver/shared'
+import {
+  lockfileAnySchema,
+  lockfileV2PackageSchema,
+  normaliseLockfileV2,
+  STORAGE_SCHEMA_VERSION,
+} from '@agentver/shared'
 import type { Scope } from '../utils/paths'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
@@ -12,7 +17,7 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
   const lockfilePath = getLockfilePath(projectRoot, scope)
 
   if (!existsSync(lockfilePath)) {
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const raw = readFileSync(lockfilePath, 'utf-8')
@@ -22,7 +27,7 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
     parsed = JSON.parse(raw)
   } catch {
     logger.warn(`Corrupt lockfile at ${lockfilePath} — could not parse JSON. Using empty lockfile.`)
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
   const result = lockfileAnySchema.safeParse(parsed)
@@ -30,7 +35,11 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
     // Full-schema parse failed — attempt per-entry recovery so one bad entry
     // does not wipe the entire lockfile.
     const raw2 = parsed as Record<string, unknown>
-    if (raw2?.version === 2 && typeof raw2?.packages === 'object' && raw2.packages !== null) {
+    if (
+      raw2?.version === STORAGE_SCHEMA_VERSION &&
+      typeof raw2?.packages === 'object' &&
+      raw2.packages !== null
+    ) {
       const recovered: LockfileV2['packages'] = {}
       let dropped = 0
       for (const [name, entry] of Object.entries(raw2.packages as Record<string, unknown>)) {
@@ -46,22 +55,21 @@ export function readLockfile(projectRoot: string, scope: Scope = 'project'): Loc
         logger.warn(
           `Recovered ${Object.keys(recovered).length} entry/entries from lockfile (${dropped} dropped)`
         )
-        return { version: 2, packages: recovered }
+        return normaliseLockfileV2({ version: STORAGE_SCHEMA_VERSION, packages: recovered })
       }
     }
     logger.warn(
       `Invalid lockfile at ${lockfilePath} — schema validation failed. Using empty lockfile.`
     )
-    return { version: 2, packages: {} }
+    return { version: STORAGE_SCHEMA_VERSION, packages: {} }
   }
 
-  if (result.data.version === 1) {
-    const migrated = migrateLockfileV1ToV2(result.data)
-    writeLockfileUnsafe(projectRoot, migrated, scope)
-    return migrated
+  const normalised = normaliseLockfileV2(result.data)
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    writeLockfileUnsafe(projectRoot, normalised, scope)
   }
 
-  return result.data
+  return normalised
 }
 
 /**
@@ -83,7 +91,7 @@ export function writeLockfile(
 }
 
 /**
- * Internal unlocked write — used by migration (already inside readLockfile)
+ * Internal unlocked write — used by normalisation (already inside readLockfile)
  * and by writeLockfile (which acquires the lock itself).
  */
 export function writeLockfileUnsafe(

@@ -153,7 +153,7 @@ export function setupPlatformMock(
     }
   )
 
-  vi.stubGlobal('fetch', fetchMock)
+  globalThis.fetch = fetchMock as typeof fetch
 
   return {
     addRoute(route: MockRoute) {

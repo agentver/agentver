@@ -1,4 +1,4 @@
-import type { PackageSource, StatusResult } from '@agentver/shared'
+import { getPackageSourceLocation, type PackageSource, type StatusResult } from '@agentver/shared'
 import { cn } from '@agentver/ui-utils'
 import { useEffect, useState } from 'react'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
@@ -48,12 +48,22 @@ function getAgentDisplayName(agentId: string): string {
   return AGENT_NAMES[agentId] ?? agentId
 }
 function formatSource(source: PackageSource): string {
-  if (source.type === 'git') {
-    const uri = source.uri
-    const shortened = uri.replace(/^https?:\/\//, '').replace(/\.git$/, '')
-    return shortened.length > 45 ? `${shortened.substring(0, 42)}...` : shortened
-  }
-  return source.hostname
+  const shortened = getPackageSourceLocation(source)
+    .replace(/^https?:\/\//, '')
+    .replace(/\.git$/, '')
+
+  return shortened.length > 45 ? `${shortened.substring(0, 42)}...` : shortened
+}
+
+function getSourceTitle(source: PackageSource): string {
+  return getPackageSourceLocation(source)
+}
+
+function getSourcePaths(source: PackageSource): string[] {
+  if (source.type === 'git' || source.type === 'platform') return [source.path]
+  if (source.type === 'well-known') return [source.baseUrl]
+  if (source.type === 'local') return [source.path]
+  return []
 }
 
 type SkillStatusInfo = { label: string; colour: string; hasUpdate: boolean }
@@ -232,7 +242,7 @@ function SkillCard({
         </div>
         <span
           className="truncate font-mono text-muted-foreground text-xs"
-          title={source.type === 'git' ? source.uri : source.baseUrl}
+          title={getSourceTitle(source)}
         >
           {formatSource(source)}
         </span>
@@ -277,7 +287,7 @@ function SkillCard({
       <div className="flex items-center justify-between border-border border-t pt-2.5">
         <button
           onClick={() => {
-            const path = source.type === 'git' ? source.uri : source.baseUrl
+            const path = getSourceTitle(source)
             navigator.clipboard.writeText(path)
           }}
           className="cursor-pointer rounded-md border-none bg-transparent px-3 py-1.5 font-[inherit] font-medium text-muted-foreground text-xs transition-colors hover:text-foreground"
@@ -342,7 +352,7 @@ function SkillRow({
       </div>
       <span
         className="flex-[2] truncate font-mono text-muted-foreground text-xs"
-        title={source.type === 'git' ? source.uri : source.baseUrl}
+        title={getSourceTitle(source)}
       >
         {formatSource(source)}
       </span>
@@ -603,8 +613,7 @@ export function Installed() {
                 onRemove={() =>
                   setRemoveTarget({
                     name: skill.name,
-                    paths:
-                      skill.source.type === 'git' ? [skill.source.path] : [skill.source.baseUrl],
+                    paths: getSourcePaths(skill.source),
                   })
                 }
               />
@@ -648,8 +657,7 @@ export function Installed() {
                 onRemove={() =>
                   setRemoveTarget({
                     name: skill.name,
-                    paths:
-                      skill.source.type === 'git' ? [skill.source.path] : [skill.source.baseUrl],
+                    paths: getSourcePaths(skill.source),
                   })
                 }
               />

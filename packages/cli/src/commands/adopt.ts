@@ -3,12 +3,17 @@ import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import type { ScannedFile } from '@agentver/agent-definitions'
 import { scanForSkillFiles, scanGlobalSkillFiles } from '@agentver/agent-definitions'
-import type { AdoptResult, GitSource } from '@agentver/shared'
+import type { AdoptResult, LocalSource } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { computeSha256FromBuffer } from '../storage/integrity'
 import { readManifest } from '../storage/manifest'
+import {
+  resolvePackageQuery,
+  setLockfilePackage,
+  setManifestPackage,
+} from '../storage/package-identity'
 import { updateManifestAndLockfile } from '../storage/pair'
 
 export type AdoptOptions = {
@@ -43,13 +48,13 @@ type PendingAdoption = {
   type: string
   agents: string[]
   manifestEntry: {
-    source: GitSource
+    source: LocalSource
     agents: string[]
     installedAt: string
     modified: false
   }
   lockfileEntry: {
-    source: GitSource
+    source: LocalSource
     integrity: string
     agents: string[]
   }
@@ -151,7 +156,8 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
 
     for (const file of deduped) {
       // Check if already in manifest
-      if (manifest.packages[file.name]) {
+      const existing = resolvePackageQuery(manifest.packages, file.name)
+      if (existing.ok) {
         skipped.push({
           name: file.name,
           path: file.path,
@@ -163,12 +169,9 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
       const integrity = computeDirectoryIntegrity(file.path)
       const sourcePath = file.detectedType === 'AGENT_CONFIG' ? file.path : dirname(file.path)
 
-      const source: GitSource = {
-        type: 'git',
-        uri: 'local',
+      const source: LocalSource = {
+        type: 'local',
         path: sourcePath,
-        ref: 'local',
-        commit: 'adopted',
       }
 
       if (!options.dryRun) {
@@ -200,11 +203,12 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
     }
 
     if (!options.dryRun && pendingAdoptions.length > 0) {
-      const committed = new Set<string>()
+      const committedNames = new Set<string>()
 
       updateManifestAndLockfile(projectRoot, 'project', (currentManifest, currentLockfile) => {
         for (const adoption of pendingAdoptions) {
-          if (currentManifest.packages[adoption.name]) {
+          const existing = resolvePackageQuery(currentManifest.packages, adoption.name)
+          if (existing.ok) {
             skipped.push({
               name: adoption.name,
               path: adoption.path,
@@ -213,16 +217,16 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
             continue
           }
 
-          currentManifest.packages[adoption.name] = { ...adoption.manifestEntry }
-          currentLockfile.packages[adoption.name] = { ...adoption.lockfileEntry }
-          committed.add(adoption.name)
+          setManifestPackage(currentManifest, adoption.name, adoption.manifestEntry)
+          setLockfilePackage(currentLockfile, adoption.name, adoption.lockfileEntry)
+          committedNames.add(adoption.name)
         }
 
         return { manifest: currentManifest, lockfile: currentLockfile }
       })
 
-      if (committed.size !== pendingAdoptions.length) {
-        const committedAdoptions = adopted.filter((entry) => committed.has(entry.name))
+      if (committedNames.size !== pendingAdoptions.length) {
+        const committedAdoptions = adopted.filter((entry) => committedNames.has(entry.name))
         adopted.length = 0
         adopted.push(...committedAdoptions)
       }

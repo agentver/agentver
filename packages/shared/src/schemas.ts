@@ -52,6 +52,8 @@ const AGENT_IDS_FOR_SCHEMA = [
 
 export const agentIdEnum = z.enum(AGENT_IDS_FOR_SCHEMA)
 
+export const STORAGE_SCHEMA_VERSION = 2 as const
+
 export const skillMetadataSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
@@ -72,36 +74,6 @@ export const skillMetadataSchema = z.object({
 
 export type SkillMetadata = z.infer<typeof skillMetadataSchema>
 
-const installedPackageSchema = z.object({
-  name: z.string(),
-  version: z.string(),
-  agents: z.array(z.string()).default([]),
-  installedAt: z.string().datetime(),
-})
-
-export const manifestSchema = z.object({
-  version: z.literal(1),
-  packages: z.record(z.string(), installedPackageSchema),
-})
-
-export type Manifest = z.infer<typeof manifestSchema>
-
-const lockedPackageSchema = z.object({
-  version: z.string(),
-  resolved: z.string().url(),
-  integrity: z.string().regex(/^sha256-/),
-  agents: z.array(z.string()),
-})
-
-export const lockfileSchema = z.object({
-  version: z.literal(1),
-  packages: z.record(z.string(), lockedPackageSchema),
-})
-
-export type Lockfile = z.infer<typeof lockfileSchema>
-
-// --- v2 schemas ---
-
 export const gitSourceSchema = z.object({
   type: z.literal('git'),
   uri: z.string().min(1),
@@ -111,6 +83,33 @@ export const gitSourceSchema = z.object({
 })
 
 export type GitSource = z.infer<typeof gitSourceSchema>
+
+export const localSourceSchema = z.object({
+  type: z.literal('local'),
+  path: z.string().min(1),
+})
+
+export type LocalSource = z.infer<typeof localSourceSchema>
+
+export const platformSourceSchema = z.object({
+  type: z.literal('platform'),
+  uri: z.string().min(1),
+  path: z.string(),
+  ref: z.string().min(1),
+  commit: z.string().min(7),
+})
+
+export type PlatformSource = z.infer<typeof platformSourceSchema>
+
+export const unknownSourceSchema = z.object({
+  type: z.literal('unknown'),
+  path: z.string().optional(),
+  ref: z.string().min(1).optional(),
+  commit: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+})
+
+export type UnknownSource = z.infer<typeof unknownSourceSchema>
 
 export const wellKnownSourceSchema = z.object({
   type: z.literal('well-known'),
@@ -123,12 +122,114 @@ export type WellKnownSource = z.infer<typeof wellKnownSourceSchema>
 
 export const packageSourceSchema = z.discriminatedUnion('type', [
   gitSourceSchema,
+  localSourceSchema,
+  platformSourceSchema,
+  unknownSourceSchema,
   wellKnownSourceSchema,
 ])
 
 export type PackageSource = z.infer<typeof packageSourceSchema>
 
+export function normalisePackageSource(source: PackageSource): PackageSource {
+  if (source.type !== 'git') {
+    return source
+  }
+
+  if (source.uri === 'local') {
+    return {
+      type: 'local',
+      path: source.path,
+    }
+  }
+
+  if (source.uri === 'unknown') {
+    return {
+      type: 'unknown',
+      path: source.path,
+      ref: source.ref,
+      commit: source.commit,
+    }
+  }
+
+  if (source.uri.startsWith('agentver://')) {
+    return {
+      type: 'platform',
+      uri: source.uri,
+      path: source.path,
+      ref: source.ref,
+      commit: source.commit,
+    }
+  }
+
+  return source
+}
+
+export function getPackageSourceLocation(source: PackageSource): string {
+  switch (source.type) {
+    case 'git':
+    case 'platform':
+      return source.path ? `${source.uri}/${source.path}` : source.uri
+    case 'well-known':
+      return `${source.hostname}/${source.skillName}`
+    case 'local':
+      return source.path
+    case 'unknown':
+      return source.path ?? 'unknown'
+  }
+}
+
+export function getPackageSourceReference(source: PackageSource): string {
+  switch (source.type) {
+    case 'git':
+    case 'platform':
+      return source.ref
+    case 'well-known':
+      return 'well-known'
+    case 'local':
+      return 'local'
+    case 'unknown':
+      return source.ref ?? 'unknown'
+  }
+}
+
+export function getPackageSourceCommit(source: PackageSource): string {
+  switch (source.type) {
+    case 'git':
+    case 'platform':
+      return source.commit
+    case 'unknown':
+      return source.commit ?? 'unknown'
+    case 'well-known':
+    case 'local':
+      return ''
+  }
+}
+
+export function createPackageKey(displayName: string, source: PackageSource): string {
+  const identity = (() => {
+    switch (source.type) {
+      case 'git':
+        return `${source.uri}#${source.path}`
+      case 'platform':
+        return `${source.uri}#${source.path}`
+      case 'well-known':
+        return `${source.baseUrl}#${source.skillName}`
+      case 'local':
+        return source.path
+      case 'unknown':
+        return [source.path ?? '', source.ref ?? '', source.commit ?? '', displayName].join('#')
+    }
+  })()
+
+  return `${source.type}:${encodeURIComponent(identity)}`
+}
+
+export function getPackageDisplayName(manifestKey: string, pkg: { name?: string }): string {
+  return pkg.name?.trim() || manifestKey
+}
+
 export const manifestV2PackageSchema = z.object({
+  name: z.string().min(1).optional(),
   source: packageSourceSchema,
   agents: z.array(z.string()).default([]),
   installedAt: z.string().datetime(),
@@ -147,13 +248,38 @@ export const manifestV2PackageSchema = z.object({
 export type ManifestV2Package = z.infer<typeof manifestV2PackageSchema>
 
 export const manifestV2Schema = z.object({
-  version: z.literal(2),
+  version: z.literal(STORAGE_SCHEMA_VERSION),
   packages: z.record(z.string(), manifestV2PackageSchema),
 })
 
 export type ManifestV2 = z.infer<typeof manifestV2Schema>
 
+export function normaliseManifestV2(manifest: ManifestV2): ManifestV2 {
+  const packages = Object.fromEntries(
+    Object.entries(manifest.packages).map(([name, pkg]) => {
+      const source = normalisePackageSource(pkg.source)
+      const displayName = getPackageDisplayName(name, pkg)
+      const stableKey = createPackageKey(displayName, source)
+
+      return [
+        stableKey,
+        {
+          name: displayName,
+          ...pkg,
+          source,
+        },
+      ]
+    })
+  )
+
+  return {
+    version: STORAGE_SCHEMA_VERSION,
+    packages,
+  }
+}
+
 export const lockfileV2PackageSchema = z.object({
+  name: z.string().min(1).optional(),
   source: packageSourceSchema,
   integrity: z.string().regex(/^sha256-/),
   agents: z.array(z.string()),
@@ -162,62 +288,44 @@ export const lockfileV2PackageSchema = z.object({
 export type LockfileV2Package = z.infer<typeof lockfileV2PackageSchema>
 
 export const lockfileV2Schema = z.object({
-  version: z.literal(2),
+  version: z.literal(STORAGE_SCHEMA_VERSION),
   packages: z.record(z.string(), lockfileV2PackageSchema),
 })
 
 export type LockfileV2 = z.infer<typeof lockfileV2Schema>
 
-export const manifestAnySchema = z.discriminatedUnion('version', [manifestSchema, manifestV2Schema])
+export function normaliseLockfileV2(lockfile: LockfileV2): LockfileV2 {
+  const packages = Object.fromEntries(
+    Object.entries(lockfile.packages).map(([name, pkg]) => {
+      const source = normalisePackageSource(pkg.source)
+      const displayName = getPackageDisplayName(name, pkg)
+      const stableKey = createPackageKey(displayName, source)
 
-export type ManifestAny = z.infer<typeof manifestAnySchema>
+      return [
+        stableKey,
+        {
+          name: displayName,
+          ...pkg,
+          source,
+        },
+      ]
+    })
+  )
 
-export const lockfileAnySchema = z.discriminatedUnion('version', [lockfileSchema, lockfileV2Schema])
-
-export type LockfileAny = z.infer<typeof lockfileAnySchema>
-
-// --- v1 → v2 migration helpers ---
-
-export function migrateManifestV1ToV2(v1: Manifest): ManifestV2 {
-  const packages: ManifestV2['packages'] = {}
-
-  for (const [name, pkg] of Object.entries(v1.packages)) {
-    packages[name] = {
-      source: {
-        type: 'git',
-        uri: 'unknown',
-        path: '',
-        ref: pkg.version,
-        commit: 'unknown',
-      },
-      agents: pkg.agents,
-      installedAt: pkg.installedAt,
-      modified: false,
-    }
+  return {
+    version: STORAGE_SCHEMA_VERSION,
+    packages,
   }
-
-  return { version: 2, packages }
 }
 
-export function migrateLockfileV1ToV2(v1: Lockfile): LockfileV2 {
-  const packages: LockfileV2['packages'] = {}
-
-  for (const [name, pkg] of Object.entries(v1.packages)) {
-    packages[name] = {
-      source: {
-        type: 'git',
-        uri: 'unknown',
-        path: '',
-        ref: pkg.version,
-        commit: 'unknown',
-      },
-      integrity: pkg.integrity,
-      agents: pkg.agents,
-    }
-  }
-
-  return { version: 2, packages }
-}
+export const manifestSchema = manifestV2Schema
+export type Manifest = ManifestV2
+export const lockfileSchema = lockfileV2Schema
+export type Lockfile = LockfileV2
+export const manifestAnySchema = manifestV2Schema
+export type ManifestAny = ManifestV2
+export const lockfileAnySchema = lockfileV2Schema
+export type LockfileAny = LockfileV2
 
 // --- Package structure ---
 

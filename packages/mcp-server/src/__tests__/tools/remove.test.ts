@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPackageKey } from '@agentver/shared'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -51,6 +52,7 @@ function createMockServer(): {
 
 describe('remove tool', () => {
   let tempDir: string
+  let getWorkingDirectoryMock: Mock
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -59,7 +61,8 @@ describe('remove tool', () => {
       `agentver-remove-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
     )
     mkdirSync(tempDir, { recursive: true })
-    vi.mocked(contextModule.getWorkingDirectory).mockReturnValue(tempDir)
+    getWorkingDirectoryMock = contextModule.getWorkingDirectory as unknown as Mock
+    getWorkingDirectoryMock.mockReturnValue(tempDir)
   })
 
   afterEach(() => {
@@ -90,11 +93,19 @@ describe('remove tool', () => {
   it('removes an installed package and updates manifest and lockfile', async () => {
     const agentverDir = join(tempDir, '.agentver')
     mkdirSync(agentverDir, { recursive: true })
+    const packageKey = createPackageKey('org/skill', {
+      type: 'git',
+      uri: 'https://github.com/org/repo',
+      path: 'skills/skill',
+      ref: 'v1.0.0',
+      commit: 'abc1234def',
+    })
 
     const manifest = {
       version: 2,
       packages: {
-        'org/skill': {
+        [packageKey]: {
+          name: 'org/skill',
           source: {
             type: 'git',
             uri: 'https://github.com/org/repo',
@@ -112,7 +123,8 @@ describe('remove tool', () => {
     const lockfile = {
       version: 2,
       packages: {
-        'org/skill': {
+        [packageKey]: {
+          name: 'org/skill',
           source: {
             type: 'git',
             uri: 'https://github.com/org/repo',
@@ -144,21 +156,29 @@ describe('remove tool', () => {
 
     // Verify manifest was updated
     const updatedManifest = JSON.parse(readFileSync(join(agentverDir, 'manifest.json'), 'utf-8'))
-    expect(updatedManifest.packages['org/skill']).toBeUndefined()
+    expect(updatedManifest.packages[packageKey]).toBeUndefined()
 
     // Verify lockfile was updated
     const updatedLockfile = JSON.parse(readFileSync(join(agentverDir, 'lockfile.json'), 'utf-8'))
-    expect(updatedLockfile.packages['org/skill']).toBeUndefined()
+    expect(updatedLockfile.packages[packageKey]).toBeUndefined()
   })
 
   it('handles removal when skill directory does not exist on disk', async () => {
     const agentverDir = join(tempDir, '.agentver')
     mkdirSync(agentverDir, { recursive: true })
+    const packageKey = createPackageKey('org/skill', {
+      type: 'git',
+      uri: 'https://github.com/org/repo',
+      path: 'skills/skill',
+      ref: 'v1.0.0',
+      commit: 'abc1234def',
+    })
 
     const manifest = {
       version: 2,
       packages: {
-        'org/skill': {
+        [packageKey]: {
+          name: 'org/skill',
           source: {
             type: 'git',
             uri: 'https://github.com/org/repo',

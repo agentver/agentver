@@ -8,6 +8,11 @@ import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { scanFiles } from '../security/index.js'
 import { readLockfile } from '../storage/lockfile.js'
+import {
+  getTrackedSourceRef,
+  isPlatformManagedSource,
+  resolvePackageQuery,
+} from '../storage/package-identity.js'
 import { updateManifestAndLockfile } from '../storage/pair.js'
 import { detectSkillName, resolveNamespace } from './skill-context.js'
 
@@ -78,9 +83,10 @@ export function registerSaveCommand(program: Command): void {
 
       const spinner = createSpinner('Reading local files...').start()
       const lockfile = readLockfile(projectRoot)
+      const lockEntryLookup = resolvePackageQuery(lockfile.packages, skillName)
       const currentRef =
-        lockfile.packages[skillName]?.source.type === 'git'
-          ? lockfile.packages[skillName].source.ref
+        lockEntryLookup.ok && isPlatformManagedSource(lockEntryLookup.pkg.source)
+          ? getTrackedSourceRef(lockEntryLookup.pkg.source)
           : undefined
 
       try {
@@ -172,16 +178,18 @@ export function registerSaveCommand(program: Command): void {
         )
 
         updateManifestAndLockfile(projectRoot, 'project', (manifest, currentLockfile) => {
-          const manifestEntry = manifest.packages[skillName]
-          if (manifestEntry?.source.type === 'git') {
+          const manifestEntryLookup = resolvePackageQuery(manifest.packages, skillName)
+          const manifestEntry = manifestEntryLookup.ok ? manifestEntryLookup.pkg : undefined
+          if (manifestEntry && isPlatformManagedSource(manifestEntry.source)) {
             manifestEntry.source.commit = result.commitSha
             if (currentRef) {
               manifestEntry.source.ref = currentRef
             }
           }
 
-          const lockEntry = currentLockfile.packages[skillName]
-          if (lockEntry?.source.type === 'git') {
+          const lockEntryLookup = resolvePackageQuery(currentLockfile.packages, skillName)
+          const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
+          if (lockEntry && isPlatformManagedSource(lockEntry.source)) {
             lockEntry.source.commit = result.commitSha
             if (currentRef) {
               lockEntry.source.ref = currentRef

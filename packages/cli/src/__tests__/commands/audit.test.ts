@@ -1,5 +1,5 @@
 import { auditResultSchema, createCLIOutputSchema } from '@agentver/shared'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import {
   createAuditScanResult,
   createFetchedFiles,
@@ -66,6 +66,10 @@ async function runAudit(args: string[]): Promise<void> {
   await program.parseAsync(['node', 'agentver', ...args])
 }
 
+function asMock(value: unknown): Mock {
+  return value as Mock
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -83,14 +87,14 @@ describe('commands/audit', () => {
     process.exit = vi.fn() as never
     process.exitCode = undefined
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(
+    asMock(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
-    vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
-    vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
-    vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue(createFetchedFiles(2))
-    vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
-    vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+    asMock(outputModule.isJSONMode).mockReturnValue(false)
+    asMock(manifestModule.readManifest).mockReturnValue(createManifest())
+    asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue(createFetchedFiles(2))
+    asMock(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+    asMock(canonicalModule.getCanonicalSkillPath).mockReturnValue(
       '/project/.agents/skills/test-skill'
     )
   })
@@ -108,7 +112,7 @@ describe('commands/audit', () => {
 
   describe('scan all installed', () => {
     it('reads manifest and scans each installed package', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'skill-a': createManifestPackage(),
@@ -130,7 +134,7 @@ describe('commands/audit', () => {
 
   describe('specific package', () => {
     it('only scans the named package', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'skill-a': createManifestPackage(),
@@ -152,7 +156,7 @@ describe('commands/audit', () => {
 
   describe('--global flag', () => {
     it('reads and scans global packages when requested', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'global-skill': createManifestPackage(),
@@ -177,7 +181,7 @@ describe('commands/audit', () => {
 
   describe('--path flag', () => {
     it('scans an arbitrary directory instead of installed skills', async () => {
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'audit', '--json']
 
       await runAudit(['audit', '--path', 'custom/dir'])
@@ -187,8 +191,8 @@ describe('commands/audit', () => {
     })
 
     it('sets process.exitCode to 1 for BLOCK findings when using --path in non-JSON mode', async () => {
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
-      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
+      asMock(outputModule.isJSONMode).mockReturnValue(false)
+      asMock(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
 
       await runAudit(['audit', '--path', 'custom/dir'])
 
@@ -202,19 +206,19 @@ describe('commands/audit', () => {
 
   describe('clean scan', () => {
     it('shows PASS verdict when no findings', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: { 'clean-skill': createManifestPackage() },
         })
       )
-      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'audit', '--json']
 
       await runAudit(['audit'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.passed).toBe(true)
       expect(typed.findings).toEqual([])
@@ -227,12 +231,12 @@ describe('commands/audit', () => {
 
   describe('critical findings', () => {
     it('reports findings with severity, file, and line', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: { 'risky-skill': createManifestPackage() },
         })
       )
-      vi.mocked(securityModule.scanFiles).mockResolvedValue(
+      asMock(securityModule.scanFiles).mockResolvedValue(
         createAuditScanResult('BLOCK', {
           findings: [
             createScanFinding({
@@ -245,13 +249,13 @@ describe('commands/audit', () => {
           ],
         })
       )
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'audit', '--json']
 
       await runAudit(['audit'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as { passed: boolean; findings: Array<Record<string, unknown>> }
       expect(typed.passed).toBe(false)
       expect(typed.findings).toHaveLength(1)
@@ -261,13 +265,13 @@ describe('commands/audit', () => {
     })
 
     it('sets process.exitCode to 1 in non-JSON mode when BLOCK findings are present', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: { 'risky-skill': createManifestPackage() },
         })
       )
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
-      vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
+      asMock(outputModule.isJSONMode).mockReturnValue(false)
+      asMock(securityModule.scanFiles).mockResolvedValue(createAuditScanResult('BLOCK'))
 
       await runAudit(['audit'])
 
@@ -281,12 +285,12 @@ describe('commands/audit', () => {
 
   describe('multiple severity levels', () => {
     it('reports CRITICAL, HIGH, and MEDIUM findings together', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: { 'multi-finding': createManifestPackage() },
         })
       )
-      vi.mocked(securityModule.scanFiles).mockResolvedValue(
+      asMock(securityModule.scanFiles).mockResolvedValue(
         createAuditScanResult('BLOCK', {
           findings: [
             createScanFinding({ severity: 'CRITICAL', category: 'DANGEROUS_COMMAND' }),
@@ -295,12 +299,12 @@ describe('commands/audit', () => {
           ],
         })
       )
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'audit', '--json']
 
       await runAudit(['audit'])
 
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as { findings: Array<{ severity: string }> }
       const severities = typed.findings.map((f) => f.severity)
       expect(severities).toContain('CRITICAL')
@@ -315,18 +319,18 @@ describe('commands/audit', () => {
 
   describe('--json output', () => {
     it('validates against auditResultSchema', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: { 'json-skill': createManifestPackage() },
         })
       )
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'audit', '--json']
 
       await runAudit(['audit'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const envelope = { success: true, data }
       const outputSchema = createCLIOutputSchema(auditResultSchema)
       const result = outputSchema.safeParse(envelope)
@@ -340,14 +344,14 @@ describe('commands/audit', () => {
 
   describe('not installed', () => {
     it('shows helpful message when package is not installed', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(manifestModule.readManifest).mockReturnValue(createManifest())
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'audit', '--json']
 
       await runAudit(['audit', 'nonexistent-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as { passed: boolean; findings: unknown[] }
       // Not found in manifest but returns a clean result with passed = true
       expect(typed.passed).toBe(true)

@@ -81,11 +81,15 @@ describe('storage/lockfile', () => {
 
       const result = lockfileModule.readLockfile('/project')
       expect(result.version).toBe(2)
-      expect(result.packages['my-skill']).toBeDefined()
-      expect(result.packages['my-skill']!.integrity).toBe('sha256-abc123')
+      expect(
+        result.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fmy-skill']
+      ).toBeDefined()
+      expect(
+        result.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fmy-skill']!.integrity
+      ).toBe('sha256-abc123')
     })
 
-    it('migrates v1 lockfile to v2', () => {
+    it('treats legacy v1 lockfiles as invalid state', () => {
       const v1Lockfile = {
         version: 1,
         packages: {
@@ -102,10 +106,8 @@ describe('storage/lockfile', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(v1Lockfile))
 
       const result = lockfileModule.readLockfile('/project')
-      expect(result.version).toBe(2)
-      expect(result.packages['old-skill']).toBeDefined()
-      expect(result.packages['old-skill']!.source.type).toBe('git')
-      expect(fs.writeFileSync).toHaveBeenCalled()
+      expect(result).toEqual({ version: 2, packages: {} })
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
     })
 
     it('returns empty lockfile when schema validation fails', () => {
@@ -213,7 +215,7 @@ describe('storage/lockfile', () => {
 
       expect(result.packages.added).toBeDefined()
 
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      const written = vi.mocked(fs.writeFileSync).mock.calls.at(-1)![1] as string
       expect(JSON.parse(written)).toEqual(result)
     })
   })

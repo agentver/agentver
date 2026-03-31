@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -57,7 +57,7 @@ import {
   createLockfilePackage,
   createManifest,
   createManifestPackage,
-  createSharedGitSource,
+  createPlatformSource,
   createSkillMd,
 } from '../helpers/fixtures'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
@@ -79,11 +79,6 @@ const VALID_SKILL_MD = createSkillMd({
   version: '1.0.0',
 })
 
-const GIT_SOURCE = createSharedGitSource({
-  uri: 'https://github.com/test-org/test-repo',
-  commit: 'abc1234567',
-})
-
 function captureOutput(): { stdout: string[]; stderr: string[] } {
   const stdout: string[] = []
   const stderr: string[] = []
@@ -98,14 +93,26 @@ function captureOutput(): { stdout: string[]; stderr: string[] } {
   return { stdout, stderr }
 }
 
+function asMock(value: unknown): Mock {
+  return value as Mock
+}
+
 /** Sets up mocks so resolveSkillIdentity() returns a valid identity. */
 function setupIdentity(): void {
-  vi.mocked(existsSync).mockReturnValue(true)
-  vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-  vi.mocked(readManifest).mockReturnValue(
+  asMock(existsSync).mockReturnValue(true)
+  asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+  asMock(readManifest).mockReturnValue(
     createManifest({
       packages: {
-        'test-skill': createManifestPackage({ source: GIT_SOURCE }),
+        'platform:agentver-skill': Object.assign(
+          createManifestPackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              commit: 'abc1234567',
+            }),
+          }),
+          { name: 'test-skill' }
+        ),
       },
     })
   )
@@ -113,12 +120,18 @@ function setupIdentity(): void {
 
 /** Sets up a lockfile with a valid commit SHA. */
 function setupLockfileWithCommit(commitSha = 'abc1234567'): void {
-  vi.mocked(readLockfile).mockReturnValue(
+  asMock(readLockfile).mockReturnValue(
     createLockfile({
       packages: {
-        'test-skill': createLockfilePackage({
-          source: createSharedGitSource({ commit: commitSha }),
-        }),
+        'platform:agentver-skill': Object.assign(
+          createLockfilePackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              commit: commitSha,
+            }),
+          }),
+          { name: 'test-skill' }
+        ),
       },
     })
   )
@@ -126,12 +139,18 @@ function setupLockfileWithCommit(commitSha = 'abc1234567'): void {
 
 /** Sets up a lockfile with an unknown/missing commit SHA. */
 function setupLockfileWithoutCommit(): void {
-  vi.mocked(readLockfile).mockReturnValue(
+  asMock(readLockfile).mockReturnValue(
     createLockfile({
       packages: {
-        'test-skill': createLockfilePackage({
-          source: createSharedGitSource({ commit: 'unknown' }),
-        }),
+        'platform:agentver-skill': Object.assign(
+          createLockfilePackage({
+            source: createPlatformSource({
+              uri: 'agentver://test-org',
+              commit: 'unknown',
+            }),
+          }),
+          { name: 'test-skill' }
+        ),
       },
     })
   )
@@ -149,10 +168,10 @@ describe('version command', () => {
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
-    vi.mocked(outputModule.createSpinner).mockReturnValue(
+    asMock(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
-    vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+    asMock(outputModule.isJSONMode).mockReturnValue(false)
   })
 
   afterEach(() => {
@@ -171,7 +190,60 @@ describe('version command', () => {
     it('creates a version tag with valid semver', async () => {
       setupIdentity()
       setupLockfileWithCommit('abc1234567')
-      vi.mocked(platformFetch).mockResolvedValue({
+      asMock(platformFetch).mockResolvedValue({
+        tag: 'v1.0.0',
+        commitSha: 'abc1234567',
+      })
+
+      const program = buildProgram()
+      await program.parseAsync(['node', 'agentver', 'version', 'create', '1.0.0'])
+
+      expect(platformFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/versions'),
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.objectContaining({
+            version: '1.0.0',
+            commitSha: 'abc1234567',
+          }),
+        })
+      )
+    })
+
+    it('creates a version tag from typed platform lockfile provenance', async () => {
+      asMock(existsSync).mockReturnValue(true)
+      asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+      asMock(readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'platform:agentver-skill': Object.assign(
+              createManifestPackage({
+                source: createPlatformSource({
+                  uri: 'agentver://test-org',
+                  commit: 'abc1234567',
+                }),
+              }),
+              { name: 'test-skill' }
+            ),
+          },
+        })
+      )
+      asMock(readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            'platform:agentver-skill': Object.assign(
+              createLockfilePackage({
+                source: createPlatformSource({
+                  uri: 'agentver://test-org',
+                  commit: 'abc1234567',
+                }),
+              }),
+              { name: 'test-skill' }
+            ),
+          },
+        })
+      )
+      asMock(platformFetch).mockResolvedValue({
         tag: 'v1.0.0',
         commitSha: 'abc1234567',
       })
@@ -236,7 +308,7 @@ describe('version command', () => {
     it('accepts valid semver with pre-release suffix', async () => {
       setupIdentity()
       setupLockfileWithCommit()
-      vi.mocked(platformFetch).mockResolvedValue({
+      asMock(platformFetch).mockResolvedValue({
         tag: 'v1.0.0-beta.1',
         commitSha: 'abc1234567',
       })
@@ -259,7 +331,7 @@ describe('version command', () => {
     it('sends release notes with the --notes flag', async () => {
       setupIdentity()
       setupLockfileWithCommit()
-      vi.mocked(platformFetch).mockResolvedValue({
+      asMock(platformFetch).mockResolvedValue({
         tag: 'v1.0.0',
         commitSha: 'abc1234567',
       })
@@ -292,8 +364,8 @@ describe('version command', () => {
     it('outputs valid JSON with --json flag', async () => {
       setupIdentity()
       setupLockfileWithCommit()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
-      vi.mocked(platformFetch).mockResolvedValue({
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(platformFetch).mockResolvedValue({
         tag: 'v1.0.0',
         commitSha: 'abc1234567',
       })
@@ -312,8 +384,8 @@ describe('version command', () => {
     it('uses JSON envelope when JSON mode is enabled without --json flag', async () => {
       setupIdentity()
       setupLockfileWithCommit()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
-      vi.mocked(platformFetch).mockResolvedValue({
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(platformFetch).mockResolvedValue({
         tag: 'v1.0.0',
         commitSha: 'abc1234567',
       })
@@ -336,7 +408,7 @@ describe('version command', () => {
     it('surfaces authentication error when not logged in', async () => {
       setupIdentity()
       setupLockfileWithCommit()
-      vi.mocked(platformFetch).mockRejectedValue(
+      asMock(platformFetch).mockRejectedValue(
         new Error('Not authenticated. Run `agentver login` to sign in.')
       )
 
@@ -369,7 +441,7 @@ describe('version command', () => {
 
     it('exits with error when skill is not in the lockfile at all', async () => {
       setupIdentity()
-      vi.mocked(readLockfile).mockReturnValue(createLockfile({ packages: {} }))
+      asMock(readLockfile).mockReturnValue(createLockfile({ packages: {} }))
       const { stderr } = captureOutput()
 
       const program = buildProgram()
@@ -387,8 +459,8 @@ describe('version command', () => {
     // -----------------------------------------------------------------------
 
     it('exits with error when skill identity cannot be determined', async () => {
-      vi.mocked(existsSync).mockReturnValue(false)
-      vi.mocked(readManifest).mockReturnValue(createManifest({ packages: {} }))
+      asMock(existsSync).mockReturnValue(false)
+      asMock(readManifest).mockReturnValue(createManifest({ packages: {} }))
       const { stderr } = captureOutput()
 
       const program = buildProgram()
@@ -408,7 +480,7 @@ describe('version command', () => {
     it('surfaces API errors from the platform', async () => {
       setupIdentity()
       setupLockfileWithCommit()
-      vi.mocked(platformFetch).mockRejectedValue(
+      asMock(platformFetch).mockRejectedValue(
         new Error('Platform error (409): Version 1.0.0 already exists')
       )
 
@@ -427,7 +499,7 @@ describe('version command', () => {
     it('surfaces connection error when no platform URL is configured', async () => {
       setupIdentity()
       setupLockfileWithCommit()
-      vi.mocked(platformFetch).mockRejectedValue(
+      asMock(platformFetch).mockRejectedValue(
         new Error('No platform URL configured. Run `agentver login <url>` to connect.')
       )
 
@@ -452,7 +524,7 @@ describe('version command', () => {
     it('fetches and displays version history', async () => {
       setupIdentity()
       const { stdout } = captureOutput()
-      vi.mocked(platformFetch).mockResolvedValue([
+      asMock(platformFetch).mockResolvedValue([
         {
           name: 'v1.0.0',
           tag: 'v1.0.0',
@@ -477,7 +549,7 @@ describe('version command', () => {
 
     it('supports the top-level versions command alias', async () => {
       setupIdentity()
-      vi.mocked(platformFetch).mockResolvedValue([
+      asMock(platformFetch).mockResolvedValue([
         {
           name: 'v1.0.0',
           tag: 'v1.0.0',
@@ -499,7 +571,7 @@ describe('version command', () => {
     it('displays a message when there are no versions', async () => {
       setupIdentity()
       const { stdout } = captureOutput()
-      vi.mocked(platformFetch).mockResolvedValue([])
+      asMock(platformFetch).mockResolvedValue([])
 
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'version', 'list'])
@@ -513,8 +585,8 @@ describe('version command', () => {
 
     it('outputs valid JSON with --json flag', async () => {
       setupIdentity()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
-      vi.mocked(platformFetch).mockResolvedValue([
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(platformFetch).mockResolvedValue([
         {
           name: 'v1.0.0',
           tag: 'v1.0.0',
@@ -527,7 +599,7 @@ describe('version command', () => {
       await program.parseAsync(['node', 'agentver', 'version', 'list', '--json'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [output] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [output] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = output as Record<string, unknown>
       expect(typed).toHaveProperty('versions')
       expect(Array.isArray(typed.versions)).toBe(true)
@@ -538,8 +610,8 @@ describe('version command', () => {
 
     it('outputs valid JSON with empty version list', async () => {
       setupIdentity()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
-      vi.mocked(platformFetch).mockResolvedValue([])
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(platformFetch).mockResolvedValue([])
 
       const program = buildProgram()
       await program.parseAsync(['node', 'agentver', 'version', 'list', '--json'])
@@ -549,8 +621,8 @@ describe('version command', () => {
 
     it('uses JSON envelope for list when JSON mode is enabled without --json flag', async () => {
       setupIdentity()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
-      vi.mocked(platformFetch).mockResolvedValue([
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(platformFetch).mockResolvedValue([
         {
           name: 'v1.0.0',
           tag: 'v1.0.0',
@@ -581,7 +653,7 @@ describe('version command', () => {
     it('truncates commit SHAs to 7 characters in human-readable output', async () => {
       setupIdentity()
       const { stdout } = captureOutput()
-      vi.mocked(platformFetch).mockResolvedValue([
+      asMock(platformFetch).mockResolvedValue([
         {
           name: 'v1.0.0',
           tag: 'v1.0.0',
@@ -603,7 +675,7 @@ describe('version command', () => {
 
     it('surfaces authentication error when not logged in', async () => {
       setupIdentity()
-      vi.mocked(platformFetch).mockRejectedValue(
+      asMock(platformFetch).mockRejectedValue(
         new Error('Not authenticated. Run `agentver login` to sign in.')
       )
 
@@ -618,8 +690,8 @@ describe('version command', () => {
     // -----------------------------------------------------------------------
 
     it('exits with error when skill identity cannot be determined', async () => {
-      vi.mocked(existsSync).mockReturnValue(false)
-      vi.mocked(readManifest).mockReturnValue(createManifest({ packages: {} }))
+      asMock(existsSync).mockReturnValue(false)
+      asMock(readManifest).mockReturnValue(createManifest({ packages: {} }))
       const { stderr } = captureOutput()
 
       const program = buildProgram()
@@ -635,7 +707,7 @@ describe('version command', () => {
 
     it('surfaces connection error when no platform URL is configured', async () => {
       setupIdentity()
-      vi.mocked(platformFetch).mockRejectedValue(
+      asMock(platformFetch).mockRejectedValue(
         new Error('No platform URL configured. Run `agentver login <url>` to connect.')
       )
 

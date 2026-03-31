@@ -9,10 +9,13 @@ import {
 } from '@agentver/agent-definitions'
 import type { LockfileV2, ManifestV2 } from '@agentver/shared'
 import {
+  createPackageKey,
+  getPackageDisplayName,
+  getPackageSourceReference,
   lockfileAnySchema,
   manifestAnySchema,
-  migrateLockfileV1ToV2,
-  migrateManifestV1ToV2,
+  normaliseLockfileV2,
+  normaliseManifestV2,
 } from '@agentver/shared'
 import type { InstallResult } from './reporter'
 
@@ -119,14 +122,12 @@ export function readManifestFile(manifestPath: string): ManifestV2 {
     throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`)
   }
 
-  if (result.data.version === 1) {
-    core.info('Migrating v1 manifest to v2 format')
-    const migrated = migrateManifestV1ToV2(result.data)
-    writeFileSync(manifestPath, JSON.stringify(migrated, null, 2), 'utf-8')
-    return migrated
+  const normalised = normaliseManifestV2(result.data)
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    writeFileSync(manifestPath, JSON.stringify(normalised, null, 2), 'utf-8')
   }
 
-  return result.data
+  return normalised
 }
 
 export function readLockfileFile(lockfilePath: string): LockfileV2 | null {
@@ -148,14 +149,12 @@ export function readLockfileFile(lockfilePath: string): LockfileV2 | null {
     return null
   }
 
-  if (result.data.version === 1) {
-    core.info('Migrating v1 lockfile to v2 format')
-    const migrated = migrateLockfileV1ToV2(result.data)
-    writeFileSync(lockfilePath, JSON.stringify(migrated, null, 2), 'utf-8')
-    return migrated
+  const normalised = normaliseLockfileV2(result.data)
+  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
+    writeFileSync(lockfilePath, JSON.stringify(normalised, null, 2), 'utf-8')
   }
 
-  return result.data
+  return normalised
 }
 
 export function writeLockfileFile(lockfilePath: string, lockfile: LockfileV2): void {
@@ -416,14 +415,17 @@ export function updateLockfile(
       continue
     }
 
-    updated.packages[result.name] = {
-      source: {
-        type: 'git',
-        uri: entry.response.gitUri,
-        path: entry.response.gitPath ?? '',
-        ref: entry.response.gitRef,
-        commit: entry.response.gitCommitSha,
-      },
+    const source = {
+      type: 'git' as const,
+      uri: entry.response.gitUri,
+      path: entry.response.gitPath ?? '',
+      ref: entry.response.gitRef,
+      commit: entry.response.gitCommitSha,
+    }
+
+    updated.packages[createPackageKey(result.name, source)] = {
+      name: result.name,
+      source,
       integrity: computeIntegrity(entry.files),
       agents: result.agents,
     }
@@ -482,8 +484,8 @@ async function installPackageWithData(
 }
 
 function resolveVersionFromSource(pkg: ManifestV2['packages'][string]): string {
-  if (pkg.source.type === 'git') {
-    const ref = pkg.source.ref
+  if (pkg.source.type === 'git' || pkg.source.type === 'platform') {
+    const ref = getPackageSourceReference(pkg.source)
     if (ref === 'unknown') return 'latest'
     // Strip git ref prefixes to extract semver (refs/tags/v1.0.0 -> 1.0.0, v1.0.0 -> 1.0.0)
     const stripped = ref.replace(/^(refs\/tags\/)?v?/, '')
@@ -510,20 +512,21 @@ export async function installAllPackages(
   >()
   const packageEntries = Object.entries(manifest.packages)
 
-  for (const [packageName, packageInfo] of packageEntries) {
+  for (const [packageKey, packageInfo] of packageEntries) {
+    const displayName = getPackageDisplayName(packageKey, packageInfo)
     const version = resolveVersionFromSource(packageInfo)
-    core.info(`Resolving ${packageName}@${version}...`)
+    core.info(`Resolving ${displayName}@${version}...`)
 
     let response: DownloadResponse
     let files: Array<{ path: string; content: string }>
     try {
-      response = await resolvePackage(packageName, version, config.registryUrl, config.apiKey)
+      response = await resolvePackage(displayName, version, config.registryUrl, config.apiKey)
       files = extractFilesFromManifest(response.fileManifest)
 
       if (files.length === 0) {
-        core.warning(`Package ${packageName}@${response.version} has no files in its manifest`)
+        core.warning(`Package ${displayName}@${response.version} has no files in its manifest`)
         results.push({
-          name: packageName,
+          name: displayName,
           version: response.version,
           agents: [],
           fileCount: 0,
@@ -533,12 +536,12 @@ export async function installAllPackages(
         continue
       }
 
-      resolvedData.set(packageName, { response, files })
+      resolvedData.set(displayName, { response, files })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      core.warning(`Failed to resolve ${packageName}@${version}: ${message}`)
+      core.warning(`Failed to resolve ${displayName}@${version}: ${message}`)
       results.push({
-        name: packageName,
+        name: displayName,
         version,
         agents: [],
         fileCount: 0,
@@ -548,10 +551,10 @@ export async function installAllPackages(
       continue
     }
 
-    core.info(`Installing ${packageName}@${response.version}...`)
-    const lockfileIntegrity = existingLockfile?.packages[packageName]?.integrity
+    core.info(`Installing ${displayName}@${response.version}...`)
+    const lockfileIntegrity = existingLockfile?.packages[packageKey]?.integrity
     const result = await installPackageWithData(
-      packageName,
+      displayName,
       response,
       files,
       config,
@@ -561,10 +564,10 @@ export async function installAllPackages(
 
     if (result.success) {
       core.info(
-        `Installed ${packageName}@${result.version} to ${result.agents.join(', ')} (${result.fileCount} files)`
+        `Installed ${displayName}@${result.version} to ${result.agents.join(', ')} (${result.fileCount} files)`
       )
     } else {
-      core.warning(`Failed to install ${packageName}: ${result.error}`)
+      core.warning(`Failed to install ${displayName}: ${result.error}`)
     }
   }
 

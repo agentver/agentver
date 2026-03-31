@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -74,6 +74,7 @@ import {
   createLockfilePackage,
   createManifest,
   createManifestPackage,
+  createPlatformSource,
   createSharedGitSource,
   createSkillMd,
 } from '../helpers/fixtures'
@@ -112,31 +113,35 @@ function captureOutput(): { stdout: string[]; stderr: string[] } {
   return { stdout, stderr }
 }
 
+function asMock(value: unknown): Mock {
+  return value as Mock
+}
+
 const GIT_SOURCE = createSharedGitSource({
   uri: 'https://github.com/test-org/test-repo',
 })
 
 function setupHappyPath(): void {
-  vi.mocked(existsSync).mockReturnValue(true)
-  vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-  vi.mocked(readManifest).mockReturnValue(
+  asMock(existsSync).mockReturnValue(true)
+  asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+  asMock(readManifest).mockReturnValue(
     createManifest({
       packages: {
         'test-skill': createManifestPackage({ source: GIT_SOURCE }),
       },
     })
   )
-  vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-  vi.mocked(readLockfile).mockReturnValue(
+  asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+  asMock(readLockfile).mockReturnValue(
     createLockfile({
       packages: {
         'test-skill': createLockfilePackage({ source: GIT_SOURCE }),
       },
     })
   )
-  vi.mocked(platformFetch).mockResolvedValue({ commitSha: 'def7890abcdef' })
-  vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
-  vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+  asMock(platformFetch).mockResolvedValue({ commitSha: 'def7890abcdef' })
+  asMock(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+  asMock(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
     const manifest = createManifest({
       packages: {
         'test-skill': createManifestPackage({ source: GIT_SOURCE }),
@@ -164,7 +169,7 @@ describe('save command', () => {
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
-    vi.mocked(outputModule.createSpinner).mockReturnValue(
+    asMock(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
   })
@@ -233,6 +238,107 @@ describe('save command', () => {
     )
   })
 
+  it('uses typed platform provenance for ref tracking and lockfile updates', async () => {
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readManifest).mockReturnValue(
+      createManifest({
+        packages: {
+          'platform:agentver-skill': Object.assign(
+            createManifestPackage({
+              source: createPlatformSource({
+                uri: 'agentver://test-org',
+                ref: 'draft',
+                commit: 'abc1234567',
+              }),
+            }),
+            { name: 'test-skill' }
+          ),
+        },
+      })
+    )
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(readLockfile).mockReturnValue(
+      createLockfile({
+        packages: {
+          'platform:agentver-skill': Object.assign(
+            createLockfilePackage({
+              source: createPlatformSource({
+                uri: 'agentver://test-org',
+                ref: 'draft',
+                commit: 'abc1234567',
+              }),
+            }),
+            { name: 'test-skill' }
+          ),
+        },
+      })
+    )
+    asMock(platformFetch).mockResolvedValue({ commitSha: 'def7890abcdef' })
+    asMock(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+
+    let updatedManifest: ReturnType<typeof createManifest> | undefined
+    let updatedLockfile: ReturnType<typeof createLockfile> | undefined
+
+    asMock(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+      const manifest = createManifest({
+        packages: {
+          'platform:agentver-skill': Object.assign(
+            createManifestPackage({
+              source: createPlatformSource({
+                uri: 'agentver://test-org',
+                ref: 'draft',
+                commit: 'abc1234567',
+              }),
+            }),
+            { name: 'test-skill' }
+          ),
+        },
+      })
+      const lockfile = createLockfile({
+        packages: {
+          'platform:agentver-skill': Object.assign(
+            createLockfilePackage({
+              source: createPlatformSource({
+                uri: 'agentver://test-org',
+                ref: 'draft',
+                commit: 'abc1234567',
+              }),
+            }),
+            { name: 'test-skill' }
+          ),
+        },
+      })
+
+      const updated = updater(manifest, lockfile)
+      updatedManifest = updated.manifest
+      updatedLockfile = updated.lockfile
+      return updated
+    })
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'save'])
+
+    expect(platformFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/save'),
+      expect.objectContaining({
+        body: expect.objectContaining({
+          ref: 'draft',
+        }),
+      })
+    )
+    expect(updatedManifest?.packages['platform:agentver-skill']?.source).toMatchObject({
+      type: 'platform',
+      ref: 'draft',
+      commit: 'def7890abcdef',
+    })
+    expect(updatedLockfile?.packages['platform:agentver-skill']?.source).toMatchObject({
+      type: 'platform',
+      ref: 'draft',
+      commit: 'def7890abcdef',
+    })
+  })
+
   // -------------------------------------------------------------------------
   // 3. --dry-run
   // -------------------------------------------------------------------------
@@ -251,7 +357,7 @@ describe('save command', () => {
 
   it('blocks save when the security audit returns BLOCK', async () => {
     setupHappyPath()
-    vi.mocked(scanFiles).mockResolvedValue(
+    asMock(scanFiles).mockResolvedValue(
       createAuditScanResult('BLOCK', {
         findings: [
           {
@@ -292,7 +398,7 @@ describe('save command', () => {
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'save', '--json'])
 
-    const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+    const mockedOutputSuccess = asMock(outputModule.outputSuccess)
     expect(mockedOutputSuccess).toHaveBeenCalledOnce()
     const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
     expect(data.skill).toEqual(expect.stringContaining('test-skill'))
@@ -308,7 +414,7 @@ describe('save command', () => {
     await program.parseAsync(['node', 'agentver', 'save', '--dry-run', '--json'])
 
     expect(platformFetch).not.toHaveBeenCalled()
-    const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+    const mockedOutputSuccess = asMock(outputModule.outputSuccess)
     expect(mockedOutputSuccess).toHaveBeenCalledOnce()
     const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
     expect(data).toHaveProperty('dryRun', true)
@@ -322,16 +428,16 @@ describe('save command', () => {
   // -------------------------------------------------------------------------
 
   it('exits with error when no files are found in the skill directory', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readManifest).mockReturnValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readManifest).mockReturnValue(
       createManifest({
         packages: {
           'test-skill': createManifestPackage({ source: GIT_SOURCE }),
         },
       })
     )
-    vi.mocked(readFilesFromDirectory).mockResolvedValue([])
+    asMock(readFilesFromDirectory).mockResolvedValue([])
 
     const program = buildProgram()
     await expect(program.parseAsync(['node', 'agentver', 'save'])).rejects.toThrow()
@@ -345,17 +451,17 @@ describe('save command', () => {
   // -------------------------------------------------------------------------
 
   it('surfaces authentication error when not logged in', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readManifest).mockReturnValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readManifest).mockReturnValue(
       createManifest({
         packages: {
           'test-skill': createManifestPackage({ source: GIT_SOURCE }),
         },
       })
     )
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-    vi.mocked(platformFetch).mockRejectedValue(
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(platformFetch).mockRejectedValue(
       new Error('Not authenticated. Run `agentver login` to sign in.')
     )
 
@@ -370,17 +476,17 @@ describe('save command', () => {
   // -------------------------------------------------------------------------
 
   it('surfaces connection error when no platform URL is configured', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readManifest).mockReturnValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readManifest).mockReturnValue(
       createManifest({
         packages: {
           'test-skill': createManifestPackage({ source: GIT_SOURCE }),
         },
       })
     )
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-    vi.mocked(platformFetch).mockRejectedValue(
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(platformFetch).mockRejectedValue(
       new Error('No platform URL configured. Run `agentver login <url>` to connect.')
     )
 
@@ -422,7 +528,7 @@ describe('save command', () => {
   // -------------------------------------------------------------------------
 
   it('exits with error when SKILL.md is not found', async () => {
-    vi.mocked(existsSync).mockReturnValue(false)
+    asMock(existsSync).mockReturnValue(false)
     const { stderr } = captureOutput()
 
     const program = buildProgram()
@@ -438,9 +544,9 @@ describe('save command', () => {
   // -------------------------------------------------------------------------
 
   it('exits with error when skill is not found in the manifest', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readManifest).mockReturnValue(createManifest({ packages: {} }))
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readManifest).mockReturnValue(createManifest({ packages: {} }))
     const { stderr } = captureOutput()
 
     const program = buildProgram()
@@ -458,25 +564,25 @@ describe('save command', () => {
   describe('agentver:// URI org extraction', () => {
     function setupWithUri(uri: string): void {
       const source = createSharedGitSource({ uri })
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-      vi.mocked(readManifest).mockReturnValue(
+      asMock(existsSync).mockReturnValue(true)
+      asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+      asMock(readManifest).mockReturnValue(
         createManifest({
           packages: {
             'test-skill': createManifestPackage({ source }),
           },
         })
       )
-      vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-      vi.mocked(readLockfile).mockReturnValue(
+      asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+      asMock(readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'test-skill': createLockfilePackage({ source }),
           },
         })
       )
-      vi.mocked(platformFetch).mockResolvedValue({ commitSha: 'abc1234567' })
-      vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+      asMock(platformFetch).mockResolvedValue({ commitSha: 'abc1234567' })
+      asMock(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
         const manifest = createManifest({
           packages: {
             'test-skill': createManifestPackage({ source }),
@@ -559,7 +665,7 @@ describe('save command', () => {
       await program.parseAsync(['node', 'agentver', 'save', '--dry-run', '--json'])
 
       expect(platformFetch).not.toHaveBeenCalled()
-      const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+      const mockedOutputSuccess = asMock(outputModule.outputSuccess)
       expect(mockedOutputSuccess).toHaveBeenCalledOnce()
       const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
       expect(data.skill).toBe('@lleverage/test-skill')

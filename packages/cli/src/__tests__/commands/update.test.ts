@@ -8,6 +8,7 @@ import {
   createLockfilePackage,
   createManifest,
   createManifestPackage,
+  createPlatformSource,
   createSharedGitSource,
   createWellKnownSource,
 } from '../helpers/fixtures'
@@ -1030,7 +1031,7 @@ describe('commands/update', () => {
     })
 
     it('updates a platform-hosted package via agentver:// source', async () => {
-      const source = createSharedGitSource({
+      const source = createPlatformSource({
         uri: 'agentver://test-org',
         path: 'skills/test-skill',
         ref: 'main',

@@ -539,6 +539,79 @@ describe('doctor command', () => {
     expect(symlinksCheck?.message).toContain('broken symlink')
   })
 
+  it('uses package display names rather than stable keys for path validation', async () => {
+    process.argv = ['node', 'agentver', 'doctor', '--json']
+    setupHealthyProject()
+
+    const stableKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fpackage-a'
+    vi.mocked(readManifest).mockReturnValue({
+      version: 2,
+      packages: {
+        [stableKey]: {
+          name: 'org/package-a',
+          source: {
+            type: 'git',
+            uri: 'https://github.com/test/repo',
+            path: 'skills/package-a',
+            ref: 'main',
+            commit: 'abc1234',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-01-01T00:00:00.000Z',
+          modified: false,
+        },
+      },
+    })
+    vi.mocked(readLockfile).mockReturnValue({
+      version: 2,
+      packages: {
+        [stableKey]: {
+          name: 'org/package-a',
+          source: {
+            type: 'git',
+            uri: 'https://github.com/test/repo',
+            path: 'skills/package-a',
+            ref: 'main',
+            commit: 'abc1234',
+          },
+          integrity: 'sha256-abc123',
+          agents: ['claude-code'],
+        },
+      },
+    })
+
+    vi.mocked(getSkillPlacementPath).mockReturnValue('.claude/skills/package-a')
+    vi.mocked(existsSync).mockImplementation((p: unknown) => {
+      const path = String(p)
+      if (path.includes('manifest.json') || path.includes('lockfile.json')) return true
+      if (path.endsWith('.agents/skills/package-a')) return true
+      if (path.endsWith('.claude/skills/package-a')) return true
+      return false
+    })
+    vi.mocked(lstatSync).mockImplementation((p: unknown) => {
+      const path = String(p)
+      if (path.endsWith('.agents/skills/package-a')) {
+        return { isDirectory: () => true, isSymbolicLink: () => false } as never
+      }
+      if (path.endsWith('.claude/skills/package-a')) {
+        return { isDirectory: () => false, isSymbolicLink: () => false } as never
+      }
+      return { isDirectory: () => false, isSymbolicLink: () => false } as never
+    })
+
+    const { stdout } = captureOutput()
+    const program = buildProgram()
+
+    await expect(program.parseAsync(['node', 'agentver', 'doctor', '--json'])).rejects.toThrow(
+      'process.exit called'
+    )
+
+    const parsed = JSON.parse(stdout.join('')) as DoctorOutput
+    expect(findCheck(parsed.data.checks, 'skill-files-exist')?.status).toBe('pass')
+    expect(findCheck(parsed.data.checks, 'symlinks-valid')?.status).toBe('pass')
+    expect(getSkillPlacementPath).toHaveBeenCalledWith('claude-code', 'package-a', 'project')
+  })
+
   // -------------------------------------------------------------------------
   // 7. Not authenticated — reports as WARN
   // -------------------------------------------------------------------------

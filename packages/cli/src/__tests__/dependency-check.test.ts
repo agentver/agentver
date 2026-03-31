@@ -117,6 +117,18 @@ describe('enforceDependencies', () => {
     ).not.toThrow()
   })
 
+  it('matches installed dependencies by display name when manifest keys are stable ids', () => {
+    const manifest = createManifest({
+      packages: {
+        'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fbase-skill': createManifestPackage({
+          name: 'org/base-skill',
+        }),
+      },
+    })
+
+    expect(() => enforceDependencies(['org/base-skill'], manifest, 'my-skill')).not.toThrow()
+  })
+
   it('throws DEPENDENCY_MISSING when a dependency is not installed', () => {
     const manifest = createManifest({
       packages: {
@@ -191,6 +203,18 @@ describe('enforceConflicts', () => {
     }
   })
 
+  it('matches installed conflicts by display name when manifest keys are stable ids', () => {
+    const manifest = createManifest({
+      packages: {
+        'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Frival-skill': createManifestPackage({
+          name: 'org/rival-skill',
+        }),
+      },
+    })
+
+    expect(() => enforceConflicts(['org/rival-skill'], manifest, 'my-skill')).toThrow(AgentverError)
+  })
+
   it('lists all conflicting packages in the error message', () => {
     const manifest = createManifest({
       packages: {
@@ -245,6 +269,29 @@ describe('findReverseDependencies', () => {
     const result = findReverseDependencies('base-skill', manifest)
     expect(result).toHaveLength(2)
     expect(result.map((d) => d.name).sort()).toEqual(['another-dependent', 'dependent-skill'])
+  })
+
+  it('finds reverse dependencies by display name when manifest keys are stable ids', () => {
+    const manifest = createManifest({
+      packages: {
+        'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fbase-skill': createManifestPackage({
+          name: 'org/base-skill',
+        }),
+        'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fdependent-skill':
+          createManifestPackage({
+            name: 'org/dependent-skill',
+            dependsOn: ['org/base-skill'],
+          }),
+      },
+    })
+
+    const result = findReverseDependencies('org/base-skill', manifest)
+    expect(result).toEqual([
+      {
+        name: 'org/dependent-skill',
+        dependsOn: ['org/base-skill'],
+      },
+    ])
   })
 
   it('does not include the target package itself', () => {

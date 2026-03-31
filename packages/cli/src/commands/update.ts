@@ -20,6 +20,7 @@ import { getCanonicalSkillPath, resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
+import { getDisplayName, resolvePackageQuery } from '../storage/package-identity'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
@@ -28,7 +29,8 @@ import { fetchWellKnownIndex, fetchWellKnownSkill } from '../wellknown/index.js'
 import { installPackage } from './install'
 
 type UpdateInfo = {
-  name: string
+  key: string
+  displayName: string
   currentCommit: string
   latestCommit: string
   ref: string
@@ -88,7 +90,7 @@ async function resolveLatestGitCommit(source: ManifestV2Package['source']): Prom
 async function resolveLatestPlatformCommit(
   source: ManifestV2Package['source']
 ): Promise<string | null> {
-  if (source.type !== 'git' || !source.uri.startsWith('agentver://')) return null
+  if (source.type !== 'platform') return null
 
   const org = source.uri.slice('agentver://'.length).trim()
   if (!org) return null
@@ -135,17 +137,18 @@ async function resolveLatestWellKnownCommit(
 
 async function checkLocalModifications(
   projectRoot: string,
-  packageName: string,
+  packageKey: string,
+  displayName: string,
   agents: string[],
   scope: Scope = 'project',
   packageType?: string,
   entryFile?: string
 ): Promise<boolean> {
   const lockfile = readLockfile(projectRoot, scope)
-  const lockEntry = lockfile.packages[packageName]
+  const lockEntry = lockfile.packages[packageKey]
   if (!lockEntry) return false
 
-  const shortName = packageName.split('/').pop()!
+  const shortName = displayName.split('/').pop()!
 
   if (packageType === 'AGENT' || packageType === 'COMMAND') {
     const getPlacementPath =
@@ -215,12 +218,12 @@ async function handlePatchUpdate(
   entryFile?: string
 ): Promise<{ commitSha: string } | null> {
   const lockfile = readLockfile(projectRoot, scope)
-  const lockEntry = lockfile.packages[update.name]
+  const lockEntry = lockfile.packages[update.key]
   if (!lockEntry) return null
 
-  const shortName = update.name.split('/').pop()!
+  const shortName = update.displayName.split('/').pop()!
 
-  spinner.text = `Fetching original files for ${update.name} at locked commit...`
+  spinner.text = `Fetching original files for ${update.displayName} at locked commit...`
 
   const lockedSource = parseUriToCliSource(
     update.sourceUri,
@@ -243,7 +246,7 @@ async function handlePatchUpdate(
     baseFiles = fetchResult.files.map((f) => ({ path: f.path, content: f.content }))
   } catch (error) {
     spinner.warn(
-      `Could not fetch original files for ${update.name}: ${error instanceof Error ? error.message : String(error)}`
+      `Could not fetch original files for ${update.displayName}: ${error instanceof Error ? error.message : String(error)}`
     )
     return null
   }
@@ -279,21 +282,21 @@ async function handlePatchUpdate(
     }
   }
 
-  spinner.text = `Generating patch for ${update.name}...`
+  spinner.text = `Generating patch for ${update.displayName}...`
 
-  const patchContent = generatePatch(baseFiles, localFileArrays, update.name)
+  const patchContent = generatePatch(baseFiles, localFileArrays, update.displayName)
 
   if (!patchContent || patchContent.trim() === '') {
     spinner.info(
-      `No meaningful differences found for ${update.name}, proceeding with standard update.`
+      `No meaningful differences found for ${update.displayName}, proceeding with standard update.`
     )
     return null
   }
 
-  const patchPath = savePatch(projectRoot, update.name, patchContent)
+  const patchPath = savePatch(projectRoot, update.displayName, patchContent)
   spinner.text = `Patch saved to ${patchPath}`
 
-  spinner.text = `Applying upstream update for ${update.name}...`
+  spinner.text = `Applying upstream update for ${update.displayName}...`
 
   const sourceUrl = update.sourcePath
     ? `${update.sourceUri}/${update.sourcePath}@${update.ref}`
@@ -311,7 +314,7 @@ async function handlePatchUpdate(
     ...patchTypeOption,
   })
 
-  spinner.text = `Reapplying local patch for ${update.name}...`
+  spinner.text = `Reapplying local patch for ${update.displayName}...`
 
   try {
     const skillDir =
@@ -320,18 +323,20 @@ async function handlePatchUpdate(
     const applyResult = applyPatch(skillDir, patchContent)
 
     if (applyResult.applied) {
-      removePatch(projectRoot, update.name)
-      spinner.succeed(`${chalk.green(update.name)}: updated and local patch reapplied successfully`)
+      removePatch(projectRoot, update.displayName)
+      spinner.succeed(
+        `${chalk.green(update.displayName)}: updated and local patch reapplied successfully`
+      )
     } else {
       spinner.warn(
-        `${chalk.yellow(update.name)}: updated but patch had conflicts in: ${applyResult.conflicts.join(', ')}`
+        `${chalk.yellow(update.displayName)}: updated but patch had conflicts in: ${applyResult.conflicts.join(', ')}`
       )
       console.log(chalk.dim(`  Patch saved at: ${patchPath}`))
       console.log(chalk.dim('  Review the patch file and apply remaining changes manually.'))
     }
   } catch (error) {
     spinner.warn(
-      `${chalk.yellow(update.name)}: updated but could not reapply patch: ${error instanceof Error ? error.message : String(error)}`
+      `${chalk.yellow(update.displayName)}: updated but could not reapply patch: ${error instanceof Error ? error.message : String(error)}`
     )
     console.log(chalk.dim(`  Patch saved at: ${patchPath}`))
     console.log(chalk.dim('  Review the patch file and apply remaining changes manually.'))
@@ -356,11 +361,17 @@ export function registerUpdateCommand(program: Command): void {
         const projectRoot = process.cwd()
         const scope = options.global ? 'global' : 'project'
         const manifest = readManifest(projectRoot, scope)
-        const packages = name ? { [name]: manifest.packages[name] } : manifest.packages
+        const selectedPackage = name ? resolvePackageQuery(manifest.packages, name) : null
+        const packages =
+          selectedPackage?.ok === true
+            ? { [selectedPackage.key]: selectedPackage.pkg }
+            : name
+              ? {}
+              : manifest.packages
 
-        const packageNames = Object.keys(packages).filter((n) => packages[n])
+        const packageKeys = Object.keys(packages).filter((key) => packages[key])
 
-        if (packageNames.length === 0) {
+        if (packageKeys.length === 0) {
           if (jsonMode) {
             outputSuccess<UpdateResult>({ updated: [], skipped: [] })
             return
@@ -373,30 +384,28 @@ export function registerUpdateCommand(program: Command): void {
 
         const pinnedNames: string[] = []
         const unsupportedNames: string[] = []
-        const updatable = packageNames.filter((n) => {
-          const pkg = packages[n]
+        const updatable = packageKeys.filter((key) => {
+          const pkg = packages[key]
           if (!pkg) return false
           if (pkg.pinned === true) {
-            pinnedNames.push(n)
+            pinnedNames.push(key)
             return false
           }
-          if (pkg.source.type === 'git') {
-            if (pkg.source.uri === 'unknown') {
-              unsupportedNames.push(n)
-              return false
-            }
+          if (pkg.source.type === 'git' || pkg.source.type === 'platform') {
             return true
           }
           if (pkg.source.type === 'well-known') {
             return true
           }
-          unsupportedNames.push(n)
+          unsupportedNames.push(key)
           return false
         })
 
         if (pinnedNames.length > 0 && !jsonMode) {
           for (const pinnedName of pinnedNames) {
-            console.log(chalk.dim(`Skipping ${pinnedName} (pinned)`))
+            console.log(
+              chalk.dim(`Skipping ${getDisplayName(pinnedName, packages[pinnedName]!)} (pinned)`)
+            )
           }
         }
 
@@ -405,8 +414,14 @@ export function registerUpdateCommand(program: Command): void {
             outputSuccess<UpdateResult>({
               updated: [],
               skipped: [
-                ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
-                ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                ...pinnedNames.map((n) => ({
+                  name: getDisplayName(n, packages[n]!),
+                  reason: 'pinned',
+                })),
+                ...unsupportedNames.map((n) => ({
+                  name: getDisplayName(n, packages[n]!),
+                  reason: 'No known update source',
+                })),
               ],
             })
             return
@@ -424,27 +439,29 @@ export function registerUpdateCommand(program: Command): void {
           const resolutionSkips: UpdateResult['skipped'] = []
           const lockfile = readLockfile(projectRoot, scope)
 
-          for (const pkgName of updatable) {
-            const pkg = packages[pkgName]!
+          for (const packageKey of updatable) {
+            const pkg = packages[packageKey]!
+            const displayName = getDisplayName(packageKey, pkg)
             try {
-              if (pkg.source.type === 'git') {
+              if (pkg.source.type === 'git' || pkg.source.type === 'platform') {
                 const installSource = buildInstallSource(
                   pkg.source.uri,
                   pkg.source.path,
                   pkg.source.ref
                 )
-                const supportsPatch = !pkg.source.uri.startsWith('agentver://')
-                const latestCommit = pkg.source.uri.startsWith('agentver://')
-                  ? await resolveLatestPlatformCommit(pkg.source)
-                  : await resolveLatestGitCommit(pkg.source)
+                const supportsPatch = pkg.source.type === 'git'
+                const latestCommit =
+                  pkg.source.type === 'platform'
+                    ? await resolveLatestPlatformCommit(pkg.source)
+                    : await resolveLatestGitCommit(pkg.source)
 
                 if (!latestCommit) {
                   resolutionSkips.push({
-                    name: pkgName,
+                    name: displayName,
                     reason: 'Could not resolve upstream source',
                   })
                   if (!jsonMode) {
-                    spinner.warn(`Could not check upstream for ${pkgName}`)
+                    spinner.warn(`Could not check upstream for ${displayName}`)
                   }
                   continue
                 }
@@ -453,7 +470,8 @@ export function registerUpdateCommand(program: Command): void {
                   const locallyModified = supportsPatch
                     ? await checkLocalModifications(
                         projectRoot,
-                        pkgName,
+                        packageKey,
+                        displayName,
                         pkg.agents,
                         scope,
                         pkg.packageType,
@@ -462,7 +480,8 @@ export function registerUpdateCommand(program: Command): void {
                     : false
 
                   updates.push({
-                    name: pkgName,
+                    key: packageKey,
+                    displayName,
                     currentCommit: pkg.source.commit,
                     latestCommit,
                     ref: pkg.source.ref,
@@ -476,44 +495,54 @@ export function registerUpdateCommand(program: Command): void {
                 continue
               }
 
-              const lockEntry = lockfile.packages[pkgName]
-              if (!lockEntry?.integrity) {
-                resolutionSkips.push({ name: pkgName, reason: 'No lockfile integrity found' })
-                if (!jsonMode) {
-                  spinner.warn(`Could not check upstream for ${pkgName}`)
+              if (pkg.source.type === 'well-known') {
+                const wellKnownSource = pkg.source
+                const lockEntry = lockfile.packages[packageKey]
+                if (!lockEntry?.integrity) {
+                  resolutionSkips.push({ name: displayName, reason: 'No lockfile integrity found' })
+                  if (!jsonMode) {
+                    spinner.warn(`Could not check upstream for ${displayName}`)
+                  }
+                  continue
+                }
+
+                const latestCommit = await resolveLatestWellKnownCommit(wellKnownSource)
+                if (!latestCommit) {
+                  resolutionSkips.push({
+                    name: displayName,
+                    reason: 'Could not resolve well-known source',
+                  })
+                  if (!jsonMode) {
+                    spinner.warn(`Could not check upstream for ${displayName}`)
+                  }
+                  continue
+                }
+
+                const currentCommit = deriveCommitFromIntegrity(lockEntry.integrity)
+                if (latestCommit !== currentCommit) {
+                  updates.push({
+                    key: packageKey,
+                    displayName,
+                    currentCommit,
+                    latestCommit,
+                    ref: 'well-known',
+                    sourceUri: wellKnownSource.baseUrl,
+                    sourcePath: wellKnownSource.skillName,
+                    installSource: `${wellKnownSource.baseUrl}/${wellKnownSource.skillName}`,
+                    supportsPatch: false,
+                    locallyModified: false,
+                  })
                 }
                 continue
               }
 
-              const latestCommit = await resolveLatestWellKnownCommit(pkg.source)
-              if (!latestCommit) {
-                resolutionSkips.push({
-                  name: pkgName,
-                  reason: 'Could not resolve well-known source',
-                })
-                if (!jsonMode) {
-                  spinner.warn(`Could not check upstream for ${pkgName}`)
-                }
-                continue
-              }
-
-              const currentCommit = deriveCommitFromIntegrity(lockEntry.integrity)
-              if (latestCommit !== currentCommit) {
-                updates.push({
-                  name: pkgName,
-                  currentCommit,
-                  latestCommit,
-                  ref: 'well-known',
-                  sourceUri: pkg.source.baseUrl,
-                  sourcePath: pkg.source.skillName,
-                  installSource: `${pkg.source.baseUrl}/${pkg.source.skillName}`,
-                  supportsPatch: false,
-                  locallyModified: false,
-                })
-              }
+              resolutionSkips.push({ name: displayName, reason: 'No known update source' })
             } catch {
-              resolutionSkips.push({ name: pkgName, reason: 'Could not resolve upstream source' })
-              spinner.warn(`Could not check upstream for ${pkgName}`)
+              resolutionSkips.push({
+                name: displayName,
+                reason: 'Could not resolve upstream source',
+              })
+              spinner.warn(`Could not check upstream for ${displayName}`)
             }
           }
 
@@ -524,8 +553,14 @@ export function registerUpdateCommand(program: Command): void {
               outputSuccess<UpdateResult>({
                 updated: [],
                 skipped: [
-                  ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
-                  ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                  ...pinnedNames.map((n) => ({
+                    name: getDisplayName(n, packages[n]!),
+                    reason: 'pinned',
+                  })),
+                  ...unsupportedNames.map((n) => ({
+                    name: getDisplayName(n, packages[n]!),
+                    reason: 'No known update source',
+                  })),
                   ...resolutionSkips,
                 ],
               })
@@ -543,7 +578,7 @@ export function registerUpdateCommand(program: Command): void {
                 ? ` ${chalk.yellow('\u26a0 locally modified')}`
                 : ''
               console.log(
-                `  ${chalk.green(update.name)}: ${chalk.dim(update.currentCommit.slice(0, 7))} \u2192 ${chalk.cyan(update.latestCommit.slice(0, 7))} ${chalk.dim(`(${update.ref})`)}${modifiedIndicator}`
+                `  ${chalk.green(update.displayName)}: ${chalk.dim(update.currentCommit.slice(0, 7))} \u2192 ${chalk.cyan(update.latestCommit.slice(0, 7))} ${chalk.dim(`(${update.ref})`)}${modifiedIndicator}`
               )
             }
 
@@ -555,10 +590,16 @@ export function registerUpdateCommand(program: Command): void {
               outputSuccess<UpdateResult>({
                 updated: [],
                 skipped: [
-                  ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
-                  ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                  ...pinnedNames.map((n) => ({
+                    name: getDisplayName(n, packages[n]!),
+                    reason: 'pinned',
+                  })),
+                  ...unsupportedNames.map((n) => ({
+                    name: getDisplayName(n, packages[n]!),
+                    reason: 'No known update source',
+                  })),
                   ...resolutionSkips,
-                  ...updates.map((u) => ({ name: u.name, reason: 'dry-run' })),
+                  ...updates.map((u) => ({ name: u.displayName, reason: 'dry-run' })),
                 ],
               })
               return
@@ -588,7 +629,7 @@ export function registerUpdateCommand(program: Command): void {
           const skipped: string[] = []
 
           for (const update of updates) {
-            const installedPkg = manifest.packages[update.name]
+            const installedPkg = manifest.packages[update.key]
             const agents = installedPkg?.agents ?? []
             const installedPath = validateManifestPath(installedPkg?.path)
 
@@ -598,18 +639,21 @@ export function registerUpdateCommand(program: Command): void {
               if (jsonMode || options.yes) {
                 action = 'replace'
               } else {
-                action = await promptUpdateAction(update.name)
+                action = await promptUpdateAction(update.displayName)
               }
 
               if (action === 'skip') {
-                skipped.push(update.name)
-                jsonSkipped.push({ name: update.name, reason: 'User skipped (locally modified)' })
+                skipped.push(update.displayName)
+                jsonSkipped.push({
+                  name: update.displayName,
+                  reason: 'User skipped (locally modified)',
+                })
                 continue
               }
 
               if (action === 'patch' && update.supportsPatch) {
                 const updateSpinner = createSpinner(
-                  `Processing patch update for ${update.name}...`
+                  `Processing patch update for ${update.displayName}...`
                 ).start()
 
                 try {
@@ -626,13 +670,13 @@ export function registerUpdateCommand(program: Command): void {
 
                   if (patchResult) {
                     results.push({
-                      name: update.name,
+                      name: update.displayName,
                       from: update.currentCommit.slice(0, 7),
                       to: patchResult.commitSha.slice(0, 7),
                       patched: true,
                     })
                     jsonUpdated.push({
-                      name: update.name,
+                      name: update.displayName,
                       fromRef: update.currentCommit.slice(0, 7),
                       toRef: patchResult.commitSha.slice(0, 7),
                       strategy: 'patch',
@@ -641,14 +685,14 @@ export function registerUpdateCommand(program: Command): void {
                   }
                 } catch (error) {
                   updateSpinner.fail(
-                    `Patch update failed for ${update.name}: ${error instanceof Error ? error.message : String(error)}`
+                    `Patch update failed for ${update.displayName}: ${error instanceof Error ? error.message : String(error)}`
                   )
                   failures.push({
-                    name: update.name,
+                    name: update.displayName,
                     error: error instanceof Error ? error.message : String(error),
                   })
                   jsonSkipped.push({
-                    name: update.name,
+                    name: update.displayName,
                     reason: `Patch failed: ${error instanceof Error ? error.message : String(error)}`,
                   })
                   continue
@@ -656,7 +700,7 @@ export function registerUpdateCommand(program: Command): void {
               }
             }
 
-            const shortName = update.name.split('/').pop()!
+            const shortName = update.displayName.split('/').pop()!
             const pkgType = installedPkg?.packageType
             const isSingleFileUpdate = pkgType === 'AGENT' || pkgType === 'COMMAND'
 
@@ -686,7 +730,7 @@ export function registerUpdateCommand(program: Command): void {
             let backup: BackupState | null = null
 
             try {
-              backup = createBackup(update.name, projectRoot, backupDir, scope)
+              backup = createBackup(update.displayName, projectRoot, backupDir, scope)
 
               const typeOption = isSingleFileUpdate
                 ? { type: pkgType.toLowerCase() as 'agent' | 'command' }
@@ -702,12 +746,12 @@ export function registerUpdateCommand(program: Command): void {
               cleanupBackup(backup)
 
               results.push({
-                name: update.name,
+                name: update.displayName,
                 from: update.currentCommit.slice(0, 7),
                 to: result.commitSha.slice(0, 7),
               })
               jsonUpdated.push({
-                name: update.name,
+                name: update.displayName,
                 fromRef: update.currentCommit.slice(0, 7),
                 toRef: result.commitSha.slice(0, 7),
                 strategy: 'replace',
@@ -723,11 +767,11 @@ export function registerUpdateCommand(program: Command): void {
               }
 
               failures.push({
-                name: update.name,
+                name: update.displayName,
                 error: error instanceof Error ? error.message : String(error),
               })
               jsonSkipped.push({
-                name: update.name,
+                name: update.displayName,
                 reason: `Failed: ${error instanceof Error ? error.message : String(error)}`,
               })
             }
@@ -737,8 +781,14 @@ export function registerUpdateCommand(program: Command): void {
             outputSuccess<UpdateResult>({
               updated: jsonUpdated,
               skipped: [
-                ...pinnedNames.map((n) => ({ name: n, reason: 'pinned' })),
-                ...unsupportedNames.map((n) => ({ name: n, reason: 'No known update source' })),
+                ...pinnedNames.map((n) => ({
+                  name: getDisplayName(n, packages[n]!),
+                  reason: 'pinned',
+                })),
+                ...unsupportedNames.map((n) => ({
+                  name: getDisplayName(n, packages[n]!),
+                  reason: 'No known update source',
+                })),
                 ...resolutionSkips,
                 ...jsonSkipped,
               ],

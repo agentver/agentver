@@ -7,7 +7,7 @@ import {
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
 import type { GitSource } from '@agentver/shared'
-import { AgentverError, createLogger } from '@agentver/shared'
+import { AgentverError, createLogger, createPackageKey } from '@agentver/shared'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
@@ -225,7 +225,9 @@ export function registerInstallTool(server: McpServer): void {
       // Update manifest
       const root = isGlobal ? homedir() : projectRoot
       const manifest = readManifest(root)
-      manifest.packages[packageName] = {
+      const packageKey = createPackageKey(packageName, source)
+      manifest.packages[packageKey] = {
+        name: packageName,
         source,
         agents: installedTo,
         installedAt: new Date().toISOString(),
@@ -235,7 +237,8 @@ export function registerInstallTool(server: McpServer): void {
 
       // Update lockfile
       const lockfile = readLockfile(root)
-      lockfile.packages[packageName] = {
+      lockfile.packages[packageKey] = {
+        name: packageName,
         source,
         integrity: `sha256-${data.sha256}`,
         agents: installedTo,

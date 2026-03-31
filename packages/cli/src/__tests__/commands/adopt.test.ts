@@ -55,6 +55,7 @@ import { adoptSkills } from '../../commands/adopt'
 import * as outputModule from '../../output.js'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
+import { resolvePackageQuery } from '../../storage/package-identity'
 import * as pairModule from '../../storage/pair'
 
 // ---------------------------------------------------------------------------
@@ -69,6 +70,18 @@ function createScannedFile(overrides?: Partial<ScannedFile>): ScannedFile {
     detectedType: 'SKILL',
     ...overrides,
   } as ScannedFile
+}
+
+function getStoredManifestPackage(manifest: ReturnType<typeof createManifest>, name: string) {
+  const lookup = resolvePackageQuery(manifest.packages, name)
+  expect(lookup.ok).toBe(true)
+  return lookup.ok ? lookup.pkg : undefined
+}
+
+function getStoredLockfilePackage(lockfile: ReturnType<typeof createLockfile>, name: string) {
+  const lookup = resolvePackageQuery(lockfile.packages, name)
+  expect(lookup.ok).toBe(true)
+  return lookup.ok ? lookup.pkg : undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -125,8 +138,7 @@ describe('commands/adopt', () => {
 
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(manifest.packages).toHaveProperty('test-skill')
-      expect(manifest.packages['test-skill']!.agents).toEqual(['claude-code'])
+      expect(getStoredManifestPackage(manifest, 'test-skill')?.agents).toEqual(['claude-code'])
     })
 
     it('writes lockfile with integrity hash for adopted skill', async () => {
@@ -137,8 +149,7 @@ describe('commands/adopt', () => {
 
       expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
       const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
-      expect(lockfile.packages).toHaveProperty('test-skill')
-      expect(lockfile.packages['test-skill']!.integrity).toContain('sha256-')
+      expect(getStoredLockfilePackage(lockfile, 'test-skill')?.integrity).toContain('sha256-')
     })
   })
 
@@ -162,8 +173,8 @@ describe('commands/adopt', () => {
       expect(agentDefs.scanGlobalSkillFiles).toHaveBeenCalledWith('/home/testuser')
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(manifest.packages).toHaveProperty('project-skill')
-      expect(manifest.packages).toHaveProperty('global-skill')
+      expect(getStoredManifestPackage(manifest, 'project-skill')).toBeDefined()
+      expect(getStoredManifestPackage(manifest, 'global-skill')).toBeDefined()
     })
   })
 
@@ -226,8 +237,8 @@ describe('commands/adopt', () => {
 
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(manifest.packages).toHaveProperty('skill-a')
-      expect(manifest.packages).not.toHaveProperty('skill-b')
+      expect(getStoredManifestPackage(manifest, 'skill-a')).toBeDefined()
+      expect(resolvePackageQuery(manifest.packages, 'skill-b').ok).toBe(false)
     })
 
     it('exits with error when no skill matches the name filter', async () => {
@@ -317,7 +328,10 @@ describe('commands/adopt', () => {
 
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
-      expect(manifest.packages['shared-skill']!.agents).toEqual(['claude-code', 'cursor'])
+      expect(getStoredManifestPackage(manifest, 'shared-skill')?.agents).toEqual([
+        'claude-code',
+        'cursor',
+      ])
     })
   })
 

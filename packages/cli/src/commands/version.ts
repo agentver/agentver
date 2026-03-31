@@ -4,6 +4,11 @@ import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { readLockfile } from '../storage/lockfile.js'
+import {
+  getTrackedSourceCommit,
+  isPlatformManagedSource,
+  resolvePackageQuery,
+} from '../storage/package-identity.js'
 import { extractError, SEMVER_REGEX } from '../utils.js'
 import { resolveCurrentSkillIdentity } from './skill-context.js'
 
@@ -142,8 +147,12 @@ export function registerVersionCommand(program: Command): void {
 
       // Get the current commit SHA from lockfile
       const lockfile = readLockfile(process.cwd())
-      const lockEntry = lockfile.packages[identity.name]
-      const commitSha = lockEntry?.source.type === 'git' ? lockEntry.source.commit : undefined
+      const lockEntryLookup = resolvePackageQuery(lockfile.packages, identity.name)
+      const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
+      const commitSha =
+        lockEntry && isPlatformManagedSource(lockEntry.source)
+          ? getTrackedSourceCommit(lockEntry.source)
+          : undefined
 
       if (!commitSha || commitSha === 'unknown') {
         const message = 'No commit SHA found in lockfile. Save changes first.'

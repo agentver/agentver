@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be declared before any imports that reference them
@@ -62,7 +62,16 @@ import { platformFetch } from '../../registry/platform.js'
 import { scanFiles } from '../../security/index.js'
 import { readManifest } from '../../storage/manifest.js'
 import { updateManifestAndLockfile } from '../../storage/pair.js'
-import { createAuditScanResult, createFetchedFiles, createSkillMd } from '../helpers/fixtures'
+import {
+  createAuditScanResult,
+  createFetchedFiles,
+  createLockfile,
+  createLockfilePackage,
+  createManifest,
+  createManifestPackage,
+  createPlatformSource,
+  createSkillMd,
+} from '../helpers/fixtures'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 // ---------------------------------------------------------------------------
@@ -99,18 +108,22 @@ function captureOutput(): { stdout: string[]; stderr: string[] } {
   return { stdout, stderr }
 }
 
+function asMock(value: unknown): Mock {
+  return value as Mock
+}
+
 /** Default mock setup for a successful publish. */
 function setupHappyPath(): void {
-  vi.mocked(existsSync).mockReturnValue(true)
-  vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-  vi.mocked(readManifest).mockReturnValue({ version: 2, packages: {} })
-  vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-  vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
-  vi.mocked(platformFetch).mockResolvedValue({
+  asMock(existsSync).mockReturnValue(true)
+  asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+  asMock(readManifest).mockReturnValue({ version: 2, packages: {} })
+  asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+  asMock(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+  asMock(platformFetch).mockResolvedValue({
     version: '1.0.0',
     commitSha: 'abc1234567890',
   })
-  vi.mocked(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) =>
+  asMock(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) =>
     updater({ version: 2, packages: {} }, { version: 2, packages: {} })
   )
 }
@@ -127,7 +140,7 @@ describe('publish command', () => {
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
-    vi.mocked(outputModule.createSpinner).mockReturnValue(
+    asMock(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
   })
@@ -157,6 +170,93 @@ describe('publish command', () => {
         }),
       })
     )
+  })
+
+  it('preserves typed platform provenance when publishing an installed platform skill', async () => {
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readManifest).mockReturnValue(
+      createManifest({
+        packages: {
+          'platform:agentver-skill': Object.assign(
+            createManifestPackage({
+              source: createPlatformSource({
+                uri: 'agentver://test-org',
+                path: 'skills/test-skill',
+                ref: 'draft',
+                commit: 'abc1234567',
+              }),
+            }),
+            { name: 'test-skill' }
+          ),
+        },
+      })
+    )
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+    asMock(platformFetch).mockResolvedValue({
+      version: '1.0.0',
+      commitSha: 'fedcba9876543',
+    })
+
+    let updatedManifest: ReturnType<typeof createManifest> | undefined
+    let updatedLockfile: ReturnType<typeof createLockfile> | undefined
+
+    asMock(updateManifestAndLockfile).mockImplementation((_projectRoot, _scope, updater) => {
+      const manifest = createManifest({
+        packages: {
+          'platform:agentver-skill': Object.assign(
+            createManifestPackage({
+              source: createPlatformSource({
+                uri: 'agentver://test-org',
+                path: 'skills/test-skill',
+                ref: 'draft',
+                commit: 'abc1234567',
+              }),
+            }),
+            { name: 'test-skill' }
+          ),
+        },
+      })
+      const lockfile = createLockfile({
+        packages: {
+          'platform:agentver-skill': Object.assign(
+            createLockfilePackage({
+              source: createPlatformSource({
+                uri: 'agentver://test-org',
+                path: 'skills/test-skill',
+                ref: 'draft',
+                commit: 'abc1234567',
+              }),
+            }),
+            { name: 'test-skill' }
+          ),
+        },
+      })
+
+      const updated = updater(manifest, lockfile)
+      updatedManifest = updated.manifest
+      updatedLockfile = updated.lockfile
+      return updated
+    })
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'publish'])
+
+    expect(updatedManifest?.packages['platform:agentver-skill']?.source).toMatchObject({
+      type: 'platform',
+      uri: 'agentver://test-org',
+      path: 'skills/test-skill',
+      ref: 'main',
+      commit: 'fedcba9876543',
+    })
+    expect(updatedLockfile?.packages['platform:agentver-skill']?.source).toMatchObject({
+      type: 'platform',
+      uri: 'agentver://test-org',
+      path: 'skills/test-skill',
+      ref: 'main',
+      commit: 'fedcba9876543',
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -202,7 +302,7 @@ describe('publish command', () => {
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'publish', '--json'])
 
-    const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+    const mockedOutputSuccess = asMock(outputModule.outputSuccess)
     expect(mockedOutputSuccess).toHaveBeenCalledOnce()
     const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
     expect(data.skill).toEqual(expect.stringContaining('test-skill'))
@@ -217,7 +317,7 @@ describe('publish command', () => {
     await program.parseAsync(['node', 'agentver', 'publish', '--dry-run', '--json'])
 
     expect(platformFetch).not.toHaveBeenCalled()
-    const mockedOutputSuccess = vi.mocked(outputModule.outputSuccess)
+    const mockedOutputSuccess = asMock(outputModule.outputSuccess)
     expect(mockedOutputSuccess).toHaveBeenCalledOnce()
     const data = mockedOutputSuccess.mock.calls[0]![0] as Record<string, unknown>
     expect(data).toHaveProperty('dryRun', true)
@@ -231,7 +331,7 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('exits with error when SKILL.md is missing', async () => {
-    vi.mocked(existsSync).mockReturnValue(false)
+    asMock(existsSync).mockReturnValue(false)
     const { stderr } = captureOutput()
 
     const program = buildProgram()
@@ -247,8 +347,8 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('exits with error when SKILL.md has invalid frontmatter', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(
       '---\nname: test\n---\n# Just name, no version or description'
     )
 
@@ -260,8 +360,8 @@ describe('publish command', () => {
   })
 
   it('exits with error when SKILL.md has no frontmatter at all', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue('# Just a markdown file\n\nNo frontmatter here.')
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue('# Just a markdown file\n\nNo frontmatter here.')
 
     const program = buildProgram()
     await expect(program.parseAsync(['node', 'agentver', 'publish'])).rejects.toThrow()
@@ -275,10 +375,10 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('refuses to publish when security audit returns BLOCK', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-    vi.mocked(scanFiles).mockResolvedValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(scanFiles).mockResolvedValue(
       createAuditScanResult('BLOCK', {
         findings: [
           {
@@ -320,11 +420,11 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('surfaces authentication error when not logged in', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-    vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
-    vi.mocked(platformFetch).mockRejectedValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+    asMock(platformFetch).mockRejectedValue(
       new Error('Not authenticated. Run `agentver login` to sign in.')
     )
 
@@ -339,11 +439,11 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('surfaces connection error when no platform URL is configured', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-    vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
-    vi.mocked(platformFetch).mockRejectedValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+    asMock(platformFetch).mockRejectedValue(
       new Error('No platform URL configured. Run `agentver login <url>` to connect.')
     )
 
@@ -358,11 +458,11 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('surfaces API error message when platform returns a non-OK response', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-    vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
-    vi.mocked(platformFetch).mockRejectedValue(
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(scanFiles).mockResolvedValue(createAuditScanResult('PASS'))
+    asMock(platformFetch).mockRejectedValue(
       new Error('Platform error (400): Version already exists')
     )
 
@@ -377,9 +477,9 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('rejects --version with invalid semver', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
 
     const program = buildProgram()
     await expect(
@@ -391,9 +491,9 @@ describe('publish command', () => {
   })
 
   it('rejects versions missing the patch segment', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
 
     const program = buildProgram()
     await expect(
@@ -423,11 +523,11 @@ describe('publish command', () => {
   // -------------------------------------------------------------------------
 
   it('continues publishing when security audit returns WARN', async () => {
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFileSync).mockReturnValue(VALID_SKILL_MD)
-    vi.mocked(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
-    vi.mocked(scanFiles).mockResolvedValue(createAuditScanResult('WARN'))
-    vi.mocked(platformFetch).mockResolvedValue({
+    asMock(existsSync).mockReturnValue(true)
+    asMock(readFileSync).mockReturnValue(VALID_SKILL_MD)
+    asMock(readFilesFromDirectory).mockResolvedValue(FETCHED_FILES)
+    asMock(scanFiles).mockResolvedValue(createAuditScanResult('WARN'))
+    asMock(platformFetch).mockResolvedValue({
       version: '1.0.0',
       commitSha: 'abc1234567890',
     })
@@ -462,7 +562,7 @@ describe('publish command', () => {
     const program = buildProgram()
     await program.parseAsync(['node', 'agentver', 'publish'])
 
-    const call = vi.mocked(platformFetch).mock.calls[0]
+    const call = asMock(platformFetch).mock.calls[0]
     const body = (call?.[1] as { body: Record<string, unknown> } | undefined)?.body
     expect(body).not.toHaveProperty('visibility')
   })

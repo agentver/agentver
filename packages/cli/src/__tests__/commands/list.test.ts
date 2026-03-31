@@ -461,5 +461,54 @@ describe('list command', () => {
         })
       )
     })
+
+    it('keeps distinct bundles separate when they share a display name', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            bundleA: createManifestPackage({
+              name: 'shared-bundle',
+              source: createSharedGitSource({
+                uri: 'https://github.com/org/repo-a',
+                path: 'skills/shared-bundle',
+                ref: 'main',
+                commit: 'abc1234567',
+              }),
+              packageType: 'BUNDLE',
+            }),
+            bundleB: createManifestPackage({
+              name: 'shared-bundle',
+              source: createSharedGitSource({
+                uri: 'https://github.com/org/repo-b',
+                path: 'skills/shared-bundle',
+                ref: 'main',
+                commit: 'def1234567',
+              }),
+              packageType: 'BUNDLE',
+            }),
+            skillA: createManifestPackage({
+              name: 'skill-a',
+              source: createSharedGitSource({ ref: 'main', commit: '1111111111' }),
+              bundle: 'bundleA',
+            }),
+            skillB: createManifestPackage({
+              name: 'skill-b',
+              source: createSharedGitSource({ ref: 'main', commit: '2222222222' }),
+              bundle: 'bundleB',
+            }),
+          },
+        })
+      )
+
+      await runList()
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      const bundleHeaderCount = (output.match(/shared-bundle/g) ?? []).length
+      expect(bundleHeaderCount).toBeGreaterThanOrEqual(2)
+      expect(output).toContain('skill-a')
+      expect(output).toContain('skill-b')
+    })
   })
 })

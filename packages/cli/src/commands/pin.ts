@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputError, outputSuccess } from '../output.js'
 import { readManifest, writeManifest } from '../storage/manifest'
+import { resolvePackageQuery } from '../storage/package-identity'
 
 export function registerPinCommand(program: Command): void {
   program
@@ -13,9 +14,9 @@ export function registerPinCommand(program: Command): void {
       const projectRoot = process.cwd()
       const scope = options.global ? 'global' : 'project'
       const manifest = readManifest(projectRoot, scope)
-      const pkg = manifest.packages[name]
+      const lookup = resolvePackageQuery(manifest.packages, name)
 
-      if (!pkg) {
+      if (!lookup.ok) {
         if (jsonMode) {
           outputError('NOT_FOUND', `Package "${name}" is not installed.`)
         } else {
@@ -24,17 +25,18 @@ export function registerPinCommand(program: Command): void {
         process.exit(1)
       }
 
+      const { pkg, displayName } = lookup
       pkg.pinned = true
       writeManifest(projectRoot, manifest, scope)
 
       if (jsonMode) {
-        outputSuccess({ name, pinned: true })
+        outputSuccess({ name: displayName, pinned: true })
         return
       }
 
       const scopeLabel = scope === 'global' ? 'user' : 'project'
       console.log(
-        chalk.green(`Pinned ${name}`) +
+        chalk.green(`Pinned ${displayName}`) +
           chalk.dim(` (${scopeLabel})`) +
           chalk.dim(' — this package will be skipped during updates')
       )
@@ -51,9 +53,9 @@ export function registerUnpinCommand(program: Command): void {
       const projectRoot = process.cwd()
       const scope = options.global ? 'global' : 'project'
       const manifest = readManifest(projectRoot, scope)
-      const pkg = manifest.packages[name]
+      const lookup = resolvePackageQuery(manifest.packages, name)
 
-      if (!pkg) {
+      if (!lookup.ok) {
         if (jsonMode) {
           outputError('NOT_FOUND', `Package "${name}" is not installed.`)
         } else {
@@ -62,17 +64,18 @@ export function registerUnpinCommand(program: Command): void {
         process.exit(1)
       }
 
+      const { pkg, displayName } = lookup
       delete pkg.pinned
       writeManifest(projectRoot, manifest, scope)
 
       if (jsonMode) {
-        outputSuccess({ name, pinned: false })
+        outputSuccess({ name: displayName, pinned: false })
         return
       }
 
       const scopeLabel = scope === 'global' ? 'user' : 'project'
       console.log(
-        chalk.green(`Unpinned ${name}`) +
+        chalk.green(`Unpinned ${displayName}`) +
           chalk.dim(` (${scopeLabel})`) +
           chalk.dim(' — this package will be included in updates')
       )

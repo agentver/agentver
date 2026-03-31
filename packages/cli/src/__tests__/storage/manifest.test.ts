@@ -29,6 +29,7 @@ vi.mock('../../storage/file-lock', () => ({
 }))
 
 describe('storage/manifest', () => {
+  const CURRENT_VERSION = 2
   let fs: typeof import('node:fs')
   let manifestModule: typeof import('../../storage/manifest')
 
@@ -47,7 +48,7 @@ describe('storage/manifest', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false)
 
       const result = manifestModule.readManifest('/project')
-      expect(result).toEqual({ version: 2, packages: {} })
+      expect(result).toEqual({ version: CURRENT_VERSION, packages: {} })
     })
 
     it('returns empty manifest when file contains invalid JSON', () => {
@@ -55,7 +56,7 @@ describe('storage/manifest', () => {
       vi.mocked(fs.readFileSync).mockReturnValue('not-json')
 
       const result = manifestModule.readManifest('/project')
-      expect(result).toEqual({ version: 2, packages: {} })
+      expect(result).toEqual({ version: CURRENT_VERSION, packages: {} })
     })
 
     it('reads a valid v2 manifest', () => {
@@ -81,32 +82,10 @@ describe('storage/manifest', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(validManifest))
 
       const result = manifestModule.readManifest('/project')
-      expect(result.version).toBe(2)
-      expect(result.packages['my-skill']).toBeDefined()
-    })
-
-    it('migrates v1 manifest to v2', () => {
-      const v1Manifest = {
-        version: 1,
-        packages: {
-          'old-skill': {
-            name: 'old-skill',
-            version: '1.0.0',
-            agents: ['claude'],
-            installedAt: '2024-01-01T00:00:00.000Z',
-          },
-        },
-      }
-
-      vi.mocked(fs.existsSync).mockReturnValue(true)
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(v1Manifest))
-
-      const result = manifestModule.readManifest('/project')
-      expect(result.version).toBe(2)
-      expect(result.packages['old-skill']).toBeDefined()
-      expect(result.packages['old-skill']!.source.type).toBe('git')
-      // Should also write the migrated manifest
-      expect(fs.writeFileSync).toHaveBeenCalled()
+      expect(result.version).toBe(CURRENT_VERSION)
+      expect(
+        result.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fmy-skill']
+      ).toBeDefined()
     })
 
     it('returns empty manifest when schema validation fails', () => {
@@ -114,7 +93,7 @@ describe('storage/manifest', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ version: 99, invalid: true }))
 
       const result = manifestModule.readManifest('/project')
-      expect(result).toEqual({ version: 2, packages: {} })
+      expect(result).toEqual({ version: CURRENT_VERSION, packages: {} })
     })
 
     it('recovers valid entries when one entry has invalid commit (empty string)', () => {
@@ -153,8 +132,8 @@ describe('storage/manifest', () => {
 
       const result = manifestModule.readManifest('/project')
 
-      expect(result.version).toBe(2)
-      expect(result.packages['valid-skill']).toBeDefined()
+      expect(result.version).toBe(CURRENT_VERSION)
+      expect(result.packages['git:github.com%2Forg%2Frepo%23skills%2Fvalid']).toBeDefined()
       expect(result.packages['broken-skill']).toBeUndefined()
     })
 
@@ -193,10 +172,10 @@ describe('storage/manifest', () => {
 
       const result = manifestModule.readManifest('/project')
 
-      expect(result.version).toBe(2)
+      expect(result.version).toBe(CURRENT_VERSION)
       expect(Object.keys(result.packages)).toHaveLength(2)
-      expect(result.packages['skill-a']).toBeDefined()
-      expect(result.packages['skill-b']).toBeDefined()
+      expect(result.packages['git:github.com%2Fa%2Fb%23']).toBeDefined()
+      expect(result.packages['well-known:https%3A%2F%2Fexample.com%23skill-b']).toBeDefined()
     })
   })
 
@@ -204,7 +183,7 @@ describe('storage/manifest', () => {
     it('creates directory if it does not exist', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false)
 
-      manifestModule.writeManifest('/project', { version: 2, packages: {} })
+      manifestModule.writeManifest('/project', { version: CURRENT_VERSION, packages: {} })
 
       expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('.agentver'), {
         recursive: true,
@@ -214,7 +193,7 @@ describe('storage/manifest', () => {
     it('writes to a temp file then renames atomically', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
 
-      manifestModule.writeManifest('/project', { version: 2, packages: {} })
+      manifestModule.writeManifest('/project', { version: CURRENT_VERSION, packages: {} })
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining('.tmp'),
@@ -275,9 +254,9 @@ describe('storage/manifest', () => {
         throw new Error('disk full')
       })
 
-      expect(() => manifestModule.writeManifest('/project', { version: 2, packages: {} })).toThrow(
-        'disk full'
-      )
+      expect(() =>
+        manifestModule.writeManifest('/project', { version: CURRENT_VERSION, packages: {} })
+      ).toThrow('disk full')
 
       // The rename should never execute, so the original manifest is preserved
       expect(fs.renameSync).not.toHaveBeenCalled()
@@ -286,7 +265,7 @@ describe('storage/manifest', () => {
     it('rename target is manifest.json, not the tmp file', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
 
-      manifestModule.writeManifest('/project', { version: 2, packages: {} })
+      manifestModule.writeManifest('/project', { version: CURRENT_VERSION, packages: {} })
 
       const renameCall = vi.mocked(fs.renameSync).mock.calls[0]!
       const sourcePath = renameCall[0] as string
@@ -342,7 +321,7 @@ describe('storage/manifest', () => {
 
       expect(result.packages.added).toBeDefined()
 
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      const written = vi.mocked(fs.writeFileSync).mock.calls.at(-1)![1] as string
       expect(JSON.parse(written)).toEqual(result)
     })
   })
@@ -351,7 +330,11 @@ describe('storage/manifest', () => {
     it('writes to project .agentver/ when scope is project', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false)
 
-      manifestModule.writeManifest('/my-project', { version: 2, packages: {} }, 'project')
+      manifestModule.writeManifest(
+        '/my-project',
+        { version: CURRENT_VERSION, packages: {} },
+        'project'
+      )
 
       expect(fs.mkdirSync).toHaveBeenCalledWith(join('/my-project', '.agentver'), {
         recursive: true,
@@ -361,7 +344,11 @@ describe('storage/manifest', () => {
     it('writes to ~/.agentver/ when scope is global', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false)
 
-      manifestModule.writeManifest('/my-project', { version: 2, packages: {} }, 'global')
+      manifestModule.writeManifest(
+        '/my-project',
+        { version: CURRENT_VERSION, packages: {} },
+        'global'
+      )
 
       expect(fs.mkdirSync).toHaveBeenCalledWith(join(homedir(), '.agentver'), { recursive: true })
     })
