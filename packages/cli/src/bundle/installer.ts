@@ -172,23 +172,25 @@ export async function installBundleFromFiles(
           const { installLocalBundleConstituent } = await import('./local-install.js')
           await installLocalBundleConstituent(pkgRef.name, localFiles, agents, options, spinner)
 
-          const integrity = computeSha256FromFiles(localFiles)
-          pendingStorageUpdates.push({
-            name: pkgRef.name,
-            manifestEntry: {
-              source,
-              agents,
-              installedAt: new Date().toISOString(),
-              modified: false,
-              bundle: bundleName,
-              packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
-            },
-            lockfileEntry: {
-              source,
-              integrity,
-              agents,
-            },
-          })
+          if (options.persist !== false) {
+            const integrity = computeSha256FromFiles(localFiles)
+            pendingStorageUpdates.push({
+              name: pkgRef.name,
+              manifestEntry: {
+                source,
+                agents,
+                installedAt: new Date().toISOString(),
+                modified: false,
+                bundle: bundleName,
+                packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
+              },
+              lockfileEntry: {
+                source,
+                integrity,
+                agents,
+              },
+            })
+          }
         }
 
         installed.push({
@@ -221,7 +223,12 @@ export async function installBundleFromFiles(
           persist: false,
         })
 
-        if (!options.dryRun && result.manifestEntry && result.lockfileEntry) {
+        if (
+          !options.dryRun &&
+          options.persist !== false &&
+          result.manifestEntry &&
+          result.lockfileEntry
+        ) {
           pendingStorageUpdates.push({
             name: result.name,
             manifestEntry: {
@@ -252,7 +259,7 @@ export async function installBundleFromFiles(
     }
   }
 
-  if (!options.dryRun && pendingStorageUpdates.length > 0) {
+  if (!options.dryRun && options.persist !== false && pendingStorageUpdates.length > 0) {
     updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
       for (const update of pendingStorageUpdates) {
         manifest.packages[update.name] = update.manifestEntry

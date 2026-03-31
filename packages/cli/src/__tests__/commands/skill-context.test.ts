@@ -1,4 +1,3 @@
-import { basename } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('node:fs', () => ({
@@ -29,20 +28,26 @@ describe('commands/skill-context', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true)
     vi.mocked(fs.readFileSync).mockReturnValue('name: search-console\n')
 
-    expect(detectSkillName('/tmp/skills/lleverage/search-console')).toBe('search-console')
+    expect(detectSkillName('/tmp/skills/acme-corp/search-console')).toBe('search-console')
+  })
+
+  it('returns null when SKILL.md is absent', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    expect(detectSkillName('/tmp/skills/acme-corp/search-console')).toBeNull()
   })
 
   it('extracts the org from agentver URIs with and without refs', () => {
-    expect(extractOrgFromSourceUri('agentver://lleverage/skills/gsc@main')).toBe('lleverage')
-    expect(extractOrgFromSourceUri('agentver://lleverage/skills/gsc')).toBe('lleverage')
+    expect(extractOrgFromSourceUri('agentver://acme-corp/skills/gsc@main')).toBe('acme-corp')
+    expect(extractOrgFromSourceUri('agentver://acme-corp/skills/gsc')).toBe('acme-corp')
   })
 
   it('extracts the owner from GitHub HTTPS URIs', () => {
-    expect(extractOrgFromSourceUri('https://github.com/lleverage/agentver')).toBe('lleverage')
+    expect(extractOrgFromSourceUri('https://github.com/acme-corp/agentver')).toBe('acme-corp')
   })
 
   it('falls back to the only path segment for short source URIs', () => {
-    expect(extractOrgFromSourceUri('lleverage')).toBe('lleverage')
+    expect(extractOrgFromSourceUri('acme-corp')).toBe('acme-corp')
   })
 
   it('resolves the org from the skill path when manifest lookup misses', () => {
@@ -51,11 +56,11 @@ describe('commands/skill-context', () => {
     expect(
       resolveNamespace({
         projectRoot: '/project',
-        skillDir: '/tmp/skills/lleverage/search-console',
+        skillDir: '/tmp/skills/acme-corp/search-console',
         skillName: 'search-console',
       })
     ).toEqual({
-      org: 'lleverage',
+      org: 'acme-corp',
       name: 'search-console',
     })
   })
@@ -66,11 +71,11 @@ describe('commands/skill-context', () => {
     expect(
       resolveCurrentSkillIdentity({
         projectRoot: '/project',
-        cwd: '/tmp/skills/lleverage/search-console',
+        cwd: '/tmp/skills/acme-corp/search-console',
       })
     ).toEqual({
-      org: 'lleverage',
-      name: basename('/tmp/skills/lleverage/search-console'),
+      org: 'acme-corp',
+      name: 'search-console',
     })
   })
 })

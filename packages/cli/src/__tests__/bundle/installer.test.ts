@@ -369,6 +369,53 @@ includes:
     expect(writeLockfile).not.toHaveBeenCalled()
   })
 
+  it('respects persist=false for nested bundle installs', async () => {
+    const files = [createBundleFile(VALID_BUNDLE_YAML), ...createLocalSkillFiles('google-search')]
+
+    mockInstallPackage.mockResolvedValueOnce({
+      name: 'seo-audit',
+      ref: 'main',
+      commitSha: 'abc',
+      agents: ['claude-code'],
+      manifestEntry: { source, agents: ['claude-code'], installedAt: '2026-03-31T00:00:00.000Z' },
+      lockfileEntry: { source, integrity: 'sha256-remote', agents: ['claude-code'] },
+    })
+    mockInstallPackage.mockResolvedValueOnce({
+      name: 'pr-review',
+      ref: 'main',
+      commitSha: 'def',
+      agents: ['claude-code'],
+      manifestEntry: { source, agents: ['claude-code'], installedAt: '2026-03-31T00:00:00.000Z' },
+      lockfileEntry: { source, integrity: 'sha256-remote-2', agents: ['claude-code'] },
+    })
+
+    const result = await installBundleFromFiles(
+      'test-bundle',
+      files,
+      ['claude-code'],
+      { global: true, persist: false },
+      spinner as SpinnerLike,
+      source,
+      mockInstallPackage
+    )
+
+    expect(result.installed).toHaveLength(3)
+    expect(installLocalBundleConstituent).toHaveBeenCalledOnce()
+    expect(updateManifestAndLockfile).not.toHaveBeenCalled()
+    expect(writeManifest).not.toHaveBeenCalled()
+    expect(writeLockfile).not.toHaveBeenCalled()
+    expect(mockInstallPackage).toHaveBeenNthCalledWith(
+      1,
+      'seo-audit@2.0.0',
+      expect.objectContaining({ persist: false, skipAudit: true })
+    )
+    expect(mockInstallPackage).toHaveBeenNthCalledWith(
+      2,
+      'pr-review',
+      expect.objectContaining({ persist: false, skipAudit: true })
+    )
+  })
+
   it('reports MCP servers as unconfigured', async () => {
     const bundleYaml = `
 name: mcp-bundle

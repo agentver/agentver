@@ -13,7 +13,13 @@ function isValidGitRef(ref: string): boolean {
     return true
   }
 
-  return REF_PATTERN.test(ref) && !ref.includes('..')
+  return (
+    REF_PATTERN.test(ref) &&
+    !ref.includes('..') &&
+    !ref.startsWith('.') &&
+    !ref.endsWith('.') &&
+    !ref.includes('//')
+  )
 }
 
 /**
