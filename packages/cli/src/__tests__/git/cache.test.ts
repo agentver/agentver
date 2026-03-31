@@ -10,6 +10,10 @@ vi.mock('node:fs', () => ({
   statSync: vi.fn(),
 }))
 
+vi.mock('../../storage/integrity.js', () => ({
+  computeSha256FromFiles: vi.fn(),
+}))
+
 vi.mock('node:os', () => ({
   homedir: vi.fn(() => '/home/testuser'),
 }))
@@ -71,6 +75,36 @@ describe('git/cache', () => {
       vi.mocked(fs.readdirSync).mockReturnValue([])
 
       const result = cacheModule.getCachedFiles(mockSource, 'some-sha')
+      expect(result).toBeNull()
+    })
+
+    it('returns cached files when integrity matches', async () => {
+      const integrityModule = await import('../../storage/integrity')
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'index.md', isDirectory: () => false, isFile: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>)
+      vi.mocked(fs.readFileSync).mockReturnValue('# Hello')
+      vi.mocked(fs.statSync).mockReturnValue({ size: 7 } as ReturnType<typeof fs.statSync>)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-match')
+
+      const result = cacheModule.getCachedFiles(mockSource, 'some-sha', 'sha256-match')
+      expect(result).toEqual([{ path: 'index.md', content: '# Hello', size: 7 }])
+    })
+
+    it('returns null when cached integrity does not match expected value', async () => {
+      const integrityModule = await import('../../storage/integrity')
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'index.md', isDirectory: () => false, isFile: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>)
+      vi.mocked(fs.readFileSync).mockReturnValue('# Hello')
+      vi.mocked(fs.statSync).mockReturnValue({ size: 7 } as ReturnType<typeof fs.statSync>)
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-other')
+
+      const result = cacheModule.getCachedFiles(mockSource, 'some-sha', 'sha256-match')
       expect(result).toBeNull()
     })
   })

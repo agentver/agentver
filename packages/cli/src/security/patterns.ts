@@ -51,6 +51,20 @@ export const SCAN_RULES: ScanRule[] = [
     pattern: /\bsystem\s*\(/,
     message: 'System command execution detected (system())',
   },
+  {
+    id: 'DC016',
+    category: 'DANGEROUS_COMMAND',
+    severity: 'HIGH',
+    pattern: /\bos\.system\s*\(/,
+    message: 'Python system command execution detected (os.system())',
+  },
+  {
+    id: 'DC017',
+    category: 'DANGEROUS_COMMAND',
+    severity: 'HIGH',
+    pattern: /\bsubprocess\.run\s*\(/,
+    message: 'Python subprocess execution detected (subprocess.run())',
+  },
 
   // --- DATA_EXFILTRATION (CRITICAL) ---
   {
@@ -399,6 +413,27 @@ export const SCAN_RULES: ScanRule[] = [
     pattern: /xox[bpras]-[a-zA-Z0-9-]+/,
     message: 'Slack token detected (xox[bpras]-...)',
   },
+  {
+    id: 'CE013',
+    category: 'CREDENTIAL_EXPOSURE',
+    severity: 'HIGH',
+    pattern: /\bsk-ant-[A-Za-z0-9\-_]{20,}\b/,
+    message: 'Anthropic API key detected (sk-ant-...)',
+  },
+  {
+    id: 'CE014',
+    category: 'CREDENTIAL_EXPOSURE',
+    severity: 'HIGH',
+    pattern: /\bglpat-[A-Za-z0-9\-_]{20,}\b/,
+    message: 'GitLab personal access token detected (glpat-...)',
+  },
+  {
+    id: 'CE015',
+    category: 'CREDENTIAL_EXPOSURE',
+    severity: 'HIGH',
+    pattern: /\bnpm_[A-Za-z0-9]{20,}\b/,
+    message: 'npm access token detected (npm_...)',
+  },
 
   // --- CREDENTIAL_FILE: path-based credential detection (CRITICAL) ---
   {
@@ -435,6 +470,22 @@ export const SCAN_RULES: ScanRule[] = [
     severity: 'CRITICAL',
     pattern: /\.npmrc\b.*_authToken/,
     message: 'NPM auth token in .npmrc detected',
+  },
+
+  // --- PATH_TRAVERSAL (HIGH) ---
+  {
+    id: 'PT001',
+    category: 'PATH_TRAVERSAL',
+    severity: 'HIGH',
+    pattern: /(^|[\s"'`])\.\.(?:\/|\\)/,
+    message: 'Path traversal sequence detected (../ or ..\\)',
+  },
+  {
+    id: 'PT002',
+    category: 'PATH_TRAVERSAL',
+    severity: 'HIGH',
+    pattern: /\bpath\.(?:join|resolve)\s*\([^)]*\.\./,
+    message: 'Path traversal via path.join/path.resolve detected',
   },
 
   // --- PROMPT_INJECTION (MEDIUM) ---

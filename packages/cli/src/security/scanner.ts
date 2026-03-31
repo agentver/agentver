@@ -30,6 +30,54 @@ function isTrustedSource(sourceUri: string, trustedPatterns: string[]): boolean 
   return false
 }
 
+function normalisePattern(pattern: string): string {
+  const trimmed = pattern.trim()
+  if (trimmed.endsWith('/')) {
+    return `${trimmed}**`
+  }
+
+  return trimmed
+}
+
+function globToRegExp(pattern: string): RegExp {
+  let source = normalisePattern(pattern).replace(/\\/g, '/')
+  source = source.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  source = source.replace(/\*\*/g, '__DOUBLE_STAR__')
+  source = source.replace(/\*/g, '[^/]*')
+  source = source.replace(/__DOUBLE_STAR__/g, '.*')
+  return new RegExp(`^${source}$`)
+}
+
+function getIgnoreMatchers(files: FetchedFile[]): RegExp[] {
+  const ignoreFile = files.find((file) => file.path === '.agentverignore')
+  if (!ignoreFile) {
+    return []
+  }
+
+  return ignoreFile.content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'))
+    .map(globToRegExp)
+}
+
+function applyIgnoreRules(files: FetchedFile[]): FetchedFile[] {
+  const ignoreMatchers = getIgnoreMatchers(files)
+
+  return files.filter((file) => {
+    if (file.path === '.agentverignore') {
+      return false
+    }
+
+    if (ignoreMatchers.length === 0) {
+      return true
+    }
+
+    const normalisedPath = file.path.replace(/\\/g, '/')
+    return !ignoreMatchers.some((pattern) => pattern.test(normalisedPath))
+  })
+}
+
 /**
  * Runs pattern matching against each line of text files.
  * Returns findings with file, line number, and evidence.
@@ -152,11 +200,13 @@ export async function scanFiles(
     }
   }
 
+  const filteredFiles = applyIgnoreRules(files)
+
   // Run file policy checks
-  const policyFindings = checkFilePolicy(files)
+  const policyFindings = checkFilePolicy(filteredFiles)
 
   // Run pattern matching on text files
-  const patternFindings = scanPatterns(files)
+  const patternFindings = scanPatterns(filteredFiles)
 
   // Aggregate all findings
   const allFindings = [...policyFindings, ...patternFindings]

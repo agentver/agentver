@@ -12,6 +12,10 @@ export type PlatformRequestOptions = {
   timeout?: number
 }
 
+export type PlatformSilentRequestOptions = PlatformRequestOptions & {
+  swallowAuthErrors?: boolean
+}
+
 export async function platformFetch<T>(
   path: string,
   options: PlatformRequestOptions = {}
@@ -60,11 +64,18 @@ export async function platformFetch<T>(
 
 export async function platformFetchSilent<T>(
   path: string,
-  options: PlatformRequestOptions = {}
+  options: PlatformSilentRequestOptions = {}
 ): Promise<T | null> {
   try {
     return await platformFetch<T>(path, options)
-  } catch {
+  } catch (error) {
+    if (
+      options.swallowAuthErrors === false &&
+      error instanceof AgentverError &&
+      error.code === 'UNAUTHORISED'
+    ) {
+      throw error
+    }
     return null
   }
 }

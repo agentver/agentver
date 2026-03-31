@@ -106,7 +106,7 @@ describe('whoami command', () => {
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Authenticated via OAuth'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('user@example.com'))
-    expect(platformFetchSilent).toHaveBeenCalledWith('/me')
+    expect(platformFetchSilent).toHaveBeenCalledWith('/me', { swallowAuthErrors: false })
   })
 
   // -------------------------------------------------------------------------
@@ -170,6 +170,19 @@ describe('whoami command', () => {
     const allLogCalls = consoleLogSpy.mock.calls.map((c: unknown[]) => String(c[0]))
     const hasEmail = allLogCalls.some((msg: string) => msg.includes('User:'))
     expect(hasEmail).toBe(false)
+  })
+
+  it('reports expired authentication instead of treating it as a network failure', async () => {
+    vi.mocked(getCredentials).mockResolvedValue({ token: 'expired-token' })
+    vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
+    vi.mocked(platformFetchSilent).mockRejectedValue(
+      new Error('Authentication expired. Run `agentver login` to re-authenticate.')
+    )
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'whoami'])
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Authentication expired'))
   })
 
   // -------------------------------------------------------------------------
@@ -299,5 +312,21 @@ describe('whoami command', () => {
     const data = parsed.data as Record<string, unknown>
     expect(data.authenticated).toBe(true)
     expect(data.platform).toBeUndefined()
+  })
+
+  it('returns a JSON error when authentication has expired', async () => {
+    process.argv = ['node', 'agentver', 'whoami', '--json']
+    vi.mocked(getCredentials).mockResolvedValue({ token: 'expired-token' })
+    vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
+    vi.mocked(platformFetchSilent).mockRejectedValue(
+      new Error('Authentication expired. Run `agentver login` to re-authenticate.')
+    )
+    const { stdout } = captureOutput()
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'whoami'])
+
+    const parsed = JSON.parse(stdout.join('')) as Record<string, unknown>
+    expect(parsed.success).toBe(false)
   })
 })

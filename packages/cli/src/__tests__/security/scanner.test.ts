@@ -194,6 +194,22 @@ describe('scanFiles', () => {
     expect(filesWithFindings.has('file-c.md')).toBe(false)
   })
 
+  it('respects .agentverignore exclusions when scanning files', async () => {
+    const files: FetchedFile[] = [
+      { path: '.agentverignore', content: 'docs/**\n', size: 8 },
+      {
+        path: 'docs/README.md',
+        content: 'process.env.HOME should not be scanned here',
+        size: 40,
+      },
+      { path: 'src/index.ts', content: 'safe content', size: 12 },
+    ]
+
+    const result = await scanFiles(files, mockSource, {})
+    expect(result.verdict).toBe('PASS')
+    expect(result.findings).toHaveLength(0)
+  })
+
   it('every finding includes a line number', async () => {
     const files: FetchedFile[] = [
       { path: 'script.md', content: 'line 1\nrm -rf /\neval(x)\nline 4', size: 30 },

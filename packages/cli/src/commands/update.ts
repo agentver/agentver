@@ -245,7 +245,9 @@ async function handlePatchUpdate(
 
   let baseFiles: Array<{ path: string; content: string }>
   try {
-    const fetchResult = await fetchFiles(lockedResolved)
+    const fetchResult = await fetchFiles(lockedResolved, {
+      expectedIntegrity: lockEntry.integrity,
+    })
     baseFiles = fetchResult.files.map((f) => ({ path: f.path, content: f.content }))
   } catch (error) {
     spinner.warn(

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('node:fs', () => ({
+  chmodSync: vi.fn(),
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
@@ -64,6 +65,7 @@ describe('registry/config', () => {
 
       expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('.agentver'), {
         recursive: true,
+        mode: 0o700,
       })
     })
 

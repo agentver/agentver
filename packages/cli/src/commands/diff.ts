@@ -453,7 +453,9 @@ export function registerDiffCommand(program: Command): void {
           commitSha,
         }
 
-        const fetchResult = await fetchFiles(resolved)
+        const fetchResult = await fetchFiles(resolved, {
+          expectedIntegrity: lockfileEntry?.integrity,
+        })
         spinner.text = 'Comparing files...'
 
         const localFiles = await readLocalFiles(projectRoot, name, agents, scope)

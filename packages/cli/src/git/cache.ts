@@ -2,6 +2,7 @@ import type { Dirent } from 'node:fs'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { computeSha256FromFiles } from '../storage/integrity.js'
 import { createCliLogger } from '../utils.js'
 import type { FetchedFile, GitSource } from './types.js'
 
@@ -15,7 +16,11 @@ export function getRepoCacheDir(source: GitSource): string {
   return join(getCacheDir(), source.host, source.owner, source.repo)
 }
 
-export function getCachedFiles(source: GitSource, commitSha: string): FetchedFile[] | null {
+export function getCachedFiles(
+  source: GitSource,
+  commitSha: string,
+  expectedIntegrity?: string
+): FetchedFile[] | null {
   const commitDir = join(getRepoCacheDir(source), 'commits', commitSha)
   const basePath = source.path || '.'
 
@@ -26,6 +31,15 @@ export function getCachedFiles(source: GitSource, commitSha: string): FetchedFil
   try {
     const files = readCachedFilesSync(targetDir)
     if (files.length === 0) return null
+
+    if (expectedIntegrity) {
+      const actualIntegrity = computeSha256FromFiles(files)
+      if (actualIntegrity !== expectedIntegrity) {
+        logger.warn(`Cache integrity mismatch for ${commitSha}; ignoring cached copy`)
+        return null
+      }
+    }
+
     return files
   } catch (error) {
     logger.debug(`Cache read failed for ${commitSha}: ${String(error)}`)

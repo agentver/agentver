@@ -10,6 +10,7 @@ export type ScanCategory =
   | 'EXCESSIVE_SIZE'
   | 'CREDENTIAL_EXPOSURE'
   | 'CREDENTIAL_FILE'
+  | 'PATH_TRAVERSAL'
   | 'PROMPT_INJECTION'
   | 'DISALLOWED_FILE_TYPE'
   | 'REMOTE_CODE_EXECUTION'
@@ -43,5 +44,4 @@ export type ScanRule = {
   severity: ScanSeverity
   pattern: RegExp
   message: string
-  fileGlob?: string
 }

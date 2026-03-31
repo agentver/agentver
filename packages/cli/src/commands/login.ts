@@ -178,13 +178,25 @@ export function registerLoginCommand(program: Command): void {
     .argument('[url]', 'Platform URL')
     .option('--token <key>', 'API key for CI/CD authentication')
     .action(async (url: string | undefined, options: { token?: string }) => {
+      const token = options.token?.trim()
+
       const effectiveUrl = url ?? getPlatformUrl() ?? DEFAULT_PLATFORM_URL
       if (!getPlatformUrl() || url) {
         writeConfig({ ...readConfig(), platformUrl: effectiveUrl })
       }
 
-      if (options.token) {
-        saveCredentials({ apiKey: options.token })
+      if (options.token !== undefined) {
+        if (!token) {
+          if (isJSONMode()) {
+            outputError('VALIDATION_ERROR', 'Token must not be empty.')
+            process.exit(1)
+          }
+
+          console.error(chalk.red('Token must not be empty.'))
+          process.exit(1)
+        }
+
+        saveCredentials({ apiKey: token })
         const target = url ?? getPlatformUrl()
 
         if (isJSONMode()) {

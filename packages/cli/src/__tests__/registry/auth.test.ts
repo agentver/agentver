@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('node:fs', () => ({
+  chmodSync: vi.fn(),
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
@@ -23,6 +24,7 @@ describe('registry/auth', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
   })
 
@@ -50,6 +52,24 @@ describe('registry/auth', () => {
       expect(result).toEqual({ apiKey: 'my-api-key' })
     })
 
+    it('prefers environment credentials over file credentials', async () => {
+      vi.stubEnv('AGENTVER_TOKEN', 'env-token')
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ token: 'file-token' }))
+
+      const result = await authModule.getCredentials()
+      expect(result).toEqual({ token: 'env-token' })
+      expect(fs.readFileSync).not.toHaveBeenCalled()
+    })
+
+    it('returns null when credentials file has invalid shape', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ token: '' }))
+
+      const result = await authModule.getCredentials()
+      expect(result).toBeNull()
+    })
+
     it('returns null on parse error', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
       vi.mocked(fs.readFileSync).mockReturnValue('not json')
@@ -67,6 +87,7 @@ describe('registry/auth', () => {
 
       expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('.agentver'), {
         recursive: true,
+        mode: 0o700,
       })
     })
 
@@ -79,6 +100,12 @@ describe('registry/auth', () => {
         expect.stringContaining('credentials.json'),
         expect.stringContaining('test-token'),
         { mode: 0o600 }
+      )
+    })
+
+    it('rejects empty credentials', () => {
+      expect(() => authModule.saveCredentials({ token: '' })).toThrow(
+        'Credentials must include a non-empty token or API key.'
       )
     })
   })

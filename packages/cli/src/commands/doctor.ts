@@ -236,6 +236,10 @@ async function checkAuthentication(): Promise<DoctorCheck> {
     return check('authentication', 'warn', 'No credentials configured (run agentver login)')
   }
 
+  if (!creds) {
+    return check('authentication', 'warn', 'No credentials configured (run agentver login)')
+  }
+
   const platformUrl = getPlatformUrl()
   if (!platformUrl) {
     return check('authentication', 'warn', 'Credentials present but no platform URL configured')
@@ -245,7 +249,15 @@ async function checkAuthentication(): Promise<DoctorCheck> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS)
 
-    const response = await fetch(`${platformUrl}/health`, {
+    const headers: Record<string, string> = {}
+    if (creds.token) {
+      headers.Authorization = `Bearer ${creds.token}`
+    } else if (creds.apiKey) {
+      headers['X-API-Key'] = creds.apiKey
+    }
+
+    const response = await fetch(`${platformUrl}/api/v1/me`, {
+      headers,
       signal: controller.signal,
     })
 
@@ -253,6 +265,14 @@ async function checkAuthentication(): Promise<DoctorCheck> {
 
     if (response.ok) {
       return check('authentication', 'pass', 'Authenticated and platform reachable')
+    }
+
+    if (response.status === 401) {
+      return check(
+        'authentication',
+        'fail',
+        'Authentication expired or invalid (run agentver login again)'
+      )
     }
 
     return check(
