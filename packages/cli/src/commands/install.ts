@@ -70,6 +70,7 @@ export type InstallOptions = {
   agent?: string | string[]
   global?: boolean
   dryRun?: boolean
+  yes?: boolean
   path?: string
   detect?: boolean
   skipAudit?: boolean
@@ -542,6 +543,8 @@ async function installFromPlatform(
       if (securityScanResult.verdict === 'WARN') {
         if (jsonMode) {
           // In JSON mode, proceed with warnings (no interactive prompt)
+        } else if (options.yes) {
+          spinner.start('Continuing installation...')
         } else {
           renderScanResult(securityScanResult, spinner as ReturnType<typeof ora>)
           const { proceed } = await prompts({
@@ -850,6 +853,8 @@ export async function installPackage(
       if (scanResult.verdict === 'WARN') {
         if (jsonMode) {
           // In JSON mode, proceed with warnings (no interactive prompt)
+        } else if (options.yes) {
+          spinner.start('Continuing installation...')
         } else {
           renderScanResult(scanResult, spinner as ReturnType<typeof ora>)
           const { proceed } = await prompts({
@@ -1434,6 +1439,7 @@ export function registerInstallCommand(program: Command): void {
       ...(previous ?? []),
       value,
     ])
+    .option('-y, --yes', 'Accept warning prompts non-interactively')
     .option('--global', 'Install at user level (~/.agents/skills/) — available across all projects')
     .option('--dry-run', 'Show what would be installed without making changes')
     .option('--path <path>', 'Override placement path (relative to cwd or absolute)')

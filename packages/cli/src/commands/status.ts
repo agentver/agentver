@@ -272,7 +272,7 @@ function toStatusResult(output: StatusOutput): StatusResult {
 export function registerStatusCommand(program: Command): void {
   program
     .command('status')
-    .description('Show status of installed skills (upstream changes, local modifications)')
+    .description('Show status of installed packages (upstream changes, local modifications)')
     .option('--global', 'Check globally installed packages')
     .option('--all', 'Check both project and global packages')
     .option('--offline', 'Skip upstream checks')
@@ -305,20 +305,42 @@ export function registerStatusCommand(program: Command): void {
               ? createSpinner('Checking package status...').start()
               : null
 
-          for (const [name, pkg] of entries) {
-            if (spinner) spinner.text = `Checking ${name}...`
+          const statusResults = await Promise.allSettled(
+            entries.map(async ([name, pkg]) => {
+              if (spinner) spinner.text = `Checking ${name}...`
 
-            const lockfileEntry = lockfile.packages[name]
-            const status = await checkPackageStatus(
-              projectRoot,
+              const lockfileEntry = lockfile.packages[name]
+              return checkPackageStatus(
+                projectRoot,
+                name,
+                pkg,
+                lockfileEntry?.integrity,
+                options.offline ?? false,
+                scope
+              )
+            })
+          )
+
+          for (const [index, result] of statusResults.entries()) {
+            if (result.status === 'fulfilled') {
+              scopeStatuses.push(result.value)
+              allStatuses.push(result.value)
+              continue
+            }
+
+            const [name, pkg] = entries[index]!
+            const fallbackStatus: PackageStatus = {
               name,
-              pkg,
-              lockfileEntry?.integrity,
-              options.offline ?? false,
-              scope
-            )
-            scopeStatuses.push(status)
-            allStatuses.push(status)
+              category: 'unknown',
+              sourceUri: pkg.source.type === 'git' ? pkg.source.uri : pkg.source.hostname,
+              ref: pkg.source.type === 'git' ? pkg.source.ref : 'well-known',
+              commit: pkg.source.type === 'git' ? pkg.source.commit : '',
+              agents: pkg.agents,
+              pinned: pkg.pinned || undefined,
+              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            }
+            scopeStatuses.push(fallbackStatus)
+            allStatuses.push(fallbackStatus)
           }
 
           if (spinner) spinner.stop()
@@ -346,7 +368,7 @@ export function registerStatusCommand(program: Command): void {
           if (multiScope) {
             console.log(chalk.bold(`\n${SCOPE_LABELS[scope]} (${scopeStatuses.length}):\n`))
           } else {
-            console.log(chalk.bold(`\nInstalled skills (${scopeStatuses.length}):\n`))
+            console.log(chalk.bold(`\nInstalled packages (${scopeStatuses.length}):\n`))
           }
 
           for (const status of scopeStatuses) {

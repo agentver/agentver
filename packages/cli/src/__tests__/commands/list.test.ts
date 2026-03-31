@@ -201,13 +201,18 @@ describe('list command', () => {
 
       expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
       const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
-        packages: Record<string, unknown>
+        packages: Array<{ name: string; scope: string; package: unknown }>
       }
       expect(data).toHaveProperty('packages')
-      expect(data.packages).toHaveProperty('test-skill')
+      expect(data.packages).toContainEqual(
+        expect.objectContaining({
+          name: 'test-skill',
+          scope: 'project',
+        })
+      )
     })
 
-    it('outputs empty packages object when nothing is installed', async () => {
+    it('outputs an empty packages array when nothing is installed', async () => {
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
 
@@ -215,9 +220,9 @@ describe('list command', () => {
 
       expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
       const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
-        packages: Record<string, unknown>
+        packages: unknown[]
       }
-      expect(data.packages).toEqual({})
+      expect(data.packages).toEqual([])
     })
   })
 
@@ -438,10 +443,23 @@ describe('list command', () => {
 
       expect(vi.mocked(outputModule.outputSuccess)).toHaveBeenCalledOnce()
       const data = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
-        packages: Record<string, { bundle?: string; packageType?: string }>
+        packages: Array<{
+          name: string
+          package: { bundle?: string; packageType?: string }
+        }>
       }
-      expect(data.packages['my-bundle']!.packageType).toBe('BUNDLE')
-      expect(data.packages['skill-a']!.bundle).toBe('my-bundle')
+      expect(data.packages).toContainEqual(
+        expect.objectContaining({
+          name: 'my-bundle',
+          package: expect.objectContaining({ packageType: 'BUNDLE' }),
+        })
+      )
+      expect(data.packages).toContainEqual(
+        expect.objectContaining({
+          name: 'skill-a',
+          package: expect.objectContaining({ bundle: 'my-bundle' }),
+        })
+      )
     })
   })
 })

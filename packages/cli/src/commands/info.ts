@@ -116,6 +116,9 @@ export function registerInfoCommand(program: Command): void {
           count: fileCount,
           totalSize,
         },
+        pinned: pkg.pinned === true,
+        packageType: pkg.packageType,
+        bundle: pkg.bundle,
         skill:
           skillTitle && skillDescription
             ? { title: skillTitle, description: skillDescription }
@@ -147,6 +150,15 @@ export function registerInfoCommand(program: Command): void {
       console.log(
         `  ${chalk.dim('Agents:')}    ${pkg.agents.length > 0 ? pkg.agents.join(', ') : chalk.dim('none')}`
       )
+      console.log(
+        `  ${chalk.dim('Pinned:')}    ${pkg.pinned === true ? chalk.yellow('yes') : chalk.green('no')}`
+      )
+      if (pkg.packageType) {
+        console.log(`  ${chalk.dim('Type:')}      ${pkg.packageType}`)
+      }
+      if (pkg.bundle) {
+        console.log(`  ${chalk.dim('Bundle:')}    ${pkg.bundle}`)
+      }
       console.log(`  ${chalk.dim('Installed:')} ${pkg.installedAt}`)
       console.log(
         `  ${chalk.dim('Modified:')}  ${locallyModified ? chalk.yellow('yes') : chalk.green('no')}`

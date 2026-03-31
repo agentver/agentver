@@ -4,8 +4,7 @@ import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
-
-const HTTP_TIMEOUT_MS = 15_000
+import { requestPlatform } from './platform-request.js'
 
 type SuggestionStatus = 'OPEN' | 'IN_REVIEW' | 'APPROVED' | 'MERGED' | 'REJECTED' | 'CLOSED'
 
@@ -20,55 +19,6 @@ type Suggestion = {
 
 type SuggestionsResponse = {
   suggestions: Suggestion[]
-}
-
-async function getFromPlatform<T>(path: string): Promise<T> {
-  const platformUrl = getPlatformUrl()
-  if (!platformUrl) {
-    throw new Error('Not connected to a platform. Run `agentver login <url>` first.')
-  }
-
-  const creds = await getCredentials()
-  if (!creds?.token && !creds?.apiKey) {
-    throw new Error('Not connected to a platform. Run `agentver login <url>` first.')
-  }
-
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'User-Agent': 'agentver-cli',
-  }
-
-  if (creds.token) {
-    headers.Authorization = `Bearer ${creds.token}`
-  } else if (creds.apiKey) {
-    headers['X-API-Key'] = creds.apiKey
-  }
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
-
-  try {
-    const url = `${platformUrl}/api/v1${path}`
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => 'Unknown error')
-      throw new Error(`Platform returned ${response.status}: ${errorBody}`)
-    }
-
-    return (await response.json()) as T
-  } catch (error) {
-    clearTimeout(timeoutId)
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Platform request timed out')
-    }
-    throw error
-  }
 }
 
 function formatDate(isoDate: string): string {
@@ -148,7 +98,7 @@ export function registerSuggestionsCommand(program: Command): void {
 
         const queryString = queryParams.toString()
         const queryPath = `/proposals${queryString ? `?${queryString}` : ''}`
-        const { suggestions } = await getFromPlatform<SuggestionsResponse>(queryPath)
+        const { suggestions } = await requestPlatform<SuggestionsResponse>(queryPath)
 
         spinner.stop()
 

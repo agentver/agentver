@@ -1,11 +1,13 @@
 import { homedir } from 'node:os'
 import { detectGlobalAgents, detectInstalledAgents } from '@agentver/agent-definitions'
+import type { AgentsResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputError, outputSuccess } from '../output.js'
 
 type AgentsOptions = {
   global?: boolean
+  json?: boolean
 }
 
 export function registerAgentsCommand(program: Command): void {
@@ -13,8 +15,9 @@ export function registerAgentsCommand(program: Command): void {
     .command('agents')
     .description('List detected AI agents')
     .option('--global', 'Show globally detected agents instead of project agents')
+    .option('--json', 'Output as JSON')
     .action(async (options: AgentsOptions) => {
-      const jsonMode = isJSONMode()
+      const jsonMode = isJSONMode() || options.json === true
       const scope = options.global ? 'global' : 'project'
 
       let agents: ReturnType<typeof detectInstalledAgents>
@@ -33,7 +36,7 @@ export function registerAgentsCommand(program: Command): void {
       }
 
       if (jsonMode) {
-        outputSuccess({
+        outputSuccess<AgentsResult>({
           agents: agents.map((a) => ({
             id: a.id,
             name: a.name,

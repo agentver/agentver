@@ -251,34 +251,36 @@ describe('updateResultSchema', () => {
 
 describe('listResultSchema', () => {
   it('should accept empty packages record', () => {
-    const result = listResultSchema.parse({ packages: {} })
-    expect(result.packages).toEqual({})
+    const result = listResultSchema.parse({ packages: [] })
+    expect(result.packages).toEqual([])
   })
 
   it('should accept packages with valid manifest entries', () => {
     const result = listResultSchema.parse({
-      packages: {
-        'my-skill': {
-          source: {
-            type: 'git',
-            uri: 'https://github.com/org/repo',
-            path: '',
-            ref: 'main',
-            commit: 'abc1234',
+      packages: [
+        {
+          name: 'my-skill',
+          scope: 'project',
+          package: {
+            source: {
+              type: 'git',
+              uri: 'https://github.com/org/repo',
+              path: '',
+              ref: 'main',
+              commit: 'abc1234',
+            },
+            agents: ['claude'],
+            installedAt: new Date().toISOString(),
           },
-          agents: ['claude'],
-          installedAt: new Date().toISOString(),
         },
-      },
+      ],
     })
-    expect(Object.keys(result.packages)).toHaveLength(1)
+    expect(result.packages).toHaveLength(1)
   })
 
   it('should reject packages with invalid source', () => {
     const result = listResultSchema.safeParse({
-      packages: {
-        'bad-skill': { source: { type: 'invalid' }, agents: [] },
-      },
+      packages: [{ name: 'bad-skill', scope: 'project', package: { source: { type: 'invalid' } } }],
     })
     expect(result.success).toBe(false)
   })
@@ -287,29 +289,41 @@ describe('listResultSchema', () => {
 describe('searchResultSchema', () => {
   it('should accept valid search results', () => {
     const result = searchResultSchema.parse({
-      results: [{ name: 'skill-a', description: 'A skill', type: 'SKILL', source: 'registry' }],
+      platform: [],
+      community: [],
+      wellKnown: [{ name: 'skill-a', description: 'A skill', url: 'https://example.com/skill-a' }],
+      total: 1,
     })
-    expect(result.results).toHaveLength(1)
+    expect(result.wellKnown).toHaveLength(1)
   })
 
   it('should accept empty results', () => {
-    const result = searchResultSchema.parse({ results: [] })
-    expect(result.results).toHaveLength(0)
+    const result = searchResultSchema.parse({
+      platform: [],
+      community: [],
+      wellKnown: [],
+      total: 0,
+    })
+    expect(result.platform).toHaveLength(0)
   })
 
   it('should accept results with optional url', () => {
     const result = searchResultSchema.parse({
-      results: [
+      platform: [],
+      community: [
         {
+          id: 'community-1',
           name: 'skill-a',
           description: 'A skill',
-          type: 'SKILL',
           source: 'registry',
+          installCount: 10,
           url: 'https://example.com',
         },
       ],
+      wellKnown: [],
+      total: 1,
     })
-    expect(result.results[0]?.url).toBe('https://example.com')
+    expect(result.community[0]?.url).toBe('https://example.com')
   })
 })
 

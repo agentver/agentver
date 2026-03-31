@@ -18,11 +18,13 @@ export function registerWhoamiCommand(program: Command): void {
   program
     .command('whoami')
     .description('Show authentication state')
-    .action(async () => {
+    .option('--json', 'Output as JSON')
+    .action(async (options: { json?: boolean }) => {
+      const jsonMode = isJSONMode() || options.json === true
       const credentials = await getCredentials()
 
       if (!credentials?.token && !credentials?.apiKey) {
-        if (isJSONMode()) {
+        if (jsonMode) {
           outputSuccess<WhoamiResult>({ authenticated: false })
           return
         }
@@ -33,7 +35,7 @@ export function registerWhoamiCommand(program: Command): void {
       const platformUrl = getPlatformUrl()
 
       if (!platformUrl) {
-        if (!isJSONMode()) {
+        if (!jsonMode) {
           if (credentials.apiKey) {
             const prefix = credentials.apiKey.slice(0, 8)
             console.log(`Authenticated via API key: ${chalk.green(`${prefix}...`)}`)
@@ -42,7 +44,7 @@ export function registerWhoamiCommand(program: Command): void {
           }
         }
 
-        if (isJSONMode()) {
+        if (jsonMode) {
           outputSuccess<WhoamiResult>({ authenticated: true })
           return
         }
@@ -58,7 +60,7 @@ export function registerWhoamiCommand(program: Command): void {
       } catch (error) {
         const { code, message } = extractError(error, 'WHOAMI_FAILED')
         if (code === 'UNAUTHORISED' || message.startsWith('Authentication expired')) {
-          if (isJSONMode()) {
+          if (jsonMode) {
             outputError('UNAUTHORISED', message)
           } else {
             console.log(chalk.red(message))
@@ -70,7 +72,7 @@ export function registerWhoamiCommand(program: Command): void {
         warning = 'Could not verify identity against the platform.'
       }
 
-      if (!isJSONMode()) {
+      if (!jsonMode) {
         if (credentials.apiKey) {
           const prefix = credentials.apiKey.slice(0, 8)
           console.log(`Authenticated via API key: ${chalk.green(`${prefix}...`)}`)
@@ -80,7 +82,7 @@ export function registerWhoamiCommand(program: Command): void {
         console.log(`Platform: ${chalk.cyan(platformUrl)}`)
       }
 
-      if (isJSONMode()) {
+      if (jsonMode) {
         const result: WhoamiResult = {
           authenticated: true,
           platform: platformUrl,

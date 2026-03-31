@@ -16,6 +16,7 @@ import { readManifest } from '../storage/manifest.js'
 export function registerScanCommand(program: Command): void {
   program
     .command('scan [path]')
+    .alias('detect')
     .description('Scan directory for agent configs and skills')
     .action(async (path?: string) => {
       const jsonMode = isJSONMode()

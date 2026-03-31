@@ -1,3 +1,4 @@
+import type { VersionCreateResult, VersionListEntry, VersionListResult } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
@@ -5,13 +6,6 @@ import { platformFetch } from '../registry/platform.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { extractError, SEMVER_REGEX } from '../utils.js'
 import { resolveCurrentSkillIdentity } from './skill-context.js'
-
-type VersionInfo = {
-  name: string
-  tag: string
-  commitSha: string
-  message: string
-}
 
 type VersionCreateResponse = {
   tag: string
@@ -27,17 +21,6 @@ type VersionCreateOptions = {
   json?: boolean
 }
 
-type VersionCreateResult = {
-  skill: string
-  version: string
-  tag: string
-  commitSha: string
-}
-
-type VersionListResult = {
-  versions: VersionInfo[]
-}
-
 type VersionApiRecord = {
   version?: string
   changelog?: string | null
@@ -45,13 +28,11 @@ type VersionApiRecord = {
   gitCommitSha?: string | null
 }
 
-type VersionListResponse = VersionInfo[] | { versions: Array<VersionInfo | VersionApiRecord> }
+type VersionListResponse =
+  | VersionListEntry[]
+  | { versions: Array<VersionListEntry | VersionApiRecord> }
 
-function resolveSkillIdentity(): { org: string; name: string } | null {
-  return resolveCurrentSkillIdentity()
-}
-
-function normaliseVersionEntry(version: VersionInfo | VersionApiRecord): VersionInfo {
+function normaliseVersionEntry(version: VersionListEntry | VersionApiRecord): VersionListEntry {
   if ('tag' in version && 'commitSha' in version && 'message' in version) {
     return version
   }
@@ -66,7 +47,7 @@ function normaliseVersionEntry(version: VersionInfo | VersionApiRecord): Version
   }
 }
 
-function normaliseVersions(response: VersionListResponse): VersionInfo[] {
+function normaliseVersions(response: VersionListResponse): VersionListEntry[] {
   const versions = Array.isArray(response) ? response : response.versions
   return versions.map(normaliseVersionEntry)
 }
@@ -74,7 +55,7 @@ function normaliseVersions(response: VersionListResponse): VersionInfo[] {
 async function listVersions(options: VersionListOptions): Promise<void> {
   const jsonMode = isJSONMode() || options.json === true
 
-  const identity = resolveSkillIdentity()
+  const identity = resolveCurrentSkillIdentity()
   if (!identity) {
     const message = 'Could not determine skill identity. Run this from a skill directory.'
     if (jsonMode) {
@@ -136,7 +117,7 @@ export function registerVersionCommand(program: Command): void {
     .option('--notes <text>', 'Release notes')
     .option('--json', 'Output as JSON')
     .action(async (semver: string, options: VersionCreateOptions) => {
-      const jsonMode = isJSONMode()
+      const jsonMode = isJSONMode() || options.json === true
 
       if (!SEMVER_REGEX.test(semver)) {
         const message = `Invalid semver "${semver}". Expected format: 1.0.0, 1.0.0-beta.1, or 1.0.0+build.42`
@@ -148,7 +129,7 @@ export function registerVersionCommand(program: Command): void {
         process.exit(1)
       }
 
-      const identity = resolveSkillIdentity()
+      const identity = resolveCurrentSkillIdentity()
       if (!identity) {
         const message = 'Could not determine skill identity. Run this from a skill directory.'
         if (jsonMode) {
