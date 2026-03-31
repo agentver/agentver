@@ -104,4 +104,81 @@ describe('storage/transaction', () => {
       { force: true }
     )
   })
+
+  it('leaves a recoverable transaction when lockfile persistence fails mid-write', () => {
+    const manifest = createManifest({
+      packages: {
+        'test-skill': {
+          source: {
+            type: 'git',
+            uri: 'github.com/test-org/test-repo',
+            path: 'skills/test-skill',
+            ref: 'main',
+            commit: 'abc1234567890abcdef1234567890abcdef123456',
+          },
+          agents: ['claude-code'],
+          installedAt: '2026-03-31T12:00:00.000Z',
+          modified: false,
+        },
+      },
+    })
+    const lockfile = createLockfile({
+      packages: {
+        'test-skill': {
+          source: manifest.packages['test-skill']!.source,
+          integrity: 'sha256-test',
+          agents: ['claude-code'],
+        },
+      },
+    })
+
+    vi.mocked(filesModule.writeJsonFileAtomic)
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => {
+        throw new Error('ENOSPC: no space left on device')
+      })
+
+    expect(() => transactionModule.writeStorageTransaction('/project', manifest, lockfile)).toThrow(
+      'ENOSPC'
+    )
+
+    expect(filesModule.writeJsonFileAtomic).toHaveBeenNthCalledWith(
+      1,
+      join('/project', '.agentver', 'storage-transaction.json'),
+      { manifest, lockfile }
+    )
+    expect(filesModule.writeJsonFileAtomic).toHaveBeenNthCalledWith(
+      2,
+      join('/project', '.agentver', 'manifest.json'),
+      manifest
+    )
+    expect(filesModule.writeJsonFileAtomic).toHaveBeenNthCalledWith(
+      3,
+      join('/project', '.agentver', 'lockfile.json'),
+      lockfile
+    )
+    expect(fs.rmSync).not.toHaveBeenCalled()
+
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ manifest, lockfile }))
+    vi.mocked(filesModule.writeJsonFileAtomic).mockReset()
+
+    transactionModule.recoverPendingStorageTransaction('/project')
+
+    expect(filesModule.writeJsonFileAtomic).toHaveBeenNthCalledWith(
+      1,
+      join('/project', '.agentver', 'manifest.json'),
+      manifest
+    )
+    expect(filesModule.writeJsonFileAtomic).toHaveBeenNthCalledWith(
+      2,
+      join('/project', '.agentver', 'lockfile.json'),
+      lockfile
+    )
+    expect(fs.rmSync).toHaveBeenCalledWith(
+      join('/project', '.agentver', 'storage-transaction.json'),
+      { force: true }
+    )
+  })
 })

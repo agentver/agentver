@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ExitError } from '../helpers/exit-error'
 import {
   createLockfile,
   createLockfilePackage,
@@ -85,14 +86,6 @@ import * as manifestModule from '../../storage/manifest'
 // ---------------------------------------------------------------------------
 
 const HOME = homedir()
-
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
-}
 
 type RemoveAction = (
   name: string,

@@ -1,5 +1,6 @@
 import { createCLIOutputSchema, updateResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ExitError } from '../helpers/exit-error'
 import {
   createFetchedFiles,
   createGitSource,
@@ -164,18 +165,6 @@ function getUpdateAction(): UpdateAction {
   registerUpdateCommand(mockProgram as never)
 
   return mockProgram.action.mock.calls[0]![0] as UpdateAction
-}
-
-// ---------------------------------------------------------------------------
-// Sentinel for process.exit
-// ---------------------------------------------------------------------------
-
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
 }
 
 // ---------------------------------------------------------------------------

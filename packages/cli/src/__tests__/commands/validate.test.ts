@@ -50,6 +50,7 @@ import { existsSync } from 'node:fs'
 import { validateSkillMd } from '@agentver/shared'
 import { registerValidateCommand } from '../../commands/validate'
 import * as outputModule from '../../output.js'
+import { ExitError } from '../helpers/exit-error'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,14 +69,6 @@ function getValidateAction(): ValidateAction {
   registerValidateCommand(mockProgram as never)
 
   return mockProgram.action.mock.calls[0]![0] as ValidateAction
-}
-
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
 }
 
 // ---------------------------------------------------------------------------

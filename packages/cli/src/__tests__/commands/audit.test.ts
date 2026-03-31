@@ -150,6 +150,27 @@ describe('commands/audit', () => {
     })
   })
 
+  describe('--global flag', () => {
+    it('reads and scans global packages when requested', async () => {
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'global-skill': createManifestPackage(),
+          },
+        })
+      )
+
+      await runAudit(['audit', '--global'])
+
+      expect(manifestModule.readManifest).toHaveBeenCalledWith('/project', 'global')
+      expect(canonicalModule.getCanonicalSkillPath).toHaveBeenCalledWith(
+        '/project',
+        'global-skill',
+        'global'
+      )
+    })
+  })
+
   // -------------------------------------------------------------------------
   // 3. --path flag
   // -------------------------------------------------------------------------

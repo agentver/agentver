@@ -298,6 +298,55 @@ describe('storage/manifest', () => {
     })
   })
 
+  describe('updateManifest', () => {
+    it('updates the current manifest and returns the written value', () => {
+      const existingManifest = {
+        version: 2 as const,
+        packages: {
+          existing: {
+            source: {
+              type: 'git' as const,
+              uri: 'github.com/org/repo',
+              path: '',
+              ref: 'main',
+              commit: 'abc1234567890abcdef1234567890abcdef123456',
+            },
+            agents: ['claude-code'],
+            installedAt: '2025-01-01T00:00:00.000Z',
+            modified: false,
+          },
+        },
+      }
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existingManifest))
+
+      const result = manifestModule.updateManifest('/project', 'project', (manifest) => ({
+        ...manifest,
+        packages: {
+          ...manifest.packages,
+          added: {
+            source: {
+              type: 'git',
+              uri: 'github.com/org/repo',
+              path: 'skills/added',
+              ref: 'main',
+              commit: 'def1234567890abcdef1234567890abcdef123456',
+            },
+            agents: ['cursor'],
+            installedAt: '2025-01-02T00:00:00.000Z',
+            modified: false,
+          },
+        },
+      }))
+
+      expect(result.packages.added).toBeDefined()
+
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      expect(JSON.parse(written)).toEqual(result)
+    })
+  })
+
   describe('scope-aware paths', () => {
     it('writes to project .agentver/ when scope is project', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false)

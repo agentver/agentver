@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ExitError } from '../helpers/exit-error'
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -53,14 +54,6 @@ function getAgentsAction(): AgentsAction {
   registerAgentsCommand(mockProgram as never)
 
   return mockProgram.action.mock.calls[0]![0] as AgentsAction
-}
-
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
 }
 
 // ---------------------------------------------------------------------------

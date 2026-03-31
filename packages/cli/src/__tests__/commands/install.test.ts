@@ -1,6 +1,7 @@
 import { AgentverError, createCLIOutputSchema, installResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FetchedFile, FetchResult, ResolvedRef } from '../../git/types'
+import { ExitError } from '../helpers/exit-error'
 import {
   createAuditScanResult,
   createFetchedFiles,
@@ -150,15 +151,6 @@ const DERIVED_NAME = 'test-skill'
 const TEST_SOURCE = 'github.com/test-org/test-repo/skills/test-skill@main'
 const RESOLVED_SHA = 'abc1234567890abcdef1234567890abcdef1234567'
 const INTEGRITY_HASH = 'sha256-testIntegrityHash123'
-
-/** Sentinel error thrown by our process.exit mock to halt execution */
-class ExitError extends Error {
-  code: number
-  constructor(code: number) {
-    super(`process.exit(${code})`)
-    this.code = code
-  }
-}
 
 function setupHappyPathMocks() {
   const gitSource = createGitSource()
