@@ -8,12 +8,12 @@ import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
 import { ensureStorageDir, getStorageRoot } from '../storage/files.js'
+import { readInstalledPackageFiles } from '../storage/installed-package-files.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
 import type { Scope } from '../utils/paths'
 import { extractError } from '../utils.js'
-import { readInstalledPackageFiles } from './platform-request.js'
 
 const SYNC_TIMEOUT_MS = 30_000
 const MACHINE_ID_FILE = 'machine-id'

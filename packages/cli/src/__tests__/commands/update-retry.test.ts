@@ -35,9 +35,15 @@ vi.mock('../../storage/canonical.js', () => ({
   resolveReadPath: vi.fn(),
 }))
 
-vi.mock('../../storage/integrity', () => ({
-  computeSha256FromFiles: vi.fn(),
-}))
+vi.mock('../../storage/integrity', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../storage/integrity')>('../../storage/integrity')
+  return {
+    ...actual,
+    computeSha256FromFiles: vi.fn(),
+    deriveCommitFromIntegrity: vi.fn((integrity: string) => `derived-${integrity}`),
+  }
+})
 
 vi.mock('../../storage/patches.js', () => ({
   generatePatch: vi.fn(),
@@ -54,7 +60,6 @@ vi.mock('../../utils/backup', () => ({
 
 vi.mock('../../commands/install', () => ({
   installPackage: vi.fn(),
-  deriveCommitFromIntegrity: vi.fn((integrity: string) => `derived-${integrity}`),
 }))
 
 vi.mock('../../registry/auth.js', () => ({

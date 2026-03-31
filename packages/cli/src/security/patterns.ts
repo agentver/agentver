@@ -486,6 +486,7 @@ export const SCAN_RULES: ScanRule[] = [
     severity: 'HIGH',
     pattern: /\bpath\.(?:join|resolve)\s*\([^)]*\.\./,
     message: 'Path traversal via path.join/path.resolve detected',
+    fileExtensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts'],
   },
 
   // --- PROMPT_INJECTION (MEDIUM) ---

@@ -17,6 +17,28 @@ afterAll(async () => {
 })
 
 describe('GET /api/v1/resolve', () => {
+  it('returns 401 when unauthenticated', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue(null)
+
+    const response = await GET(
+      new Request('http://localhost/api/v1/resolve?name=test-org/my-skill')
+    )
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorised' })
+  })
+
+  it('returns 400 when name is missing', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'user-1', scopes: ['READ'] })
+
+    const response = await GET(new Request('http://localhost/api/v1/resolve'))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Missing required query parameter: name',
+    })
+  })
+
   it.each([
     'feature..hidden',
     '.main',
@@ -71,6 +93,17 @@ describe('GET /api/v1/resolve', () => {
     await expect(response.json()).resolves.toMatchObject({
       gitRef: commitSha,
       source: 'git',
+    })
+  })
+
+  it('returns 404 when the package does not exist', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'user-1', scopes: ['READ'] })
+
+    const response = await GET(new Request('http://localhost/api/v1/resolve?name=test-org/missing'))
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Package "test-org/missing" not found',
     })
   })
 })

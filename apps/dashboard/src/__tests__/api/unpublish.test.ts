@@ -29,6 +29,39 @@ afterAll(async () => {
 })
 
 describe('POST /api/v1/skills/[org]/[name]/versions/[version]/unpublish', () => {
+  it('returns 401 when unauthenticated', async () => {
+    vi.mocked(authenticateRequestWithDetails).mockResolvedValue({
+      ok: false,
+      error: { status: 401, message: 'Unauthorised' },
+    })
+
+    const response = await POST(makeRequest(), {
+      params: Promise.resolve({ org: 'test-org', name: 'my-skill', version: '1.2.3' }),
+    })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorised' })
+  })
+
+  it('returns 400 for an invalid semver version parameter', async () => {
+    vi.mocked(authenticateRequestWithDetails).mockResolvedValue({
+      ok: true,
+      result: { userId: 'user-1', scopes: ['WRITE'] },
+    })
+
+    const response = await POST(makeRequest(), {
+      params: Promise.resolve({ org: 'test-org', name: 'my-skill', version: 'latest' }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Validation failed',
+      details: {
+        version: ['Must be valid semver'],
+      },
+    })
+  })
+
   it('yanks a published version for the author', async () => {
     const { user, org } = await createTestOrgWithOwner()
     const pkg = await createTestPackage(org.id, user.id, {

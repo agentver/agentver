@@ -7,8 +7,8 @@ import {
   getSkillPlacementPath,
 } from '@agentver/agent-definitions'
 import { readFilesFromDirectory } from '../git/fetcher.js'
-import { resolveReadPath } from '../storage/canonical.js'
 import { resolvePlacementPath, type Scope } from '../utils/paths.js'
+import { resolveReadPath } from './canonical.js'
 
 type ReadInstalledPackageFilesOptions = {
   scope?: Scope

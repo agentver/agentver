@@ -44,4 +44,5 @@ export type ScanRule = {
   severity: ScanSeverity
   pattern: RegExp
   message: string
+  fileExtensions?: string[]
 }

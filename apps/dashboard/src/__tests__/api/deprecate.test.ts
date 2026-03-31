@@ -94,6 +94,25 @@ describe('POST /api/v1/skills/[org]/[name]/deprecate', () => {
 })
 
 describe('POST /api/v1/skills/[org]/[name]/versions/[version]/deprecate', () => {
+  it('returns 400 for an invalid semver version parameter', async () => {
+    vi.mocked(authenticateRequestWithDetails).mockResolvedValue({
+      ok: true,
+      result: { userId: 'user-1', scopes: ['WRITE'] },
+    })
+
+    const response = await deprecateVersion(makeRequest({ message: 'Deprecated' }), {
+      params: Promise.resolve({ org: 'test-org', name: 'my-skill', version: 'latest' }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Validation failed',
+      details: {
+        version: ['Must be valid semver'],
+      },
+    })
+  })
+
   it('deprecates a published version and records the message as changelog', async () => {
     const { user, org } = await createTestOrgWithOwner()
     const pkg = await createTestPackage(org.id, user.id, {

@@ -3,12 +3,11 @@ import { dirname, resolve } from 'node:path'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { createSpinner, outputSuccess } from '../output.js'
-import { platformFetch } from '../registry/platform.js'
+import { type PlatformResolveResponse, platformFetch } from '../registry/platform.js'
 import { getCanonicalSkillPath } from '../storage/canonical.js'
-import { computeSha256FromFiles } from '../storage/integrity.js'
+import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { updateManifestAndLockfile } from '../storage/pair.js'
-import { deriveCommitFromIntegrity } from './install.js'
 import { resolveCurrentSkillIdentity } from './skill-context.js'
 
 type DraftInfo = {
@@ -29,18 +28,6 @@ type DraftActionResponse = {
 
 type DraftListOptions = {
   json?: boolean
-}
-
-type PlatformResolveResponse = {
-  gitUri: string
-  gitPath: string
-  gitRef: string
-  source?: 'git' | 'platform'
-  files?: Array<{ path: string; content: string }>
-}
-
-function resolveSkillIdentity(): { org: string; name: string } | null {
-  return resolveCurrentSkillIdentity()
 }
 
 function writeResolvedFiles(
@@ -74,7 +61,7 @@ export function registerDraftCommand(program: Command): void {
     .description('Create a draft branch for the current skill')
     .option('--json', 'Output as JSON')
     .action(async (name: string, options: DraftListOptions) => {
-      const identity = resolveSkillIdentity()
+      const identity = resolveCurrentSkillIdentity()
       if (!identity) {
         process.stderr.write(
           chalk.red('Could not determine skill identity. Run this from a skill directory.\n')
@@ -115,7 +102,7 @@ export function registerDraftCommand(program: Command): void {
     .description('List open drafts for the current skill')
     .option('--json', 'Output as JSON')
     .action(async (options: DraftListOptions) => {
-      const identity = resolveSkillIdentity()
+      const identity = resolveCurrentSkillIdentity()
       if (!identity) {
         process.stderr.write(
           chalk.red('Could not determine skill identity. Run this from a skill directory.\n')
@@ -165,7 +152,7 @@ export function registerDraftCommand(program: Command): void {
     .description('Switch to a draft branch (updates lockfile ref)')
     .option('--json', 'Output as JSON')
     .action(async (name: string, options: DraftListOptions) => {
-      const identity = resolveSkillIdentity()
+      const identity = resolveCurrentSkillIdentity()
       if (!identity) {
         process.stderr.write(
           chalk.red('Could not determine skill identity. Run this from a skill directory.\n')
@@ -290,7 +277,7 @@ export function registerDraftCommand(program: Command): void {
     .description('Merge current draft to main')
     .option('--json', 'Output as JSON')
     .action(async (options: DraftListOptions) => {
-      const identity = resolveSkillIdentity()
+      const identity = resolveCurrentSkillIdentity()
       if (!identity) {
         process.stderr.write(
           chalk.red('Could not determine skill identity. Run this from a skill directory.\n')
@@ -374,7 +361,7 @@ export function registerDraftCommand(program: Command): void {
     .description('Delete the current draft branch')
     .option('--json', 'Output as JSON')
     .action(async (options: DraftListOptions) => {
-      const identity = resolveSkillIdentity()
+      const identity = resolveCurrentSkillIdentity()
       if (!identity) {
         process.stderr.write(
           chalk.red('Could not determine skill identity. Run this from a skill directory.\n')

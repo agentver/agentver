@@ -5,11 +5,11 @@ import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output
 import { getCredentials } from '../registry/auth.js'
 import { getPlatformUrl } from '../registry/config.js'
 import { platformFetch } from '../registry/platform.js'
+import { readInstalledPackageFiles } from '../storage/installed-package-files.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
 import { extractError } from '../utils.js'
-import { readInstalledPackageFiles } from './platform-request.js'
 
 type SuggestionFile = {
   path: string
@@ -180,7 +180,7 @@ export function registerSuggestCommand(program: Command): void {
               targetName,
               manifestEntry.agents
             )
-            const endpoint = `/api/v1${buildEndpoint(manifestEntry, targetName)}`
+            const endpoint = buildEndpoint(manifestEntry, targetName)
 
             dryRunResults.push({
               package: targetName,

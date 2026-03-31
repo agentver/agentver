@@ -62,6 +62,13 @@ describe('registry/auth', () => {
       expect(fs.readFileSync).not.toHaveBeenCalled()
     })
 
+    it('reads AGENTVER_API_KEY from the environment', async () => {
+      vi.stubEnv('AGENTVER_API_KEY', 'env-api-key')
+
+      const result = await authModule.getCredentials()
+      expect(result).toEqual({ apiKey: 'env-api-key' })
+    })
+
     it('returns null when credentials file has invalid shape', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ token: '' }))
@@ -125,6 +132,16 @@ describe('registry/auth', () => {
       })
 
       expect(() => authModule.clearCredentials()).not.toThrow()
+    })
+
+    it('rethrows unexpected unlink errors', () => {
+      const epermError = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
+      epermError.code = 'EPERM'
+      vi.mocked(fs.unlinkSync).mockImplementation(() => {
+        throw epermError
+      })
+
+      expect(() => authModule.clearCredentials()).toThrow(epermError)
     })
   })
 

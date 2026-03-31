@@ -2,6 +2,7 @@ import { prisma } from '@agentver/database'
 import { createLogger } from '@agentver/shared'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { semverSchema } from '@/lib/api/validation'
 import { logAudit } from '@/lib/audit/logger'
 import { authenticateRequestWithDetails } from '@/lib/auth/api-auth'
 import { invalidateOnSkillWrite } from '@/lib/redis/invalidation'
@@ -40,11 +41,21 @@ export async function POST(
   }
 
   const { org, name, version } = await params
+  const parsedVersion = semverSchema.safeParse(version)
+  if (!parsedVersion.success) {
+    return NextResponse.json(
+      {
+        error: 'Validation failed',
+        details: { version: parsedVersion.error.issues.map((issue) => issue.message) },
+      },
+      { status: 400 }
+    )
+  }
   const { userId } = authResponse.result
 
   const pkgVersion = await prisma.packageVersion.findFirst({
     where: {
-      version,
+      version: parsedVersion.data,
       package: {
         name,
         organisation: { slug: org },
@@ -110,7 +121,7 @@ export async function POST(
     logger.error('Failed to deprecate version', {
       org,
       name,
-      version,
+      version: parsedVersion.data,
       error: error instanceof Error ? error.message : String(error),
     })
     return NextResponse.json({ error: 'Failed to deprecate version' }, { status: 500 })

@@ -45,9 +45,14 @@ vi.mock('../../storage/canonical', () => ({
   removeCanonicalDirectory: vi.fn(),
 }))
 
-vi.mock('../../storage/integrity', () => ({
-  computeSha256FromFiles: vi.fn(),
-}))
+vi.mock('../../storage/integrity', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../storage/integrity')>('../../storage/integrity')
+  return {
+    ...actual,
+    computeSha256FromFiles: vi.fn(),
+  }
+})
 
 vi.mock('../../security/index.js', () => ({
   scanFiles: vi.fn(),

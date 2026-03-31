@@ -50,9 +50,15 @@ vi.mock('../../storage/canonical.js', () => ({
   resolveReadPath: vi.fn(),
 }))
 
-vi.mock('../../storage/integrity', () => ({
-  computeSha256FromFiles: vi.fn(),
-}))
+vi.mock('../../storage/integrity', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../storage/integrity')>('../../storage/integrity')
+  return {
+    ...actual,
+    computeSha256FromFiles: vi.fn(),
+    deriveCommitFromIntegrity: vi.fn((integrity: string) => `derived-${integrity}`),
+  }
+})
 
 vi.mock('../../storage/patches.js', () => ({
   generatePatch: vi.fn(),
@@ -69,7 +75,6 @@ vi.mock('../../utils/backup', () => ({
 
 vi.mock('../../commands/install', () => ({
   installPackage: vi.fn(),
-  deriveCommitFromIntegrity: vi.fn((integrity: string) => `derived-${integrity}`),
 }))
 
 vi.mock('../../registry/auth.js', () => ({
@@ -626,6 +631,51 @@ describe('commands/update', () => {
         expect.any(String)
       )
       expect(patchesModule.removePatch).toHaveBeenCalledWith('/project', 'test-skill')
+    })
+
+    it('keeps the saved patch when reapplication reports conflicts', async () => {
+      const spinner = createNoopSpinner() as {
+        warn: ReturnType<typeof vi.fn>
+      } & Record<string, unknown>
+      vi.mocked(outputModule.createSpinner).mockReturnValue(
+        spinner as unknown as ReturnType<typeof outputModule.createSpinner>
+      )
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+      setupSinglePackage('test-skill')
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/project/.agents/skills/test-skill'
+      )
+      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: 'modified locally', size: 16 },
+      ])
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different')
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: createFetchedFiles(1),
+        commitSha: OLD_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(patchesModule.generatePatch).mockReturnValue('patch content')
+      vi.mocked(patchesModule.savePatch).mockReturnValue(
+        '/project/.agentver/patches/test-skill.patch'
+      )
+      vi.mocked(patchesModule.applyPatch).mockReturnValue({
+        applied: false,
+        conflicts: ['SKILL.md'],
+      })
+      vi.mocked(prompts)
+        .mockResolvedValueOnce({ confirmed: true })
+        .mockResolvedValueOnce({ action: 'patch' })
+
+      await updateAction('test-skill', {})
+
+      expect(patchesModule.removePatch).not.toHaveBeenCalled()
+      expect(spinner.warn).toHaveBeenCalledWith(
+        expect.stringContaining('patch had conflicts in: SKILL.md')
+      )
     })
   })
 

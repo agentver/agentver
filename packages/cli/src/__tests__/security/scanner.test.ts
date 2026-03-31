@@ -243,4 +243,31 @@ describe('scanFiles', () => {
     const result = await scanFiles(files, mockSource, {})
     expect(result.verdict).toBe('BLOCK')
   })
+
+  it('skips PT002 findings in markdown examples', async () => {
+    const files: FetchedFile[] = [
+      {
+        path: 'docs/README.md',
+        content: "Example: path.join(baseDir, '..', 'secrets.txt')",
+        size: 45,
+      },
+      {
+        path: 'src/index.ts',
+        content: "const target = path.join(baseDir, '..', 'secrets.txt')",
+        size: 53,
+      },
+    ]
+
+    const result = await scanFiles(files, mockSource, {})
+    expect(
+      result.findings.some(
+        (finding) => finding.file === 'docs/README.md' && finding.category === 'PATH_TRAVERSAL'
+      )
+    ).toBe(false)
+    expect(
+      result.findings.some(
+        (finding) => finding.file === 'src/index.ts' && finding.category === 'PATH_TRAVERSAL'
+      )
+    ).toBe(true)
+  })
 })

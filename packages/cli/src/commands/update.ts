@@ -15,9 +15,9 @@ import { fetchFiles, resolveRef } from '../git/index.js'
 import type { GitSource as CliGitSource, ResolvedRef } from '../git/types.js'
 import type { SpinnerLike } from '../output.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
-import { platformFetch } from '../registry/platform.js'
+import { type PlatformResolveResponse, platformFetch } from '../registry/platform.js'
 import { getCanonicalSkillPath, resolveReadPath } from '../storage/canonical.js'
-import { computeSha256FromFiles } from '../storage/integrity'
+import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
@@ -25,7 +25,7 @@ import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '..
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 import { extractError } from '../utils.js'
 import { fetchWellKnownIndex, fetchWellKnownSkill } from '../wellknown/index.js'
-import { deriveCommitFromIntegrity, installPackage } from './install'
+import { installPackage } from './install'
 
 type UpdateInfo = {
   name: string
@@ -40,14 +40,6 @@ type UpdateInfo = {
 }
 
 type UpdateAction = 'replace' | 'patch' | 'skip'
-
-type ResolveResponse = {
-  gitUri: string
-  gitPath?: string
-  gitRef?: string
-  source?: 'git' | 'platform'
-  files?: Array<{ path: string; content: string }>
-}
 
 /**
  * Validate a path read from the manifest before passing it to installPackage.
@@ -102,7 +94,7 @@ async function resolveLatestPlatformCommit(
   if (!org) return null
 
   const resolveName = source.path ? `${org}/${source.path}` : org
-  const resolved = await platformFetch<ResolveResponse>(
+  const resolved = await platformFetch<PlatformResolveResponse>(
     `/resolve?name=${encodeURIComponent(resolveName)}`
   )
 

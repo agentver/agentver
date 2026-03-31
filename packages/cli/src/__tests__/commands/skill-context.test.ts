@@ -102,6 +102,19 @@ describe('commands/skill-context', () => {
     })
   })
 
+  it('does not fall back to the skill path when fallbackToPath is false', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    expect(
+      resolveNamespace({
+        projectRoot: '/project',
+        skillDir: '/tmp/skills/acme-corp/search-console',
+        skillName: 'search-console',
+        fallbackToPath: false,
+      })
+    ).toBeNull()
+  })
+
   it('resolves the current skill identity from cwd fallback', () => {
     vi.mocked(fs.existsSync).mockReturnValue(false)
 

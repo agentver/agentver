@@ -16,6 +16,14 @@ export type PlatformSilentRequestOptions = PlatformRequestOptions & {
   rethrowAuthErrors?: boolean
 }
 
+export type PlatformResolveResponse = {
+  gitUri: string
+  gitPath?: string
+  gitRef?: string
+  source?: 'git' | 'platform'
+  files?: Array<{ path: string; content: string }>
+}
+
 export async function platformFetch<T>(
   path: string,
   options: PlatformRequestOptions = {}

@@ -129,6 +129,20 @@ describe('unpublish command', () => {
     })
   })
 
+  it('outputs UNPUBLISH_FAILED in JSON mode when the platform request fails', async () => {
+    setupIdentity()
+    vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+    vi.mocked(platformFetch).mockRejectedValue(new Error('platform offline'))
+
+    const program = buildProgram()
+    await expect(
+      program.parseAsync(['node', 'agentver', 'unpublish', '1.2.3', '--json'])
+    ).rejects.toThrow()
+
+    expect(outputModule.outputError).toHaveBeenCalledWith('UNPUBLISH_FAILED', 'platform offline')
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
   it('rejects invalid version strings', async () => {
     const { stderr } = captureOutput()
 

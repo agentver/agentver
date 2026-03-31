@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -47,6 +46,7 @@ import {
 } from '../output.js'
 import { getCredentials } from '../registry/auth.js'
 import { readConfig } from '../registry/config.js'
+import type { PlatformResolveResponse } from '../registry/platform.js'
 import { reportInstallation } from '../registry/reporter.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
@@ -56,7 +56,7 @@ import {
   getCanonicalSkillPath,
   type SkillPlacementConflict,
 } from '../storage/canonical'
-import { computeSha256FromFiles } from '../storage/integrity'
+import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readManifest } from '../storage/manifest'
 import { updateManifestAndLockfile } from '../storage/pair'
 import {
@@ -99,14 +99,6 @@ export type InstallResult = {
 }
 
 type InstalledPackageType = NonNullable<ManifestV2['packages'][string]['packageType']>
-
-type ResolveResponse = {
-  gitUri: string
-  gitPath: string
-  gitRef: string
-  source?: 'git' | 'platform'
-  files?: Array<{ path: string; content: string }>
-}
 
 type AgentverUri = {
   org: string
@@ -154,17 +146,7 @@ export function parseAgentverUri(source: string): AgentverUri | null {
   }
 }
 
-/**
- * Derive a synthetic 40-char hex commit SHA from an integrity hash.
- *
- * Platform-hosted packages have no real git commit, but the manifest schema
- * requires a valid commit string (min 7 chars). We produce a deterministic
- * SHA-1 hex digest from the integrity value so downstream commands that
- * display or compare commit hashes work correctly.
- */
-export function deriveCommitFromIntegrity(integrity: string): string {
-  return createHash('sha1').update(integrity).digest('hex')
-}
+export { deriveCommitFromIntegrity } from '../storage/integrity'
 
 function buildAuditData(scanResult?: SecurityScanResult): InstallResultJSON['audit'] {
   if (!scanResult) {
@@ -353,7 +335,7 @@ async function installFromWellKnown(
           integrity,
           jsonMode,
           projectRoot,
-          scope: scope as 'project' | 'global',
+          scope,
           ref: 'well-known',
           commitSha: '',
         })
@@ -437,13 +419,7 @@ async function installFromWellKnown(
       agents,
     }
     if (options.persist !== false) {
-      recordInstalledPackage(
-        projectRoot,
-        scope as 'project' | 'global',
-        selectedEntry.name,
-        manifestEntry,
-        lockfileEntry
-      )
+      recordInstalledPackage(projectRoot, scope, selectedEntry.name, manifestEntry, lockfileEntry)
     }
 
     const target = options.path ?? agents.join(', ')
@@ -503,7 +479,7 @@ async function installFromPlatform(
     const resolveName = parsed.path ? `${parsed.org}/${parsed.path}` : parsed.org
     spinner.text = `Resolving ${resolveName} via platform...`
 
-    const resolved = await fetchFromPlatform<ResolveResponse>(
+    const resolved = await fetchFromPlatform<PlatformResolveResponse>(
       config.platformUrl,
       `/resolve?name=${encodeURIComponent(resolveName)}`
     )

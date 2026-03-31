@@ -32,9 +32,15 @@ vi.mock('../../storage/canonical.js', () => ({
   getCanonicalSkillPath: vi.fn().mockReturnValue('/project/.agents/skills/test-skill'),
 }))
 
-vi.mock('../../commands/install.js', () => ({
-  deriveCommitFromIntegrity: vi.fn().mockReturnValue('draftcommit1234567890'),
-}))
+vi.mock('../../storage/integrity.js', async () => {
+  const actual = await vi.importActual<typeof import('../../storage/integrity.js')>(
+    '../../storage/integrity.js'
+  )
+  return {
+    ...actual,
+    deriveCommitFromIntegrity: vi.fn().mockReturnValue('draftcommit1234567890'),
+  }
+})
 
 vi.mock('chalk', () => {
   const identity = (s: string) => s

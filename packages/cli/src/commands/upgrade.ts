@@ -42,6 +42,9 @@ async function resolveTargetVersion(targetVersion?: string): Promise<string> {
     throw new Error(`Failed to resolve version ${targetVersion}: ${response.statusText}`)
   }
   const data = (await response.json()) as { version: string }
+  if (!SEMVER_REGEX.test(data.version)) {
+    throw new Error(`Registry returned invalid version "${data.version}".`)
+  }
   return data.version
 }
 

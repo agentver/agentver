@@ -251,6 +251,25 @@ describe('commands/upgrade', () => {
       expect(process.exit).toHaveBeenCalledWith(1)
     })
 
+    it('rejects an invalid version returned by the registry', async () => {
+      platformMock.addRoute({
+        method: 'GET',
+        path: /registry\.npmjs\.org/,
+        handler: () => mockFetchResponse(200, { version: 'latest' }),
+      })
+
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'upgrade', '--json']
+
+      await runUpgrade(['upgrade'])
+
+      expect(outputModule.outputError).toHaveBeenCalledWith(
+        'UPGRADE_FAILED',
+        'Registry returned invalid version "latest".'
+      )
+      expect(process.exit).toHaveBeenCalledWith(1)
+    })
+
     it('rejects invalid semver passed via --version before hitting the registry', async () => {
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'upgrade', '--json']

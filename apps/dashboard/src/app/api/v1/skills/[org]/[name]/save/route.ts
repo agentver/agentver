@@ -2,6 +2,7 @@ import { prisma } from '@agentver/database'
 import { createLogger } from '@agentver/shared'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { isValidGitRef } from '@/lib/api/validation'
 import { authenticateRequest } from '@/lib/auth/api-auth'
 import { getGitProvider } from '@/lib/git'
 
@@ -9,7 +10,7 @@ const logger = createLogger('api:save')
 
 const saveSchema = z.object({
   message: z.string().min(1, 'Commit message is required').max(500),
-  ref: z.string().min(1).optional(),
+  ref: z.string().min(1).refine(isValidGitRef, { message: 'Invalid ref format' }).optional(),
   files: z
     .array(
       z.object({

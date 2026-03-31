@@ -34,6 +34,7 @@ const FALLBACK_COMPLETION_METADATA: CompletionMetadata = {
     'init',
     'install',
     'list',
+    'migrate',
     'log',
     'login',
     'logout',

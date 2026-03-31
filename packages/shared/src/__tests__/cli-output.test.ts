@@ -5,6 +5,7 @@ import {
   auditResultSchema,
   cliErrorSchema,
   createCLIOutputSchema,
+  deprecateResultSchema,
   diffResultSchema,
   initResultSchema,
   installResultSchema,
@@ -18,6 +19,7 @@ import {
   searchResultSchema,
   statusResultSchema,
   syncResultSchema,
+  unpublishResultSchema,
   updateResultSchema,
   whoamiResultSchema,
 } from '../cli-output'
@@ -612,5 +614,46 @@ describe('adoptResultSchema', () => {
     })
     expect(result.adopted).toHaveLength(2)
     expect(result.skipped).toHaveLength(2)
+  })
+})
+
+describe('deprecateResultSchema', () => {
+  it('should accept package deprecation output', () => {
+    const result = deprecateResultSchema.parse({
+      skill: '@test-org/test-skill',
+      target: 'package',
+      status: 'DEPRECATED',
+      message: 'Use @test-org/new-skill instead',
+    })
+    expect(result.target).toBe('package')
+    expect(result.status).toBe('DEPRECATED')
+  })
+
+  it('should reject missing skill', () => {
+    const result = deprecateResultSchema.safeParse({
+      target: 'version',
+      status: 'DEPRECATED',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('unpublishResultSchema', () => {
+  it('should accept valid unpublish output', () => {
+    const result = unpublishResultSchema.parse({
+      skill: '@test-org/test-skill',
+      version: '1.2.3',
+      status: 'YANKED',
+    })
+    expect(result.version).toBe('1.2.3')
+    expect(result.status).toBe('YANKED')
+  })
+
+  it('should reject missing version', () => {
+    const result = unpublishResultSchema.safeParse({
+      skill: '@test-org/test-skill',
+      status: 'YANKED',
+    })
+    expect(result.success).toBe(false)
   })
 })

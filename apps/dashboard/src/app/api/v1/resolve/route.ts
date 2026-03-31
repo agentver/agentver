@@ -1,26 +1,11 @@
 import { prisma } from '@agentver/database'
 import { createLogger } from '@agentver/shared'
 import { NextResponse } from 'next/server'
+import { isValidGitRef } from '@/lib/api/validation'
 import { authenticateRequest } from '@/lib/auth/api-auth'
 import { getGitProvider } from '@/lib/git'
 
 const logger = createLogger('api:resolve')
-const REF_PATTERN = /^[a-zA-Z0-9/_.-]{1,200}$/
-const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/i
-
-function isValidGitRef(ref: string): boolean {
-  if (FULL_SHA_PATTERN.test(ref)) {
-    return true
-  }
-
-  return (
-    REF_PATTERN.test(ref) &&
-    !ref.includes('..') &&
-    !ref.startsWith('.') &&
-    !ref.endsWith('.') &&
-    !ref.includes('//')
-  )
-}
 
 /**
  * Shared include clause for package lookups — keeps both direct and
