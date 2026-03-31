@@ -20,6 +20,7 @@ import { registerListCommand } from '../src/commands/list'
 import { registerLogCommand } from '../src/commands/log'
 import { registerLoginCommand } from '../src/commands/login'
 import { registerLogoutCommand } from '../src/commands/logout'
+import { registerMigrateCommand } from '../src/commands/migrate'
 import { registerPinCommand, registerUnpinCommand } from '../src/commands/pin'
 import { registerPublishCommand } from '../src/commands/publish'
 import { registerRemoveCommand } from '../src/commands/remove'
@@ -85,6 +86,7 @@ registerListCommand(program)
 registerLogCommand(program)
 registerLoginCommand(program)
 registerLogoutCommand(program)
+registerMigrateCommand(program)
 registerPinCommand(program)
 registerPublishCommand(program)
 registerRemoveCommand(program)

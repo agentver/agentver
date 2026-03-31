@@ -11,6 +11,7 @@ export type AgentverErrorCode =
   | 'NO_FILES'
   | 'SECURITY_BLOCK'
   | 'AMBIGUOUS_SKILL'
+  | 'CONFIRMATION_REQUIRED'
   | 'CANCELLED'
   | 'INSTALL_FAILED'
   | 'DEPENDENCY_MISSING'

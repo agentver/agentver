@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
@@ -50,10 +50,21 @@ import { readConfig } from '../registry/config.js'
 import { reportInstallation } from '../registry/reporter.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
-import { createAgentSymlinks, getCanonicalSkillPath } from '../storage/canonical'
+import {
+  createAgentSymlinks,
+  findAgentSkillPlacementConflicts,
+  getCanonicalSkillPath,
+  type SkillPlacementConflict,
+} from '../storage/canonical'
 import { computeSha256FromFiles } from '../storage/integrity'
 import { readManifest } from '../storage/manifest'
 import { updateManifestAndLockfile } from '../storage/pair'
+import {
+  cleanupBackup,
+  createFilesystemBackup,
+  type FilesystemBackupState,
+  restoreFilesystemBackup,
+} from '../utils/backup'
 import { resolvePlacementPath } from '../utils/paths'
 import { extractError } from '../utils.js'
 import {
@@ -101,6 +112,13 @@ type AgentverUri = {
   org: string
   path: string
   ref: string
+}
+
+type ConfigWriteTarget = {
+  agentId: string
+  fullPath: string
+  content: string
+  requiresConfirmation: boolean
 }
 
 /**
@@ -391,7 +409,9 @@ async function installFromWellKnown(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedWkType === 'AGENT' || detectedWkType === 'COMMAND'
+      ...(detectedWkType === 'AGENT' ||
+      detectedWkType === 'COMMAND' ||
+      detectedWkType === 'AGENT_CONFIG'
         ? { packageType: detectedWkType, entryFile: installedWkEntryFile }
         : {}),
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
@@ -700,7 +720,9 @@ async function installFromPlatform(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedPlatformType === 'AGENT' || detectedPlatformType === 'COMMAND'
+      ...(detectedPlatformType === 'AGENT' ||
+      detectedPlatformType === 'COMMAND' ||
+      detectedPlatformType === 'AGENT_CONFIG'
         ? { packageType: detectedPlatformType, entryFile: installedPlatformEntryFile }
         : {}),
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
@@ -1019,7 +1041,7 @@ export async function installPackage(
       installedAt: new Date().toISOString(),
       modified: false,
       ...(options.path ? { path: resolve(projectRoot, options.path) } : {}),
-      ...(detectedType === 'AGENT' || detectedType === 'COMMAND'
+      ...(detectedType === 'AGENT' || detectedType === 'COMMAND' || detectedType === 'AGENT_CONFIG'
         ? { packageType: detectedType, entryFile: installedEntryFile }
         : {}),
       ...(depMeta.dependsOn.length > 0 ? { dependsOn: depMeta.dependsOn } : {}),
@@ -1130,6 +1152,60 @@ function detectPackageType(
   return 'SKILL'
 }
 
+function formatSkillPlacementConflicts(conflicts: SkillPlacementConflict[]): string {
+  return conflicts.map((conflict) => `${conflict.agentId}:${conflict.path}`).join(', ')
+}
+
+function formatConfigOverwriteTargets(targets: ConfigWriteTarget[]): string {
+  return targets.map((target) => `${target.agentId}:${target.fullPath}`).join(', ')
+}
+
+async function confirmOverwrite(
+  message: string,
+  options: InstallOptions,
+  spinner: ReturnType<typeof ora> | SpinnerLike
+): Promise<void> {
+  const jsonMode = isJSONMode()
+
+  if (jsonMode && !options.yes) {
+    throw new AgentverError(
+      'CONFIRMATION_REQUIRED' as import('@agentver/shared').AgentverErrorCode,
+      `${message} Re-run with --yes to continue.`
+    )
+  }
+
+  if (!jsonMode && !options.yes) {
+    spinner.stop()
+    const { proceed } = await prompts({
+      type: 'confirm',
+      name: 'proceed',
+      message,
+      initial: false,
+    })
+
+    if (!proceed) {
+      throw new AgentverError('CANCELLED', 'Installation cancelled by user')
+    }
+
+    spinner.start()
+  }
+}
+
+function backupExistingPaths(paths: string[]): FilesystemBackupState | null {
+  const existingPaths = [...new Set(paths)].filter((path) => existsSync(path))
+  if (existingPaths.length === 0) {
+    return null
+  }
+
+  return createFilesystemBackup(existingPaths)
+}
+
+function rollbackFilesystemBackup(backup: FilesystemBackupState | null): void {
+  if (!backup) return
+  restoreFilesystemBackup(backup)
+  cleanupBackup(backup)
+}
+
 async function installAgentConfig(
   name: string,
   files: FetchedFile[],
@@ -1159,6 +1235,7 @@ async function installAgentConfig(
   const configContent = contentFile.content
 
   const translations = translateConfig(configContent, name, agents as AgentId[])
+  const writeTargets: ConfigWriteTarget[] = []
 
   for (const translation of translations) {
     const fullConfigPath = options.global
@@ -1188,6 +1265,7 @@ async function installAgentConfig(
     }
 
     let finalContent = translation.content
+    let requiresConfirmation = false
     if (existsSync(fullConfigPath)) {
       const existingContent = readFileSync(fullConfigPath, 'utf-8')
 
@@ -1215,10 +1293,40 @@ async function installAgentConfig(
             ]
         const composed = composeConfigs(allConfigs)
         finalContent = composed.content
+      } else {
+        requiresConfirmation = true
       }
     }
 
-    writeFileSync(fullConfigPath, finalContent, 'utf-8')
+    writeTargets.push({
+      agentId: translation.agentId,
+      fullPath: fullConfigPath,
+      content: finalContent,
+      requiresConfirmation,
+    })
+  }
+
+  const overwriteTargets = writeTargets.filter((target) => target.requiresConfirmation)
+  if (overwriteTargets.length > 0) {
+    await confirmOverwrite(
+      `Installing ${name} will overwrite existing agent config files: ${formatConfigOverwriteTargets(overwriteTargets)}. Agentver will create a backup first. Continue?`,
+      options,
+      spinner
+    )
+  }
+
+  const backup = backupExistingPaths(writeTargets.map((target) => target.fullPath))
+
+  try {
+    for (const target of writeTargets) {
+      writeFileSync(target.fullPath, target.content, 'utf-8')
+    }
+    if (backup) {
+      cleanupBackup(backup)
+    }
+  } catch (error) {
+    rollbackFilesystemBackup(backup)
+    throw error
   }
 }
 
@@ -1281,29 +1389,56 @@ async function installStandardPackage(
 
   spinner.text = `Installing to canonical path and symlinking to ${agents.length} agent(s)...`
 
-  // Step 1: Write files to canonical directory
   const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
+  const placementConflicts = findAgentSkillPlacementConflicts(projectRoot, name, agents, scope)
 
-  if (!existsSync(canonicalPath)) {
+  if (placementConflicts.length > 0) {
+    await confirmOverwrite(
+      `Installing ${name} will replace existing unmanaged skill paths: ${formatSkillPlacementConflicts(placementConflicts)}. Agentver will create a backup first. Continue?`,
+      options,
+      spinner
+    )
+  }
+
+  const backup = backupExistingPaths([
+    canonicalPath,
+    ...placementConflicts.map((conflict) => conflict.path),
+  ])
+
+  try {
+    if (existsSync(canonicalPath)) {
+      rmSync(canonicalPath, { recursive: true, force: true })
+    }
+
+    for (const conflict of placementConflicts) {
+      rmSync(conflict.path, { recursive: true, force: true })
+    }
+
     mkdirSync(canonicalPath, { recursive: true })
-  }
 
-  for (const file of files) {
-    const resolvedFilePath = resolve(canonicalPath, file.path)
-    const relativePath = relative(canonicalPath, resolvedFilePath)
-    if (relativePath.startsWith('..') || resolve(resolvedFilePath) !== resolvedFilePath) {
-      continue
+    for (const file of files) {
+      const resolvedFilePath = resolve(canonicalPath, file.path)
+      const relativePath = relative(canonicalPath, resolvedFilePath)
+      if (relativePath.startsWith('..') || resolve(resolvedFilePath) !== resolvedFilePath) {
+        continue
+      }
+
+      const dir = dirname(resolvedFilePath)
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+      }
+      writeFileSync(resolvedFilePath, file.content, 'utf-8')
     }
 
-    const dir = dirname(resolvedFilePath)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-    writeFileSync(resolvedFilePath, file.content, 'utf-8')
-  }
+    createAgentSymlinks(projectRoot, name, agents, scope)
 
-  // Step 2: Create symlinks from each agent's skill path to the canonical directory
-  createAgentSymlinks(projectRoot, name, agents, scope)
+    if (backup) {
+      cleanupBackup(backup)
+    }
+  } catch (error) {
+    rollbackFilesystemBackup(backup)
+    throw error
+  }
 }
 
 async function installSingleFilePackage(
@@ -1468,7 +1603,7 @@ export function registerInstallCommand(program: Command): void {
       ...(previous ?? []),
       value,
     ])
-    .option('-y, --yes', 'Accept warning prompts non-interactively')
+    .option('-y, --yes', 'Accept warning and overwrite prompts non-interactively')
     .option('--global', 'Install at user level (~/.agents/skills/) — available across all projects')
     .option('--dry-run', 'Show what would be installed without making changes')
     .option('--path <path>', 'Override placement path (relative to cwd or absolute)')
