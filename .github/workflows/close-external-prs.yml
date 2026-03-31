@@ -1,0 +1,73 @@
+name: Close external PRs
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  check-author:
+    name: Verify PR author
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close if external contributor
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+            const association = pr.author_association;
+
+            // Allow org members, collaborators, and repo owner
+            const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (allowed.includes(association)) {
+              console.log(`${author} (${association}) — PR allowed`);
+              return;
+            }
+
+            // Allow bots (dependabot, renovate, etc.)
+            if (pr.user.type === 'Bot') {
+              console.log(`${author} is a bot — PR allowed`);
+              return;
+            }
+
+            // Close the PR with a friendly message
+            const { owner, repo } = context.repo;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body: [
+                `Thanks for your interest in Agentver, @${author}!`,
+                '',
+                "We're temporarily not accepting external pull requests due to ongoing supply chain security concerns across the open-source ecosystem.",
+                '',
+                `If you've found a bug or have a feature suggestion, please [open an issue](https://github.com/${owner}/${repo}/issues/new) instead — we actively review and respond to those.`,
+                '',
+                'Apologies for the inconvenience, and thanks for understanding.',
+              ].join('\n'),
+            });
+
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number: pr.number,
+              state: 'closed',
+            });
+
+            // Add a label for tracking
+            try {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pr.number,
+                labels: ['external-blocked'],
+              });
+            } catch {
+              // Label may not exist yet — that's fine
+            }
+
+            console.log(`Closed external PR #${pr.number} from ${author} (${association})`);
