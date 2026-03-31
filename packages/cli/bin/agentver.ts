@@ -9,6 +9,7 @@ import { registerAgentsCommand } from '../src/commands/agents'
 import { registerAuditCommand } from '../src/commands/audit'
 import { registerCompletionCommand } from '../src/commands/completion'
 import { registerConfigCommand } from '../src/commands/config'
+import { registerDeprecateCommand } from '../src/commands/deprecate'
 import { registerDiffCommand } from '../src/commands/diff'
 import { registerDoctorCommand } from '../src/commands/doctor'
 import { registerDraftCommand } from '../src/commands/draft'
@@ -29,6 +30,7 @@ import { registerStatusCommand } from '../src/commands/status'
 import { registerSuggestCommand } from '../src/commands/suggest'
 import { registerSuggestionsCommand } from '../src/commands/suggestions'
 import { registerSyncCommand } from '../src/commands/sync'
+import { registerUnpublishCommand } from '../src/commands/unpublish'
 import { registerUpdateCommand } from '../src/commands/update'
 import { registerUpgradeCommand } from '../src/commands/upgrade'
 import { registerValidateCommand } from '../src/commands/validate'
@@ -72,6 +74,7 @@ registerAgentsCommand(program)
 registerAuditCommand(program)
 registerCompletionCommand(program)
 registerConfigCommand(program)
+registerDeprecateCommand(program)
 registerDiffCommand(program)
 registerDoctorCommand(program)
 registerDraftCommand(program)
@@ -93,6 +96,7 @@ registerSuggestCommand(program)
 registerSuggestionsCommand(program)
 registerSyncCommand(program)
 registerUnpinCommand(program)
+registerUnpublishCommand(program)
 registerUpdateCommand(program)
 registerUpgradeCommand(program)
 registerValidateCommand(program)

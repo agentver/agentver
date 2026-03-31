@@ -418,6 +418,24 @@ export const versionListResultSchema = z.object({
 
 export type VersionListResult = z.infer<typeof versionListResultSchema>
 
+export const deprecateResultSchema = z.object({
+  skill: z.string(),
+  target: z.enum(['package', 'version']),
+  version: z.string().optional(),
+  status: z.literal('DEPRECATED'),
+  message: z.string().optional(),
+})
+
+export type DeprecateResult = z.infer<typeof deprecateResultSchema>
+
+export const unpublishResultSchema = z.object({
+  skill: z.string(),
+  version: z.string(),
+  status: z.literal('YANKED'),
+})
+
+export type UnpublishResult = z.infer<typeof unpublishResultSchema>
+
 export const upgradeResultSchema = z.object({
   current: z.string().optional(),
   previous: z.string(),
