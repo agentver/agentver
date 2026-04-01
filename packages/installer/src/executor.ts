@@ -7,6 +7,7 @@ import {
 } from '@agentver/storage'
 import { createFilesystemBackup, restoreFilesystemBackup } from './backup'
 import { resolveCanonicalCategory } from './canonical'
+import { cleanupExpiredBackups, createPersistentBackup } from './persistent-backup'
 import { createAgentPlacements } from './placement'
 import { planInstall } from './planner'
 import type {
@@ -70,6 +71,23 @@ export function executeInstall(plan: InstallPlan): InstallResult {
     if (backupsRequired.length > 0) {
       const pathsToBackup = backupsRequired.map((b) => b.originalPath)
       const firstBackup = backupsRequired[0]
+
+      // Create persistent backup for user recovery
+      createPersistentBackup(
+        request.target.projectRoot,
+        request.target.scope,
+        request.packageKey,
+        request.displayName,
+        pathsToBackup,
+        firstBackup?.reason ?? 'conflict-replace',
+        manifestEntry,
+        lockfileEntry
+      )
+
+      // Run retention cleanup after creating a new backup
+      cleanupExpiredBackups(request.target.projectRoot, request.target.scope)
+
+      // Create temp backup for crash rollback
       const handle = createFilesystemBackup(
         pathsToBackup,
         firstBackup?.reason ?? 'conflict-replace'

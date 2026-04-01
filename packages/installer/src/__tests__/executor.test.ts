@@ -18,13 +18,30 @@ const mockUpdateManifestAndLockfile = vi.fn()
 const mockSetManifestPackage = vi.fn()
 const mockSetLockfilePackage = vi.fn()
 
-vi.mock('@agentver/storage', () => ({
-  computeIntegrity: vi.fn().mockReturnValue('sha256-disc-hash'),
-  getDisplayName: vi.fn((key: string, pkg: { name?: string }) => pkg.name?.trim() || key),
-  updateManifestAndLockfile: (...args: unknown[]) => mockUpdateManifestAndLockfile(...args),
-  setManifestPackage: (...args: unknown[]) => mockSetManifestPackage(...args),
-  setLockfilePackage: (...args: unknown[]) => mockSetLockfilePackage(...args),
-}))
+vi.mock('@agentver/storage', () => {
+  const { join } = require('node:path') as typeof import('node:path')
+  const { writeFileSync, renameSync, mkdirSync, existsSync } =
+    require('node:fs') as typeof import('node:fs')
+
+  return {
+    computeIntegrity: vi.fn().mockReturnValue('sha256-disc-hash'),
+    getDisplayName: vi.fn((key: string, pkg: { name?: string }) => pkg.name?.trim() || key),
+    updateManifestAndLockfile: (...args: unknown[]) => mockUpdateManifestAndLockfile(...args),
+    setManifestPackage: (...args: unknown[]) => mockSetManifestPackage(...args),
+    setLockfilePackage: (...args: unknown[]) => mockSetLockfilePackage(...args),
+    getStorageRoot: vi.fn((projectRoot: string, scope: string) => {
+      if (scope === 'global') return join('/home/testuser', '.agentver')
+      return join(projectRoot, '.agentver')
+    }),
+    writeJsonFileAtomic: vi.fn((filePath: string, value: unknown) => {
+      const dir = require('node:path').dirname(filePath) as string
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      const tmpPath = `${filePath}.tmp`
+      writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`)
+      renameSync(tmpPath, filePath)
+    }),
+  }
+})
 
 vi.mock('node:os', async () => {
   const actual = await vi.importActual<typeof import('node:os')>('node:os')

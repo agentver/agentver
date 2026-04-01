@@ -17,6 +17,17 @@ export {
 export { detectConflicts, isAgentverManagedSymlink } from './conflict'
 // --- Execution ---
 export { executeInstall, executeRestore, rollbackInstall } from './executor'
+export type { PersistentBackupHandle } from './persistent-backup'
+// --- Persistent backup ---
+export {
+  cleanupExpiredBackups,
+  createPersistentBackup,
+  deleteBackup,
+  getBackupStorageSize,
+  listBackups,
+  readBackupIndex,
+  restorePersistentBackup,
+} from './persistent-backup'
 // --- Placement ---
 export {
   createAgentPlacements,

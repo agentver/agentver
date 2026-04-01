@@ -29,10 +29,21 @@ vi.mock('../../storage/pair', () => ({
 
 vi.mock('../../storage/integrity', () => ({
   computeSha256FromBuffer: vi.fn().mockReturnValue('sha256-test-hash'),
+  computeSha256FromFiles: vi.fn().mockReturnValue('sha256-test-hash'),
 }))
 
-vi.mock('node:fs', () => ({
-  readFileSync: vi.fn().mockReturnValue('test content'),
+vi.mock('../../git/fetcher.js', () => ({
+  readFilesFromDirectory: vi
+    .fn()
+    .mockResolvedValue([{ path: 'SKILL.md', content: '# Test', size: 6 }]),
+}))
+
+vi.mock('../../git/local-context.js', () => ({
+  resolveLocalGitContext: vi.fn().mockResolvedValue(null),
+  createGitRepoCache: vi.fn().mockReturnValue({
+    roots: new Map(),
+    repos: new Map(),
+  }),
 }))
 
 vi.mock('node:os', () => ({
@@ -52,6 +63,8 @@ vi.mock('../../output.js', () => ({
 
 import * as agentDefs from '@agentver/agent-definitions'
 import { adoptSkills } from '../../commands/adopt'
+import type { LocalGitContext } from '../../git/local-context'
+import * as localContextModule from '../../git/local-context.js'
 import * as outputModule from '../../output.js'
 import * as lockfileModule from '../../storage/lockfile'
 import * as manifestModule from '../../storage/manifest'
@@ -82,6 +95,20 @@ function getStoredLockfilePackage(lockfile: ReturnType<typeof createLockfile>, n
   const lookup = resolvePackageQuery(lockfile.packages, name)
   expect(lookup.ok).toBe(true)
   return lookup.ok ? lookup.pkg : undefined
+}
+
+function createMockGitContext(overrides?: Partial<LocalGitContext>): LocalGitContext {
+  return {
+    gitRoot: '/project',
+    remoteUri: 'github.com/test-org/test-repo',
+    remoteName: 'origin',
+    ref: 'main',
+    commit: 'abc1234567890abcdef1234567890abcdef12345678',
+    relativePath: '.claude/skills/test-skill',
+    dirty: false,
+    isSubmodule: false,
+    ...overrides,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +144,7 @@ describe('commands/adopt', () => {
     )
     vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([])
     vi.mocked(agentDefs.scanGlobalSkillFiles).mockReturnValue([])
+    vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -360,6 +388,110 @@ describe('commands/adopt', () => {
       await adoptSkills(undefined, {})
 
       expect(manifestModule.writeManifest).not.toHaveBeenCalled()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 9. Git-aware adoption
+  // -------------------------------------------------------------------------
+
+  describe('git-aware adoption', () => {
+    it('records git source when skill is in a repo with remote', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+
+      vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(createMockGitContext())
+
+      await adoptSkills(undefined, {})
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const pkg = getStoredManifestPackage(manifest, 'test-skill')
+      expect(pkg?.source.type).toBe('git')
+      if (pkg?.source.type === 'git') {
+        expect(pkg.source.uri).toBe('github.com/test-org/test-repo')
+        expect(pkg.source.ref).toBe('main')
+        expect(pkg.source.commit).toMatch(/^[a-f0-9]{40}/)
+      }
+    })
+
+    it('falls back to local source when not in a git repo', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(null)
+
+      await adoptSkills(undefined, {})
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const pkg = getStoredManifestPackage(manifest, 'test-skill')
+      expect(pkg?.source.type).toBe('local')
+    })
+
+    it('falls back to local source when repo has no remote', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(
+        createMockGitContext({
+          remoteUri: null,
+          remoteName: null,
+        })
+      )
+
+      await adoptSkills(undefined, {})
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const pkg = getStoredManifestPackage(manifest, 'test-skill')
+      expect(pkg?.source.type).toBe('local')
+    })
+
+    it('sets modified: true when skill has uncommitted changes', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(
+        createMockGitContext({ dirty: true })
+      )
+
+      await adoptSkills(undefined, {})
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const pkg = getStoredManifestPackage(manifest, 'test-skill')
+      expect(pkg?.modified).toBe(true)
+    })
+
+    it('sets modified: false when skill is clean', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(
+        createMockGitContext({ dirty: false })
+      )
+
+      await adoptSkills(undefined, {})
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      const pkg = getStoredManifestPackage(manifest, 'test-skill')
+      expect(pkg?.modified).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 10. Full-package integrity
+  // -------------------------------------------------------------------------
+
+  describe('full-package integrity', () => {
+    it('computes integrity from all files via readFilesFromDirectory', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+
+      await adoptSkills(undefined, {})
+
+      expect(lockfileModule.writeLockfile).toHaveBeenCalledTimes(1)
+      const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
+      const pkg = getStoredLockfilePackage(lockfile, 'test-skill')
+      expect(pkg?.integrity).toBe('sha256-test-hash')
     })
   })
 })

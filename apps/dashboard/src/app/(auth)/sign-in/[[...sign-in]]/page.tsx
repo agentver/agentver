@@ -13,6 +13,7 @@ function SignInContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const passwordReset = searchParams.get('reset') === 'success'
+  const redirectUrl = searchParams.get('redirect_url') ?? '/'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -31,11 +32,11 @@ function SignInContent() {
       return
     }
 
-    router.push('/')
+    router.push(redirectUrl)
   }
 
   async function handleSocial(provider: 'github' | 'google') {
-    await signIn.social({ provider, callbackURL: '/' })
+    await signIn.social({ provider, callbackURL: redirectUrl })
   }
 
   return (

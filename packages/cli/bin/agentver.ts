@@ -7,6 +7,8 @@ import updateNotifier from 'update-notifier'
 import { registerAdoptCommand } from '../src/commands/adopt'
 import { registerAgentsCommand } from '../src/commands/agents'
 import { registerAuditCommand } from '../src/commands/audit'
+import { registerBackupCommand } from '../src/commands/backup'
+import { registerCiCommand } from '../src/commands/ci'
 import { registerCompletionCommand } from '../src/commands/completion'
 import { registerConfigCommand } from '../src/commands/config'
 import { registerDeprecateCommand } from '../src/commands/deprecate'
@@ -22,6 +24,7 @@ import { registerLoginCommand } from '../src/commands/login'
 import { registerLogoutCommand } from '../src/commands/logout'
 import { registerMigrateCommand } from '../src/commands/migrate'
 import { registerPinCommand, registerUnpinCommand } from '../src/commands/pin'
+import { registerPromoteCommand } from '../src/commands/promote'
 import { registerPublishCommand } from '../src/commands/publish'
 import { registerRemoveCommand } from '../src/commands/remove'
 import { registerSaveCommand } from '../src/commands/save'
@@ -73,6 +76,8 @@ program
 registerAdoptCommand(program)
 registerAgentsCommand(program)
 registerAuditCommand(program)
+registerBackupCommand(program)
+registerCiCommand(program)
 registerCompletionCommand(program)
 registerConfigCommand(program)
 registerDeprecateCommand(program)
@@ -88,6 +93,7 @@ registerLoginCommand(program)
 registerLogoutCommand(program)
 registerMigrateCommand(program)
 registerPinCommand(program)
+registerPromoteCommand(program)
 registerPublishCommand(program)
 registerRemoveCommand(program)
 registerSaveCommand(program)

@@ -16,6 +16,8 @@ export type AgentverErrorCode =
   | 'INSTALL_FAILED'
   | 'DEPENDENCY_MISSING'
   | 'CONFLICT_DETECTED'
+  | 'BACKUP_FAILED'
+  | 'RESTORE_FAILED'
 
 export class AgentverError extends Error {
   readonly code: AgentverErrorCode

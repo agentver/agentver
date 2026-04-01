@@ -11,8 +11,17 @@ import {
   parseComposedSections,
   translateConfig,
 } from '@agentver/agent-definitions'
-import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
-import type { InstallResult as InstallResultJSON } from '@agentver/shared'
+import {
+  executeInstall,
+  executeRestore,
+  type InstallRequest,
+  planInstall,
+  planRestore,
+  type RestoreEntry,
+  type RestoreFetcher,
+  type RestorePolicy,
+} from '@agentver/installer'
+import type { InstallResult as InstallResultJSON, RestoreResultOutput } from '@agentver/shared'
 import {
   AGENT_CONFIG_FILES,
   AgentverError,
@@ -53,6 +62,7 @@ import { renderScanResult, scanFiles } from '../security/index.js'
 import type { ScanResult as SecurityScanResult } from '../security/types.js'
 import { getCanonicalSkillPath } from '../storage/canonical'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
+import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
 import { setLockfilePackage, setManifestPackage } from '../storage/package-identity'
 import { updateManifestAndLockfile } from '../storage/pair'
@@ -83,6 +93,9 @@ export type InstallOptions = {
   skipAudit?: boolean
   type?: 'agent' | 'command'
   persist?: boolean
+  force?: boolean
+  offline?: boolean
+  concurrency?: number
 }
 
 export type InstallResult = {
@@ -1644,10 +1657,394 @@ async function installBundleFlow(
   return { name: bundleName, ref, commitSha, agents }
 }
 
+// ---------------------------------------------------------------------------
+// Restore mode — bare `install` without a source argument
+// ---------------------------------------------------------------------------
+
+function buildRestoreFetcher(): RestoreFetcher {
+  return async (entry: RestoreEntry) => {
+    const { manifestEntry } = entry
+    const source = manifestEntry.source
+
+    switch (entry.fetchStrategy) {
+      case 'git': {
+        if (source.type !== 'git') {
+          throw new AgentverError(
+            'VALIDATION_ERROR',
+            `Expected git source for ${entry.displayName}, got ${source.type}`
+          )
+        }
+
+        const gitSourceParsed = parseGitSource(
+          source.path ? `${source.uri}/${source.path}@${source.ref}` : `${source.uri}@${source.ref}`
+        )
+
+        const resolved = await resolveRef(
+          source.commit ? { ...gitSourceParsed, commit: source.commit } : gitSourceParsed
+        )
+
+        const fetchResult = await fetchFiles(resolved, {
+          expectedIntegrity: entry.lockfileEntry?.integrity,
+        })
+
+        if (fetchResult.files.length === 0) {
+          throw new AgentverError(
+            'NO_FILES',
+            `No files fetched for ${entry.displayName} from ${source.uri}`
+          )
+        }
+
+        const integrity = computeSha256FromFiles(fetchResult.files)
+
+        return {
+          files: fetchResult.files.map((f) => ({ path: f.path, content: f.content })),
+          integrity,
+        }
+      }
+
+      case 'well-known': {
+        if (source.type !== 'well-known') {
+          throw new AgentverError(
+            'VALIDATION_ERROR',
+            `Expected well-known source for ${entry.displayName}, got ${source.type}`
+          )
+        }
+
+        const index = await fetchWellKnownIndex(source.baseUrl)
+        const indexEntry = source.skillName
+          ? index.skills.find((s) => s.name === source.skillName)
+          : index.skills[0]
+
+        if (!indexEntry) {
+          throw new AgentverError(
+            'NOT_FOUND',
+            `Skill "${source.skillName ?? entry.displayName}" not found at ${source.hostname}`
+          )
+        }
+
+        const wkResult = await fetchWellKnownSkill(source.baseUrl, indexEntry)
+
+        if (wkResult.files.length === 0) {
+          throw new AgentverError(
+            'NO_FILES',
+            `No files fetched for ${entry.displayName} from ${source.hostname}`
+          )
+        }
+
+        const integrity = computeSha256FromFiles(wkResult.files)
+
+        return {
+          files: wkResult.files.map((f) => ({ path: f.path, content: f.content })),
+          integrity,
+        }
+      }
+
+      case 'platform': {
+        if (source.type !== 'platform') {
+          throw new AgentverError(
+            'VALIDATION_ERROR',
+            `Expected platform source for ${entry.displayName}, got ${source.type}`
+          )
+        }
+
+        const config = readConfig()
+        if (!config.platformUrl) {
+          throw new AgentverError(
+            'VALIDATION_ERROR',
+            `Platform connection required to restore ${entry.displayName}. Run: agentver login`
+          )
+        }
+
+        const resolveName = source.path
+          ? `${source.uri.replace('agentver://', '')}/${source.path}`
+          : source.uri.replace('agentver://', '')
+
+        const resolved = await fetchFromPlatform<PlatformResolveResponse>(
+          config.platformUrl,
+          `/resolve?name=${encodeURIComponent(resolveName)}`
+        )
+
+        if (resolved.source !== 'platform' || !resolved.files?.length) {
+          // If it resolves to git, delegate to the git fetcher path
+          if (resolved.source !== 'platform' && resolved.gitUri) {
+            let fullGitSource = resolved.gitPath
+              ? `${resolved.gitUri}/${resolved.gitPath}`
+              : resolved.gitUri
+            if (resolved.gitRef) {
+              fullGitSource += `@${resolved.gitRef}`
+            }
+
+            const gitSourceParsed = parseGitSource(fullGitSource)
+            const gitResolved = await resolveRef(gitSourceParsed)
+            const fetchResult = await fetchFiles(gitResolved, {
+              expectedIntegrity: entry.lockfileEntry?.integrity,
+            })
+
+            if (fetchResult.files.length === 0) {
+              throw new AgentverError(
+                'NO_FILES',
+                `No files fetched for ${entry.displayName} from platform git source`
+              )
+            }
+
+            const integrity = computeSha256FromFiles(fetchResult.files)
+            return {
+              files: fetchResult.files.map((f) => ({ path: f.path, content: f.content })),
+              integrity,
+            }
+          }
+
+          throw new AgentverError(
+            'NOT_FOUND',
+            `No files returned by platform for ${entry.displayName}`
+          )
+        }
+
+        const files = resolved.files.map((f) => ({
+          path: f.path,
+          content: f.content,
+        }))
+
+        const integrity = computeSha256FromFiles(
+          files.map((f) => ({ ...f, size: new TextEncoder().encode(f.content).length }))
+        )
+
+        return { files, integrity }
+      }
+
+      default:
+        throw new AgentverError(
+          'VALIDATION_ERROR',
+          `Unknown fetch strategy for ${entry.displayName}`
+        )
+    }
+  }
+}
+
+function formatRestoreStatus(
+  status: 'installed' | 'up-to-date' | 'skipped' | 'failed' | 'integrity-mismatch'
+): string {
+  switch (status) {
+    case 'installed':
+      return chalk.green('\u2713')
+    case 'up-to-date':
+      return chalk.dim('-')
+    case 'skipped':
+      return chalk.dim('-')
+    case 'failed':
+      return chalk.red('\u2717')
+    case 'integrity-mismatch':
+      return chalk.red('\u2717')
+  }
+}
+
+function formatRestoreStatusLabel(
+  status: 'installed' | 'up-to-date' | 'skipped' | 'failed' | 'integrity-mismatch',
+  extra?: { agents?: string[]; filesPlacedCount?: number; reason?: string; error?: string }
+): string {
+  switch (status) {
+    case 'installed': {
+      const parts: string[] = ['installed']
+      if (extra?.filesPlacedCount !== undefined) {
+        parts.push(`${extra.filesPlacedCount} file${extra.filesPlacedCount === 1 ? '' : 's'}`)
+      }
+      if (extra?.agents?.length) {
+        parts.push(`${extra.agents.length} agent${extra.agents.length === 1 ? '' : 's'}`)
+      }
+      return `${parts[0]} [${parts.slice(1).join(', ')}]`
+    }
+    case 'up-to-date':
+      return 'up to date'
+    case 'skipped':
+      return `skipped (${extra?.reason ?? 'unknown'})`
+    case 'failed':
+      return `failed (${extra?.error ?? 'unknown error'})`
+    case 'integrity-mismatch':
+      return 'failed (integrity mismatch)'
+  }
+}
+
+export async function restoreFromManifest(options: InstallOptions): Promise<void> {
+  const jsonMode = isJSONMode()
+  const projectRoot = process.cwd()
+  const scope = options.global ? 'global' : 'project'
+
+  const manifest = readManifest(projectRoot, scope)
+  const lockfile = readLockfile(projectRoot, scope)
+
+  const packageCount = Object.keys(manifest.packages).length
+
+  if (packageCount === 0) {
+    if (jsonMode) {
+      const result: RestoreResultOutput = {
+        type: 'RESTORE_COMPLETE',
+        packages: [],
+        installedCount: 0,
+        upToDateCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        success: true,
+      }
+      outputSuccess(result)
+    } else {
+      const spinner = createSpinner('Checking manifest...').start()
+      spinner.info('No packages found in manifest')
+    }
+    return
+  }
+
+  const spinner = createSpinner(`Planning restore of ${packageCount} package(s)...`).start()
+
+  const requestedAgents = toAgentList(options.agent)
+
+  const policy: RestorePolicy = {
+    projectRoot,
+    scope,
+    agents: requestedAgents,
+    preferredLinkMode: 'symlink',
+    allowFallback: true,
+    force: options.force ?? false,
+    concurrency: options.concurrency ?? 4,
+    offline: options.offline ?? false,
+    securityScanPolicy: options.skipAudit ? 'skip' : 'warn-only',
+  }
+
+  const plan = planRestore(manifest, lockfile, policy)
+
+  // Filter out network-requiring packages in offline mode
+  if (options.offline) {
+    const networkEntries = plan.toInstall.filter(
+      (e) =>
+        e.fetchStrategy === 'platform' ||
+        e.fetchStrategy === 'well-known' ||
+        e.fetchStrategy === 'git'
+    )
+    for (const entry of networkEntries) {
+      plan.toSkip.push({
+        packageKey: entry.packageKey,
+        displayName: entry.displayName,
+        reason: 'Requires network access (--offline)',
+      })
+    }
+    plan.toInstall.length = 0
+  }
+
+  if (!jsonMode) {
+    spinner.info(
+      `${plan.toInstall.length} to install, ${plan.upToDate.length} up to date, ${plan.toSkip.length} skipped`
+    )
+
+    for (const skip of plan.toSkip) {
+      const skipSpinner = createSpinner('')
+      skipSpinner.warn(`Skipping ${skip.displayName}: ${skip.reason}`)
+    }
+  }
+
+  if (plan.toInstall.length === 0) {
+    if (jsonMode) {
+      const result: RestoreResultOutput = {
+        type: 'RESTORE_COMPLETE',
+        packages: [
+          ...plan.upToDate.map((e) => ({
+            packageKey: e.packageKey,
+            displayName: e.displayName,
+            status: 'up-to-date' as const,
+            agents: e.manifestEntry.agents,
+          })),
+          ...plan.toSkip.map((s) => ({
+            packageKey: s.packageKey,
+            displayName: s.displayName,
+            status: 'skipped' as const,
+            reason: s.reason,
+          })),
+        ],
+        installedCount: 0,
+        upToDateCount: plan.upToDate.length,
+        skippedCount: plan.toSkip.length,
+        failedCount: 0,
+        success: true,
+      }
+      outputSuccess(result)
+    } else {
+      const doneSpinner = createSpinner('')
+      doneSpinner.succeed('All packages are up to date')
+    }
+    return
+  }
+
+  const restoreSpinner = createSpinner(
+    `Restoring ${plan.toInstall.length} package(s) from manifest...`
+  ).start()
+
+  const fetcher = buildRestoreFetcher()
+  const restoreResult = await executeRestore(plan, fetcher)
+
+  restoreSpinner.stop()
+
+  if (jsonMode) {
+    const result: RestoreResultOutput = {
+      type: 'RESTORE_COMPLETE',
+      packages: restoreResult.packages.map((p) => ({
+        packageKey: p.packageKey,
+        displayName: p.displayName,
+        status: p.status,
+        agents: p.agents,
+        filesPlacedCount: p.filesPlacedCount,
+        reason: p.reason,
+        error: p.error,
+      })),
+      installedCount: restoreResult.installedCount,
+      upToDateCount: restoreResult.upToDateCount,
+      skippedCount: restoreResult.skippedCount,
+      failedCount: restoreResult.failedCount,
+      success: restoreResult.success,
+    }
+    outputSuccess(result)
+  } else {
+    for (const pkg of restoreResult.packages) {
+      const icon = formatRestoreStatus(pkg.status)
+      const label = formatRestoreStatusLabel(pkg.status, {
+        agents: pkg.agents,
+        filesPlacedCount: pkg.filesPlacedCount,
+        reason: pkg.reason,
+        error: pkg.error,
+      })
+
+      process.stderr.write(`  ${icon} ${chalk.white(pkg.displayName)} \u2014 ${label}\n`)
+    }
+
+    process.stderr.write('\n')
+    const summaryParts: string[] = []
+    if (restoreResult.installedCount > 0) {
+      summaryParts.push(`${restoreResult.installedCount} installed`)
+    }
+    if (restoreResult.upToDateCount > 0) {
+      summaryParts.push(`${restoreResult.upToDateCount} up to date`)
+    }
+    if (restoreResult.skippedCount > 0) {
+      summaryParts.push(`${restoreResult.skippedCount} skipped`)
+    }
+    if (restoreResult.failedCount > 0) {
+      summaryParts.push(`${restoreResult.failedCount} failed`)
+    }
+
+    const summarySpinner = createSpinner('')
+    if (restoreResult.success) {
+      summarySpinner.succeed(`Restored: ${summaryParts.join(', ')}`)
+    } else {
+      summarySpinner.fail(`Restore completed with failures: ${summaryParts.join(', ')}`)
+    }
+  }
+
+  if (!restoreResult.success) {
+    process.exitCode = 1
+  }
+}
+
 export function registerInstallCommand(program: Command): void {
   program
-    .command('install <source>')
-    .description('Install a skill from a Git repository or well-known domain')
+    .command('install [source]')
+    .description('Install a skill from a source, or restore all packages from manifest (no args)')
     .option('--agent <agent>', 'Target specific agent', (value: string, previous?: string[]) => [
       ...(previous ?? []),
       value,
@@ -1659,6 +2056,13 @@ export function registerInstallCommand(program: Command): void {
     .option('--no-detect', 'Skip agent auto-detection (requires --agent)')
     .option('--skip-audit', 'Skip the security scan')
     .option('--type <type>', 'Package type override (agent, command)')
+    .option('--force', 'Reinstall all packages, ignoring up-to-date checks (restore mode)')
+    .option('--offline', 'Skip packages requiring network access (restore mode)')
+    .option(
+      '--concurrency <n>',
+      'Max concurrent fetches during restore (default: 4)',
+      Number.parseInt
+    )
     .addHelpText(
       'after',
       `
@@ -1669,19 +2073,23 @@ Source formats:
   gitlab.com/owner/repo              GitLab repositories
   example.com/my-skill               Well-known domain (RFC-style discovery)
   agentver://org/skills/name@ref     Platform-hosted skill
-  org/bundle-name                    Bundle (auto-detected from agentver.bundle.yaml)`
+  org/bundle-name                    Bundle (auto-detected from agentver.bundle.yaml)
+
+When called without a source, restores all packages from the manifest.`
     )
-    .action(async (source: string, options: InstallOptions) => {
+    .action(async (source: string | undefined, options: InstallOptions) => {
       try {
-        await installPackage(source, options)
+        if (source) {
+          await installPackage(source, options)
+        } else {
+          await restoreFromManifest(options)
+        }
       } catch (error) {
         const jsonMode = isJSONMode()
         const { code, message } = extractError(error, 'INSTALL_FAILED')
         if (jsonMode) {
           outputError(code, message)
         } else if (code !== 'CANCELLED') {
-          // spinner.fail() is called before throwing in all install paths,
-          // but write to stderr as a safety net for any path that misses it
           process.stderr.write(`${message}\n`)
         }
         process.exit(code === 'CANCELLED' ? 0 : 1)
