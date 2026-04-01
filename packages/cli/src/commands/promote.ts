@@ -4,6 +4,8 @@ import { detectInstalledAgents } from '@agentver/agent-definitions'
 import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
 import type {
   LocalSource,
+  LockfileV2,
+  ManifestV2,
   PackageSource,
   PlatformSource,
   PromoteResult,
@@ -357,18 +359,8 @@ async function canonicalisePackage(
  * Moves the package from its old key to a new key derived from the new source.
  */
 function applyPromoteEntry(
-  currentManifest: {
-    packages: Record<
-      string,
-      { source: PackageSource; modified: boolean; name?: string } & Record<string, unknown>
-    >
-  },
-  currentLockfile: {
-    packages: Record<
-      string,
-      { source: PackageSource; integrity: string; name?: string } & Record<string, unknown>
-    >
-  },
+  currentManifest: ManifestV2,
+  currentLockfile: LockfileV2,
   entry: PromoteEntry
 ): void {
   const manifestPkg = currentManifest.packages[entry.packageKey]

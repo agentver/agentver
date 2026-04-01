@@ -4,6 +4,13 @@ import { isJSONMode, outputError, outputSuccess } from '../output.js'
 import { extractError } from '../utils.js'
 import { restoreFromManifest } from './install.js'
 
+type CiOptions = {
+  agent?: string | string[]
+  global?: boolean
+  skipAudit?: boolean
+  concurrency?: number
+}
+
 export function registerCiCommand(program: Command): void {
   program
     .command('ci')
@@ -62,11 +69,4 @@ export function registerCiCommand(program: Command): void {
         process.exit(1)
       }
     })
-}
-
-type CiOptions = {
-  agent?: string | string[]
-  global?: boolean
-  skipAudit?: boolean
-  concurrency?: number
 }

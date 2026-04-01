@@ -1,5 +1,3 @@
-// --- Planning ---
-
 // --- Backup ---
 export { createFilesystemBackup, restoreFilesystemBackup } from './backup'
 // --- Canonical path resolution ---

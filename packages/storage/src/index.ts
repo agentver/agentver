@@ -1,5 +1,3 @@
-// --- Reading ---
-
 // --- Re-exports from @agentver/shared ---
 export type {
   GitSource,
@@ -28,6 +26,7 @@ export {
   getLockfilePath,
   getManifestPath,
   getStorageRoot,
+  getStorageTransactionPath,
   writeJsonFileAtomic,
 } from './files'
 // --- Integrity ---
@@ -57,7 +56,7 @@ export { updateManifestAndLockfile } from './pair'
 // --- Serialisation ---
 export { serialiseDeterministic } from './serialise'
 // --- Transaction recovery ---
-export { recoverPendingStorageTransaction } from './transaction'
+export { recoverPendingStorageTransaction, writeStorageTransaction } from './transaction'
 // --- Types ---
 export type {
   LockMode,

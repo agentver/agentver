@@ -221,7 +221,7 @@ export function executeInstall(plan: InstallPlan): InstallResult {
       success: false,
       error: {
         code: 'INSTALL_FAILED',
-        message: String(err),
+        message: err instanceof Error ? err.message : String(err),
       },
       packageKey: request.packageKey,
       displayName: request.displayName,

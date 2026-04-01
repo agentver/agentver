@@ -9,43 +9,12 @@ import {
   removeAgentPlacements,
   resolveCanonicalCategory,
 } from '@agentver/installer'
-import { AgentverError, getPackageDisplayName } from '@agentver/shared'
+import { AgentverError } from '@agentver/shared'
+import { resolvePackageQuery } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
 import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
-
-function findPackageEntry(
-  packages: Record<
-    string,
-    {
-      name?: string
-      agents: string[]
-      packageType?: string
-    }
-  >,
-  query: string
-): {
-  key: string
-  displayName: string
-  pkg: { name?: string; agents: string[]; packageType?: string }
-} | null {
-  if (query in packages) {
-    const pkg = packages[query]!
-    return { key: query, displayName: getPackageDisplayName(query, pkg), pkg }
-  }
-
-  const matches = Object.entries(packages).filter(
-    ([key, pkg]) => getPackageDisplayName(key, pkg) === query
-  )
-
-  if (matches.length !== 1) {
-    return null
-  }
-
-  const [key, pkg] = matches[0]!
-  return { key, displayName: getPackageDisplayName(key, pkg), pkg }
-}
 
 export function registerRemoveTool(server: McpServer): void {
   server.registerTool(
@@ -68,13 +37,19 @@ export function registerRemoveTool(server: McpServer): void {
     async ({ package: packageName, global: isGlobal }) => {
       const root = isGlobal ? homedir() : getWorkingDirectory()
       const manifest = readManifest(root)
-      const packageEntry = findPackageEntry(manifest.packages, packageName)
+      const lookup = resolvePackageQuery(manifest.packages, packageName)
 
-      if (!packageEntry) {
+      if (!lookup.ok) {
+        if (lookup.reason === 'ambiguous') {
+          throw new AgentverError(
+            'AMBIGUOUS_SKILL',
+            `Multiple packages match "${packageName}": ${lookup.matches.join(', ')}. Use the full package key to disambiguate.`
+          )
+        }
         throw new AgentverError('NOT_FOUND', `Package "${packageName}" is not installed.`)
       }
 
-      const { key: packageKey, displayName, pkg } = packageEntry
+      const { key: packageKey, displayName, pkg } = lookup
       const scope = isGlobal ? 'global' : 'project'
       const packageType = (pkg.packageType ?? 'SKILL') as PackageType
       const category = resolveCanonicalCategory(packageType)

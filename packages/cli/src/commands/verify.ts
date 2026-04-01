@@ -230,9 +230,10 @@ export function registerVerifyCommand(program: Command): void {
         const lockPkg = lockPkgLookup.ok ? lockPkgLookup.pkg : undefined
 
         if (pkg && lockPkg?.integrity) {
+          const displayName = pkgLookup.ok ? pkgLookup.displayName : skillName
           const canonicalPath = getCanonicalSkillPath(
             projectRoot,
-            pkgLookup.ok ? pkgLookup.key : skillName,
+            displayName.split('/').pop() ?? displayName,
             'project'
           )
           const files = await readFilesFromDirectory(canonicalPath)
@@ -286,9 +287,10 @@ export function registerVerifyCommand(program: Command): void {
         const pkg = pkgLookup.ok ? pkgLookup.pkg : undefined
 
         if (pkg) {
+          const secDisplayName = pkgLookup.ok ? pkgLookup.displayName : skillName
           const canonicalPath = getCanonicalSkillPath(
             projectRoot,
-            pkgLookup.ok ? pkgLookup.key : skillName,
+            secDisplayName.split('/').pop() ?? secDisplayName,
             'project'
           )
           const source = buildSourceFromManifest(pkg)

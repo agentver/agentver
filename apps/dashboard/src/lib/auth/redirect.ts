@@ -3,9 +3,11 @@ export function sanitiseRedirectUrl(input: string | null | undefined): string {
     return '/'
   }
 
-  if (!input.startsWith('/') || input.startsWith('//')) {
+  try {
+    const parsed = new URL(input, 'https://placeholder.invalid')
+    if (parsed.origin !== 'https://placeholder.invalid') return '/'
+    return parsed.pathname + parsed.search + parsed.hash
+  } catch {
     return '/'
   }
-
-  return input
 }

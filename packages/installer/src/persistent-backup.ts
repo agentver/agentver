@@ -201,7 +201,12 @@ export function restorePersistentBackup(
   }
 
   const backupsRoot = getBackupsRoot(projectRoot, scope)
+  const resolvedBackupsRoot = resolve(backupsRoot)
   const itemsDir = join(backupsRoot, backupId, ITEMS_DIR)
+  const resolvedItemsDir = resolve(itemsDir)
+  if (!resolvedItemsDir.startsWith(`${resolvedBackupsRoot}/`)) {
+    throw new Error(`Invalid backup ID: path escapes backup root`)
+  }
 
   if (!existsSync(itemsDir)) {
     throw new Error(`Backup files not found for: ${backupId}`)
@@ -211,6 +216,10 @@ export function restorePersistentBackup(
 
   for (const item of entry.items) {
     const backupPath = join(itemsDir, item.backupRelativePath)
+    const resolvedBackupPath = resolve(backupPath)
+    if (!resolvedBackupPath.startsWith(`${resolve(itemsDir)}/`)) {
+      continue
+    }
 
     if (!existsSync(backupPath)) continue
 
@@ -253,6 +262,10 @@ export function deleteBackup(projectRoot: string, scope: Scope, backupId: string
 
   const backupsRoot = getBackupsRoot(projectRoot, scope)
   const backupDir = join(backupsRoot, backupId)
+  const resolvedBackupDir = resolve(backupDir)
+  if (!resolvedBackupDir.startsWith(`${resolve(backupsRoot)}/`)) {
+    throw new Error(`Invalid backup ID: path escapes backup root`)
+  }
 
   if (existsSync(backupDir)) {
     rmSync(backupDir, { recursive: true, force: true })
