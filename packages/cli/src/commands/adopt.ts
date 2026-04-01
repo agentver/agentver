@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname } from 'node:path'
 import type { ScannedFile } from '@agentver/agent-definitions'
@@ -108,6 +109,8 @@ function deduplicateByPath(files: ScannedFile[]): DeduplicatedFile[] {
 /**
  * Compute integrity from all files in a directory.
  * Uses the same multi-file hashing as install for consistency.
+ * For single-file types (AGENT_CONFIG, AGENT, COMMAND), reads only the entry
+ * file directly to avoid recursing into large agent home directories.
  */
 async function computeAdoptedIntegrity(
   entryFilePath: string,
@@ -115,12 +118,9 @@ async function computeAdoptedIntegrity(
 ): Promise<string> {
   if (detectedType === 'AGENT' || detectedType === 'COMMAND' || detectedType === 'AGENT_CONFIG') {
     try {
-      const files = await readFilesFromDirectory(dirname(entryFilePath))
       const entryFileName = basename(entryFilePath)
-      const entryFile = files.find((file) => file.path === entryFileName)
-      if (entryFile) {
-        return computeSha256FromFiles([{ path: entryFileName, content: entryFile.content }])
-      }
+      const content = readFileSync(entryFilePath, 'utf-8')
+      return computeSha256FromFiles([{ path: entryFileName, content }])
     } catch {
       return computeSha256FromFiles([{ path: basename(entryFilePath), content: '' }])
     }
