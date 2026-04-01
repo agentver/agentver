@@ -16,6 +16,7 @@ export const AGENT_IDS = [
   'crush',
   'cursor',
   'droid',
+  'forgecode',
   'gemini-cli',
   'goose',
   'iflow-cli',
@@ -82,6 +83,7 @@ export type AgentDefinition = {
 
 /** Map of alias → canonical AgentId for renamed/alternate IDs */
 const AGENT_ALIASES: Record<string, AgentId> = {
+  forge: 'forgecode',
   gemini: 'gemini-cli',
   'roo-code': 'roo',
   'github-copilot': 'copilot',

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { AGENT_IDS, resolveAgentId } from '../types'
 
 describe('AGENT_IDS', () => {
-  it('should contain exactly 43 agent IDs', () => {
-    expect(AGENT_IDS).toHaveLength(43)
+  it('should contain exactly 44 agent IDs', () => {
+    expect(AGENT_IDS).toHaveLength(44)
   })
 
   it('should not contain duplicates', () => {
@@ -35,7 +35,7 @@ describe('AGENT_IDS', () => {
 })
 
 describe('resolveAgentId', () => {
-  it('should resolve all 43 primary IDs', () => {
+  it('should resolve all 44 primary IDs', () => {
     for (const id of AGENT_IDS) {
       expect(resolveAgentId(id)).toBe(id)
     }
@@ -45,6 +45,7 @@ describe('resolveAgentId', () => {
     expect(resolveAgentId('gemini')).toBe('gemini-cli')
     expect(resolveAgentId('roo-code')).toBe('roo')
     expect(resolveAgentId('github-copilot')).toBe('copilot')
+    expect(resolveAgentId('forge')).toBe('forgecode')
   })
 
   it('should be case-insensitive', () => {

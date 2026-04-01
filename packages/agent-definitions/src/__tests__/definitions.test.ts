@@ -37,8 +37,8 @@ function isCommandCapable(a: AgentDefinition): boolean {
 }
 
 describe('AGENT_DEFINITIONS', () => {
-  it('should contain exactly 43 definitions', () => {
-    expect(AGENT_DEFINITIONS).toHaveLength(43)
+  it('should contain exactly 44 definitions', () => {
+    expect(AGENT_DEFINITIONS).toHaveLength(44)
   })
 
   it('should have no duplicate IDs', () => {
@@ -66,17 +66,17 @@ describe('AGENT_DEFINITIONS', () => {
     }
   })
 
-  it('should have 39 agent-specific and 4 universal agents', () => {
+  it('should have 40 agent-specific and 4 universal agents', () => {
     const agentSpecific = AGENT_DEFINITIONS.filter((d) => d.category === 'agent-specific')
     const universal = AGENT_DEFINITIONS.filter((d) => d.category === 'universal')
-    expect(agentSpecific).toHaveLength(39)
+    expect(agentSpecific).toHaveLength(40)
     expect(universal).toHaveLength(4)
   })
 
   it('should have aliases only on copilot, gemini-cli, and roo', () => {
     const withAliases = AGENT_DEFINITIONS.filter((d) => d.aliases && d.aliases.length > 0)
     const aliasIds = withAliases.map((d) => d.id).sort()
-    expect(aliasIds).toEqual(['copilot', 'gemini-cli', 'roo'])
+    expect(aliasIds).toEqual(['copilot', 'forgecode', 'gemini-cli', 'roo'])
   })
 
   it('should match all IDs from AGENT_IDS', () => {
@@ -216,8 +216,8 @@ describe('getMcpCapableAgents', () => {
 })
 
 describe('AGENT_MAP', () => {
-  it('should contain entries for all 43 agent IDs', () => {
-    expect(AGENT_MAP.size).toBe(43)
+  it('should contain entries for all 44 agent IDs', () => {
+    expect(AGENT_MAP.size).toBe(44)
     for (const id of AGENT_IDS) {
       expect(AGENT_MAP.has(id)).toBe(true)
     }

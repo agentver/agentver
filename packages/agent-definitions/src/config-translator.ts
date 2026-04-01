@@ -76,6 +76,11 @@ const CONFIG_TRANSLATORS: ConfigTranslator[] = [
       return `read:\n  - AGENTS.md\n`
     },
   },
+  {
+    agentId: 'forgecode',
+    filePath: 'SKILL.md',
+    transform: markdownPassthrough,
+  },
   // New agents with specific config formats
   {
     agentId: 'cline',
