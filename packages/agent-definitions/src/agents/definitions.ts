@@ -512,6 +512,20 @@ export const AGENT_DEFINITIONS: AgentDefinition[] = [
     mcpConfigFormat: null,
   },
   {
+    id: 'forgecode',
+    name: 'ForgeCode',
+    projectSkillPath: '.forge/skills',
+    // ForgeCode uses ~/forge/ (not ~/.forge/) as its home directory by design
+    globalSkillPath: '~/forge/skills',
+    configFiles: ['.forge.toml'],
+    configDirs: ['.forge'],
+    category: 'agent-specific',
+    aliases: ['forge'],
+    mcpConfigPath: null,
+    globalMcpConfigPath: null,
+    mcpConfigFormat: null,
+  },
+  {
     id: 'openclaw',
     name: 'OpenClaw',
     projectSkillPath: 'skills',

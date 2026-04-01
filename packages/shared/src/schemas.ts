@@ -22,6 +22,7 @@ const AGENT_IDS_FOR_SCHEMA = [
   'crush',
   'cursor',
   'droid',
+  'forgecode',
   'gemini-cli',
   'goose',
   'iflow-cli',
