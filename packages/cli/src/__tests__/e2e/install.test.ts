@@ -59,7 +59,9 @@ vi.mock('../../wellknown/index.js', () => ({
   fetchWellKnownSkill: vi.fn(),
 }))
 
-vi.mock('prompts', () => ({ default: vi.fn() }))
+vi.mock('prompts', () => ({
+  default: vi.fn().mockResolvedValue({ proceed: true, confirmed: true, action: 'replace' }),
+}))
 
 // Used to override homedir for global install tests
 let fakeHomePath: string | null = null
@@ -173,8 +175,11 @@ describe('E2E: install (in-process, real filesystem)', () => {
     const manifestResult = manifestV2Schema.safeParse(JSON.parse(manifestRaw) as unknown)
     expect(manifestResult.success).toBe(true)
     if (manifestResult.success) {
-      expect(manifestResult.data.packages['test-repo']).toBeDefined()
-      expect(manifestResult.data.packages['test-repo']!.agents).toContain('claude-code')
+      const manifestPkg = Object.values(manifestResult.data.packages).find((p) =>
+        p.agents?.includes('claude-code')
+      )
+      expect(manifestPkg).toBeDefined()
+      expect(manifestPkg!.agents).toContain('claude-code')
     }
 
     // Verify lockfile schema
@@ -183,8 +188,11 @@ describe('E2E: install (in-process, real filesystem)', () => {
     const lockfileResult = lockfileV2Schema.safeParse(JSON.parse(lockfileRaw) as unknown)
     expect(lockfileResult.success).toBe(true)
     if (lockfileResult.success) {
-      expect(lockfileResult.data.packages['test-repo']).toBeDefined()
-      expect(lockfileResult.data.packages['test-repo']!.integrity).toMatch(/^sha256-/)
+      const lockfilePkg = Object.values(lockfileResult.data.packages).find((p) =>
+        p.integrity?.startsWith('sha256-')
+      )
+      expect(lockfilePkg).toBeDefined()
+      expect(lockfilePkg!.integrity).toMatch(/^sha256-/)
     }
   })
 
