@@ -73,7 +73,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build packages
-        run: bun run turbo build --filter=@agentver/shared --filter=@agentver/agent-definitions
+        run: bun run turbo build --filter=@agentver/shared --filter=@agentver/agent-definitions --filter=@agentver/storage --filter=@agentver/installer
 
       - name: Test packages
         run: bun run test
@@ -149,7 +149,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build packages
-        run: bun run turbo build --filter=@agentver/shared --filter=@agentver/agent-definitions
+        run: bun run turbo build --filter=@agentver/shared --filter=@agentver/agent-definitions --filter=@agentver/storage --filter=@agentver/installer
 
       - name: Type-check frontend
         run: bun run --filter @agentver/desktop type-check
