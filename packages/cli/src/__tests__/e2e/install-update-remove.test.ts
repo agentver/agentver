@@ -157,8 +157,14 @@ describe('E2E: install -> update -> remove lifecycle', () => {
     await installPackage('github.com/test-owner/test-repo', { skipAudit: true })
 
     const initialState = readProjectState(tempDir)
-    expect(initialState.manifest?.packages['test-repo']).toBeDefined()
-    expect(initialState.lockfile?.packages['test-repo']).toBeDefined()
+    const initialPkg = Object.values(initialState.manifest?.packages ?? {}).find(
+      (p) => p.source?.type === 'git'
+    )
+    expect(initialPkg).toBeDefined()
+    const initialLockPkg = Object.values(initialState.lockfile?.packages ?? {}).find(
+      (p) => p.source?.type === 'git'
+    )
+    expect(initialLockPkg).toBeDefined()
     expect(readFileSync(join(tempDir, '.agents/skills/test-repo/SKILL.md'), 'utf-8')).toBe(
       initialContent
     )
@@ -169,7 +175,9 @@ describe('E2E: install -> update -> remove lifecycle', () => {
     await updateAction(undefined, { yes: true })
 
     const updatedState = readProjectState(tempDir)
-    const updatedPackage = updatedState.manifest?.packages['test-repo']
+    const updatedPackage = Object.values(updatedState.manifest?.packages ?? {}).find(
+      (p) => p.source?.type === 'git'
+    )
     expect(updatedPackage?.source.type).toBe('git')
     if (updatedPackage?.source.type === 'git') {
       expect(updatedPackage.source.commit).toBe(UPDATED_SHA)

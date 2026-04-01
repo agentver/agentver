@@ -7,6 +7,57 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GitSource, LockfileV2Package, ManifestV2Package } from '@agentver/shared'
+
+// ---------------------------------------------------------------------------
+// Shared CI output types
+// ---------------------------------------------------------------------------
+
+export type RestorePackageResult = {
+  packageKey: string
+  displayName: string
+  status: 'installed' | 'up-to-date' | 'skipped' | 'failed' | 'integrity-mismatch'
+  agents?: string[]
+  filesPlacedCount?: number
+  reason?: string
+  error?: string
+}
+
+export type RestoreResult = {
+  type: 'RESTORE_COMPLETE'
+  packages: RestorePackageResult[]
+  installedCount: number
+  upToDateCount: number
+  skippedCount: number
+  failedCount: number
+  success: boolean
+}
+
+export type CiResult = {
+  restore: RestoreResult
+  success: boolean
+}
+
+/**
+ * Parses the JSON envelope from the `ci` command's stdout.
+ *
+ * The ci command wraps `restoreFromManifest`, which outputs its own JSON in
+ * --json mode. The ci handler then outputs a second JSON envelope. We need the
+ * LAST JSON line (the CiResult wrapper), not the first (the inner RestoreResult).
+ */
+export function parseCiJson(stdout: string): { data: CiResult; success: boolean } {
+  const lines = stdout.trim().split('\n')
+  const jsonLines = lines.filter((line) => line.startsWith('{'))
+
+  if (jsonLines.length === 0) {
+    throw new Error(`No JSON output found in CI stdout.\nstdout: ${stdout}`)
+  }
+
+  const lastJsonLine = jsonLines[jsonLines.length - 1]!
+  const parsed = JSON.parse(lastJsonLine) as { success: boolean; data: CiResult }
+
+  return { data: parsed.data, success: parsed.success }
+}
+
 import { createAgentSymlinks, getCanonicalSkillPath } from '../../storage/canonical'
 import { computeSha256FromFiles } from '../../storage/integrity'
 import { readLockfile, writeLockfile } from '../../storage/lockfile'
@@ -85,7 +136,14 @@ export function runCli(
 export async function runCliJson<T = unknown>(
   args: string[],
   options: { cwd: string; homeDir?: string; env?: Record<string, string> }
-): Promise<{ data: T; success: boolean; exitCode: number; stderr: string; raw: string }> {
+): Promise<{
+  data: T
+  success: boolean
+  exitCode: number
+  stderr: string
+  raw: string
+  error?: { code: string; message: string }
+}> {
   const result = await runCli(args, options)
 
   // The CLI outputs JSON as a single line to stdout
@@ -110,6 +168,7 @@ export async function runCliJson<T = unknown>(
     exitCode: result.exitCode,
     stderr: result.stderr,
     raw: result.stdout,
+    error: parsed.error,
   }
 }
 

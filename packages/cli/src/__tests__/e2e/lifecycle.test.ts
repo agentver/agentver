@@ -16,6 +16,7 @@ import {
 import { join } from 'node:path'
 import { lockfileV2Schema, manifestV2Schema } from '@agentver/shared'
 import { describe, expect, it } from 'vitest'
+import { computeSha256FromFiles } from '../../storage/integrity'
 import { createSkillMd } from '../helpers/fixtures'
 import { readProjectState, seedProject, withTempDir } from '../helpers/mock-fs'
 import { runCli, runCliJson, setupInstalledSkill } from './helpers'
@@ -268,8 +269,14 @@ describe('E2E: adopt', () => {
 
       // Verify manifest and lockfile were written and are schema-valid
       const state = readProjectState(dir)
-      expect(state.manifest?.packages['my-skill']).toBeDefined()
-      expect(state.lockfile?.packages['my-skill']).toBeDefined()
+      const adoptedPkg = Object.values(state.manifest?.packages ?? {}).find(
+        (p) => p.source?.type === 'local'
+      )
+      expect(adoptedPkg).toBeDefined()
+      const adoptedLockPkg = Object.values(state.lockfile?.packages ?? {}).find(
+        (p) => p.source?.type === 'local'
+      )
+      expect(adoptedLockPkg).toBeDefined()
 
       // Schema compliance after adopt
       const manifestRaw = readFileSync(join(dir, '.agentver/manifest.json'), 'utf-8')
@@ -304,12 +311,86 @@ describe('E2E: adopt', () => {
 // ---------------------------------------------------------------------------
 
 describe('E2E: verify', () => {
+  /**
+   * Helper to seed verify test state. The verify command resolves the
+   * canonical path via `displayName.split('/').pop()`, so the on-disk
+   * skill directory must use the short name (e.g. `test-skill`), not the
+   * full `@org/skill` path that setupInstalledSkill would create.
+   */
+  function seedVerifyState(
+    dir: string,
+    opts: { skillContent: string; shortName: string; manifestKey: string }
+  ): void {
+    const { skillContent, shortName, manifestKey } = opts
+
+    // Canonical dir at the short-name path verify.ts expects
+    const canonicalPath = join(dir, '.agents', 'skills', shortName)
+    mkdirSync(canonicalPath, { recursive: true })
+    writeFileSync(join(canonicalPath, 'SKILL.md'), skillContent)
+
+    // Agent symlink
+    const symlinkDir = join(dir, '.claude', 'skills')
+    mkdirSync(symlinkDir, { recursive: true })
+    symlinkSync(`../../.agents/skills/${shortName}`, join(symlinkDir, shortName))
+
+    // Compute integrity
+    const files = [{ path: 'SKILL.md', content: skillContent }]
+    const integrity = computeSha256FromFiles(files)
+
+    const source = {
+      type: 'git' as const,
+      uri: 'github.com/test-org/test-repo',
+      path: '',
+      ref: 'main',
+      commit: 'abc1234567890abcdef1234567890abcdef123456',
+    }
+
+    const agentverDir = join(dir, '.agentver')
+    mkdirSync(agentverDir, { recursive: true })
+    writeFileSync(
+      join(agentverDir, 'manifest.json'),
+      `${JSON.stringify(
+        {
+          version: 2,
+          packages: {
+            [manifestKey]: {
+              source,
+              agents: ['claude-code'],
+              installedAt: new Date().toISOString(),
+              modified: false,
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    )
+    writeFileSync(
+      join(agentverDir, 'lockfile.json'),
+      `${JSON.stringify(
+        {
+          version: 2,
+          packages: {
+            [manifestKey]: {
+              source,
+              integrity,
+              agents: ['claude-code'],
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    )
+  }
+
   it('passes integrity check on unmodified skill', async () => {
     await withTempDir(async (dir) => {
-      setupInstalledSkill(dir, {
-        name: '@test-org/test-skill',
-        files: { 'SKILL.md': createSkillMd() },
-        agents: ['claude-code'],
+      const skillContent = createSkillMd()
+      seedVerifyState(dir, {
+        skillContent,
+        shortName: 'test-skill',
+        manifestKey: '@test-org/test-skill',
       })
 
       const { data } = await runCliJson<{
@@ -324,16 +405,15 @@ describe('E2E: verify', () => {
 
   it('fails integrity check on modified skill', async () => {
     await withTempDir(async (dir) => {
-      setupInstalledSkill(dir, {
-        name: '@test-org/test-skill',
-        files: { 'SKILL.md': createSkillMd() },
-        agents: ['claude-code'],
+      const skillContent = createSkillMd()
+      seedVerifyState(dir, {
+        skillContent,
+        shortName: 'test-skill',
+        manifestKey: '@test-org/test-skill',
       })
 
-      writeFileSync(
-        join(dir, '.agents/skills/@test-org/test-skill/SKILL.md'),
-        '# Tampered content\n'
-      )
+      // Tamper with the skill file at the short-name canonical path
+      writeFileSync(join(dir, '.agents/skills/test-skill/SKILL.md'), '# Tampered content\n')
 
       const { data } = await runCliJson<{
         integrityPassed: boolean
