@@ -492,7 +492,7 @@ export function registerDoctorCommand(program: Command): void {
         for (const c of checks) {
           if ((c.status === 'fail' || c.status === 'warn') && c.fix) {
             try {
-              const result = c.fix()
+              const result = c.fix() ?? 'Fixed'
               fixResults.push({ name: c.name, result })
               c.status = 'pass'
               c.message = `${c.message} → fixed: ${result}`
