@@ -179,6 +179,37 @@ describe('commands/adopt', () => {
       const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
       expect(getStoredLockfilePackage(lockfile, 'test-skill')?.integrity).toContain('sha256-')
     })
+
+    it('preserves package metadata for adopted single-file agents', async () => {
+      const scannedFile = createScannedFile({
+        path: '/project/.claude/agents/reviewer.md',
+        name: 'reviewer',
+        detectedType: 'AGENT',
+      })
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      vi.mocked(pairModule.updateManifestAndLockfile).mockImplementation(
+        (projectRoot, scope, updater) => {
+          const manifest = structuredClone(manifestModule.readManifest(projectRoot, scope))
+          const lockfile = structuredClone(lockfileModule.readLockfile(projectRoot, scope))
+          const updated = updater(manifest, lockfile)
+          manifestModule.writeManifest(projectRoot, updated.manifest, scope)
+          lockfileModule.writeLockfile(projectRoot, updated.lockfile, scope)
+          return updated
+        }
+      )
+
+      await adoptSkills(undefined, {})
+
+      const [, manifest] = vi.mocked(manifestModule.writeManifest).mock.calls[0]!
+      expect(getStoredManifestPackage(manifest, 'reviewer')).toEqual(
+        expect.objectContaining({
+          packageType: 'AGENT',
+          entryFile: 'reviewer.md',
+        })
+      )
+    })
   })
 
   // -------------------------------------------------------------------------

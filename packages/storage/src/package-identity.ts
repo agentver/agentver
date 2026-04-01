@@ -36,9 +36,9 @@ export function createStablePackageKey(displayName: string, source: PackageSourc
   const identity = (() => {
     switch (source.type) {
       case 'git':
-        return `${source.uri}#${source.path}`
+        return `${source.uri}#${source.path}#${source.ref}`
       case 'platform':
-        return `${source.uri}#${source.path}`
+        return `${source.uri}#${source.path}#${source.ref}`
       case 'well-known':
         return `${source.baseUrl}#${source.skillName}`
       case 'local':

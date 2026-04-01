@@ -65,6 +65,8 @@ export function executeInstall(plan: InstallPlan): InstallResult {
 
   const backups: BackupHandle[] = []
   const conflictsResolved: InstallResult['conflictsResolved'] = []
+  let placementResults: PlacementResult[] = []
+  let filesPlacedCount = 0
 
   try {
     // 1. Create backups for required paths
@@ -118,11 +120,9 @@ export function executeInstall(plan: InstallPlan): InstallResult {
     }
 
     // 3. Write files to canonical path
-    const filesPlacedCount = writeCanonicalFiles(plan)
+    filesPlacedCount = writeCanonicalFiles(plan)
 
     // 4. Create agent placements
-    let placementResults: PlacementResult[] = []
-
     if (placements.length > 0) {
       placementResults = createAgentPlacements(
         canonical.path,
@@ -189,6 +189,24 @@ export function executeInstall(plan: InstallPlan): InstallResult {
       agentsInstalledCount,
     }
   } catch (err) {
+    for (const placement of placementResults) {
+      if (placement.success && existsSync(placement.destinationPath)) {
+        try {
+          rmSync(placement.destinationPath, { recursive: true, force: true })
+        } catch {
+          // Best-effort cleanup
+        }
+      }
+    }
+
+    if (filesPlacedCount > 0 && existsSync(canonical.path)) {
+      try {
+        rmSync(canonical.path, { recursive: true, force: true })
+      } catch {
+        // Best-effort cleanup
+      }
+    }
+
     // On failure, attempt to restore backups
     for (const backup of backups) {
       try {
@@ -258,7 +276,7 @@ export async function executeRestore(
   // Process toInstall entries with concurrency limit
   const concurrency = Math.max(1, policy.concurrency)
   const queue = [...toInstall]
-  const active: Promise<void>[] = []
+  const active = new Set<Promise<void>>()
 
   const processEntry = async (entry: RestoreEntry): Promise<void> => {
     try {
@@ -300,26 +318,18 @@ export async function executeRestore(
   }
 
   for (const entry of queue) {
-    const task = processEntry(entry)
-    active.push(task)
+    const task = processEntry(entry).finally(() => {
+      active.delete(task)
+    })
+    active.add(task)
 
-    if (active.length >= concurrency) {
+    if (active.size >= concurrency) {
       await Promise.race(active)
-      // Remove completed tasks
-      const remaining: Promise<void>[] = []
-      for (const t of active) {
-        const settled = await Promise.race([t.then(() => true), Promise.resolve(false)])
-        if (!settled) {
-          remaining.push(t)
-        }
-      }
-      active.length = 0
-      active.push(...remaining)
     }
   }
 
   // Wait for remaining
-  await Promise.allSettled(active)
+  await Promise.allSettled([...active])
 
   const installedCount = packages.filter((p) => p.status === 'installed').length
   const upToDateCount = packages.filter((p) => p.status === 'up-to-date').length

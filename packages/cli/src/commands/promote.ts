@@ -301,7 +301,8 @@ async function canonicalisePackage(
   packagePath: string,
   projectRoot: string,
   agents: string[],
-  spinner: { text: string }
+  spinner: { text: string },
+  scope: 'project' | 'global'
 ): Promise<void> {
   spinner.text = `Canonicalising ${entry.displayName}...`
 
@@ -322,7 +323,7 @@ async function canonicalisePackage(
     files: fileEntries,
     integrity,
     target: {
-      scope: 'project',
+      scope,
       projectRoot,
       agents,
     },
@@ -464,9 +465,10 @@ export async function promoteSkills(
   const jsonMode = isJSONMode()
   const spinner = createSpinner('Preparing promotion...').start()
   const projectRoot = process.cwd()
+  const scope = options.global ? 'global' : 'project'
 
   try {
-    const manifest = readManifest(projectRoot)
+    const manifest = readManifest(projectRoot, scope)
 
     // --all mode: promote all local/unknown packages
     if (options.all) {
@@ -515,7 +517,7 @@ export async function promoteSkills(
                 pkg.agents.length > 0
                   ? pkg.agents
                   : detectInstalledAgents(projectRoot).map((a) => a.id)
-              await canonicalisePackage(entry, currentPath, projectRoot, agents, spinner)
+              await canonicalisePackage(entry, currentPath, projectRoot, agents, spinner, scope)
             }
           }
 
@@ -529,7 +531,7 @@ export async function promoteSkills(
       }
 
       if (!options.dryRun && results.length > 0) {
-        updateManifestAndLockfile(projectRoot, 'project', (currentManifest, currentLockfile) => {
+        updateManifestAndLockfile(projectRoot, scope, (currentManifest, currentLockfile) => {
           for (const entry of results) {
             applyPromoteEntry(currentManifest, currentLockfile, entry)
           }
@@ -617,12 +619,12 @@ export async function promoteSkills(
       if (currentPath) {
         const agents =
           pkg.agents.length > 0 ? pkg.agents : detectInstalledAgents(projectRoot).map((a) => a.id)
-        await canonicalisePackage(entry, currentPath, projectRoot, agents, spinner)
+        await canonicalisePackage(entry, currentPath, projectRoot, agents, spinner, scope)
       }
     }
 
     if (!options.dryRun) {
-      updateManifestAndLockfile(projectRoot, 'project', (currentManifest, currentLockfile) => {
+      updateManifestAndLockfile(projectRoot, scope, (currentManifest, currentLockfile) => {
         applyPromoteEntry(currentManifest, currentLockfile, entry)
         return { manifest: currentManifest, lockfile: currentLockfile }
       })

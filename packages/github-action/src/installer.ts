@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as core from '@actions/core'
 import { detectInstalledAgents } from '@agentver/agent-definitions'
@@ -7,7 +7,6 @@ import type { LockfileV2, ManifestV2, PackageSource } from '@agentver/shared'
 import { getPackageDisplayName, getPackageSourceReference } from '@agentver/shared'
 import {
   computeIntegrity,
-  createStablePackageKey,
   getManifestPath,
   IntegrityError,
   readLockfile,
@@ -60,6 +59,39 @@ type InstallerConfig = {
 
 export type { DownloadResponse, InstallerConfig }
 export { IntegrityError }
+
+type LegacyManifest = {
+  version: 1
+  packages: Record<
+    string,
+    {
+      name?: string
+      agents?: string[]
+      installedAt?: string
+      modified?: boolean
+      path?: string
+    }
+  >
+}
+
+function buildPackageKey(displayName: string, source: PackageSource): string {
+  const identity = (() => {
+    switch (source.type) {
+      case 'git':
+        return `${source.uri}#${source.path}#${source.ref}`
+      case 'platform':
+        return `${source.uri}#${source.path}#${source.ref}`
+      case 'well-known':
+        return `${source.baseUrl}#${source.skillName}`
+      case 'local':
+        return source.path
+      case 'unknown':
+        return [source.path ?? '', source.ref ?? '', source.commit ?? '', displayName].join('#')
+    }
+  })()
+
+  return `${source.type}:${encodeURIComponent(identity)}`
+}
 
 // -- Errors ------------------------------------------------------------------
 
@@ -118,6 +150,11 @@ export function readManifestFile(projectRoot: string): ManifestV2 {
       if (error.reason === 'invalid-json') {
         throw new Error(`Failed to parse manifest at ${manifestPath}: invalid JSON`)
       }
+      const migrated = tryReadLegacyManifest(manifestPath)
+      if (migrated) {
+        core.warning(`Migrated legacy manifest at ${manifestPath} in memory`)
+        return migrated
+      }
       throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`)
     }
     throw error
@@ -148,6 +185,41 @@ export function readLockfileFile(projectRoot: string): LockfileV2 | null {
 
 export function writeLockfileFile(projectRoot: string, lockfile: LockfileV2): void {
   writeLockfile(projectRoot, lockfile, 'project', { mode: 'none' })
+}
+
+function tryReadLegacyManifest(manifestPath: string): ManifestV2 | null {
+  try {
+    const raw = JSON.parse(readFileSync(manifestPath, 'utf-8')) as LegacyManifest
+    if (raw.version !== 1 || typeof raw.packages !== 'object' || raw.packages === null) {
+      return null
+    }
+
+    const packages: ManifestV2['packages'] = {}
+    for (const [legacyKey, legacyPkg] of Object.entries(raw.packages)) {
+      const displayName = legacyPkg.name?.trim() || legacyKey
+      const source: PackageSource = legacyPkg.path
+        ? { type: 'local', path: legacyPkg.path }
+        : {
+            type: 'unknown',
+            path: legacyPkg.name ?? legacyKey,
+            reason: 'Migrated from legacy manifest',
+          }
+
+      const packageKey = buildPackageKey(displayName, source)
+      packages[packageKey] = {
+        name: displayName,
+        source,
+        agents: legacyPkg.agents ?? [],
+        installedAt: legacyPkg.installedAt ?? new Date(0).toISOString(),
+        modified: legacyPkg.modified ?? false,
+        ...(legacyPkg.path ? { path: legacyPkg.path } : {}),
+      }
+    }
+
+    return { version: 2, packages }
+  } catch {
+    return null
+  }
 }
 
 // -- Registry ----------------------------------------------------------------
@@ -322,8 +394,9 @@ export function updateLockfile(
 
   for (const result of results) {
     if (!result.success) continue
+    if (!result.packageKey) continue
 
-    const entry = resolvedData.get(result.name)
+    const entry = resolvedData.get(result.packageKey)
     if (!entry) continue
 
     if (!entry.response.gitUri || !entry.response.gitRef || !entry.response.gitCommitSha) {
@@ -341,7 +414,7 @@ export function updateLockfile(
       commit: entry.response.gitCommitSha,
     }
 
-    updated.packages[createStablePackageKey(result.name, source)] = {
+    updated.packages[buildPackageKey(result.name, source)] = {
       name: result.name,
       source,
       integrity: computeIntegrity(entry.files),
@@ -391,6 +464,7 @@ function installPackageWithData(
 
     if (agents.length === 0) {
       return {
+        packageKey: packageName,
         name: packageName,
         version: response.version,
         agents: [],
@@ -403,7 +477,7 @@ function installPackageWithData(
     const source = buildSourceFromResponse(response)
 
     const request: InstallRequest = {
-      packageKey: createStablePackageKey(packageName, source),
+      packageKey: buildPackageKey(packageName, source),
       displayName: packageName,
       packageType: 'SKILL',
       source,
@@ -430,6 +504,7 @@ function installPackageWithData(
     const installedAgents = result.placements.filter((p) => p.success).map((p) => p.agentId)
 
     return {
+      packageKey: request.packageKey,
       name: packageName,
       version: response.version,
       agents: installedAgents.length > 0 ? installedAgents : agents,
@@ -440,6 +515,7 @@ function installPackageWithData(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return {
+      packageKey: packageName,
       name: packageName,
       version: response.version,
       agents: [],
@@ -503,7 +579,7 @@ export async function installAllPackages(
         continue
       }
 
-      resolvedData.set(displayName, { response, files })
+      resolvedData.set(packageKey, { response, files })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       core.warning(`Failed to resolve ${displayName}@${version}: ${message}`)

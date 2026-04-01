@@ -209,4 +209,53 @@ describe('remove tool', () => {
     expect(result.content[0]!.text).toContain('Removed org/skill')
     expect(result.content[0]!.text).toContain('No agent directories required cleanup')
   })
+
+  it('removes the canonical path using the full display name, not just the short name', async () => {
+    const agentverDir = join(tempDir, '.agentver')
+    mkdirSync(agentverDir, { recursive: true })
+    const packageKey = createPackageKey('org/skill', {
+      type: 'git',
+      uri: 'https://github.com/org/repo',
+      path: 'skills/skill',
+      ref: 'v1.0.0',
+      commit: 'abc1234def',
+    })
+
+    writeFileSync(
+      join(agentverDir, 'manifest.json'),
+      JSON.stringify({
+        version: 2,
+        packages: {
+          [packageKey]: {
+            name: 'org/skill',
+            source: {
+              type: 'git',
+              uri: 'https://github.com/org/repo',
+              path: 'skills/skill',
+              ref: 'v1.0.0',
+              commit: 'abc1234def',
+            },
+            agents: ['claude-code'],
+            installedAt: new Date().toISOString(),
+            modified: false,
+          },
+        },
+      }),
+      'utf-8'
+    )
+    writeFileSync(join(agentverDir, 'lockfile.json'), JSON.stringify({ version: 2, packages: {} }))
+
+    const fullNameCanonical = join(tempDir, '.agents', 'skills', 'org', 'skill')
+    const shortNameCanonical = join(tempDir, '.agents', 'skills', 'skill')
+    mkdirSync(fullNameCanonical, { recursive: true })
+    mkdirSync(shortNameCanonical, { recursive: true })
+
+    const { server, getHandler } = createMockServer()
+    registerRemoveTool(server as never)
+
+    await getHandler()({ package: 'org/skill' })
+
+    expect(existsSync(fullNameCanonical)).toBe(false)
+    expect(existsSync(shortNameCanonical)).toBe(true)
+  })
 })

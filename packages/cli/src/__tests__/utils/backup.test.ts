@@ -98,7 +98,7 @@ describe('utils/backup', () => {
 
       expect(fs.cpSync).toHaveBeenCalledWith(
         '/project/.agents/skills/my-skill',
-        '/tmp/agentver-backup-123/files',
+        '/tmp/agentver-backup-123/files/0',
         { recursive: true, dereference: true }
       )
     })
@@ -152,6 +152,7 @@ describe('utils/backup', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup',
         skillDir: null,
+        skillDirs: [],
         manifestEntry,
         lockfileEntry,
         scope: 'project',
@@ -195,6 +196,7 @@ describe('utils/backup', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup',
         skillDir: null,
+        skillDirs: [],
         manifestEntry: originalEntry,
         lockfileEntry: null,
         scope: 'project',
@@ -228,6 +230,7 @@ describe('utils/backup', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup',
         skillDir: null,
+        skillDirs: [],
         manifestEntry: null,
         lockfileEntry: null,
         scope: 'project',
@@ -247,6 +250,7 @@ describe('utils/backup', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup',
         skillDir: null,
+        skillDirs: [],
         manifestEntry: null,
         lockfileEntry: null,
         scope: 'global',
@@ -276,6 +280,7 @@ describe('utils/backup', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup',
         skillDir: '/project/.agents/skills/my-skill',
+        skillDirs: [],
         manifestEntry: null,
         lockfileEntry: null,
         scope: 'project',
@@ -296,6 +301,7 @@ describe('utils/backup', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup-123',
         skillDir: null,
+        skillDirs: [],
         manifestEntry: null,
         lockfileEntry: null,
         scope: 'project',
@@ -312,6 +318,7 @@ describe('utils/backup', () => {
         projectRoot: '/project',
         tempDir: '/tmp/nonexistent',
         skillDir: null,
+        skillDirs: [],
         manifestEntry: null,
         lockfileEntry: null,
         scope: 'project',

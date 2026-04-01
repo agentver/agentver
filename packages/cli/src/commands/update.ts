@@ -252,6 +252,7 @@ async function handlePatchUpdate(
   }
 
   const localFileArrays: Array<{ path: string; content: string }> = []
+  let patchTargetPath: string | null = null
   if (packageType === 'AGENT' || packageType === 'COMMAND') {
     const getPlacement = packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
     const fileName = entryFile ?? `${shortName}.md`
@@ -264,7 +265,7 @@ async function handlePatchUpdate(
         try {
           const content = readFileSync(fullPath, 'utf-8')
           localFileArrays.push({ path: fileName, content })
-          break
+          patchTargetPath ??= fullPath
         } catch {
           // Best-effort read
         }
@@ -273,6 +274,7 @@ async function handlePatchUpdate(
   } else {
     const readPath = resolveReadPath(projectRoot, shortName, agents, scope)
     if (readPath) {
+      patchTargetPath = readPath
       try {
         const files = await readFilesFromDirectory(readPath)
         localFileArrays.push(...files.map((f) => ({ path: f.path, content: f.content })))
@@ -317,10 +319,24 @@ async function handlePatchUpdate(
   spinner.text = `Reapplying local patch for ${update.displayName}...`
 
   try {
-    const skillDir =
-      resolveReadPath(projectRoot, shortName, agents, scope) ??
-      getCanonicalSkillPath(projectRoot, shortName, scope)
-    const applyResult = applyPatch(skillDir, patchContent)
+    const patchPathTarget =
+      patchTargetPath ??
+      resolveReadPath(
+        projectRoot,
+        shortName,
+        agents,
+        scope,
+        packageType === 'AGENT' ? 'agents' : packageType === 'COMMAND' ? 'commands' : 'skills'
+      ) ??
+      (packageType === 'AGENT' || packageType === 'COMMAND'
+        ? null
+        : getCanonicalSkillPath(projectRoot, shortName, scope))
+
+    if (!patchPathTarget) {
+      throw new Error('Could not determine the installed path to reapply the patch')
+    }
+
+    const applyResult = applyPatch(patchPathTarget, patchContent)
 
     if (applyResult.applied) {
       removePatch(projectRoot, update.displayName)
@@ -710,13 +726,17 @@ export function registerUpdateCommand(program: Command): void {
               const getPlacement =
                 pkgType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
               const entryFileName = installedPkg?.entryFile ?? `${shortName}.md`
-              if (agents[0]) {
-                const placement = getPlacement(agents[0] as AgentId, entryFileName, scope)
-                const resolvedPlacement = placement
-                  ? resolvePlacementPath(placement, projectRoot, scope)
-                  : null
-                backupDir = resolvedPlacement ? dirname(resolvedPlacement) : null
-              }
+              const backupRoots = agents
+                .map((agentId) => {
+                  const placement = getPlacement(agentId as AgentId, entryFileName, scope)
+                  const resolvedPlacement = placement
+                    ? resolvePlacementPath(placement, projectRoot, scope)
+                    : null
+                  return resolvedPlacement ? dirname(resolvedPlacement) : null
+                })
+                .filter((path): path is string => Boolean(path))
+
+              backupDir = backupRoots.length > 0 ? backupRoots.join('\0') : null
             } else {
               const placementPath = agents[0]
                 ? getSkillPlacementPath(agents[0] as AgentId, shortName, scope)
@@ -730,7 +750,12 @@ export function registerUpdateCommand(program: Command): void {
             let backup: BackupState | null = null
 
             try {
-              backup = createBackup(update.displayName, projectRoot, backupDir, scope)
+              backup = createBackup(
+                update.displayName,
+                projectRoot,
+                backupDir?.includes('\0') ? backupDir.split('\0') : backupDir,
+                scope
+              )
 
               const typeOption = isSingleFileUpdate
                 ? { type: pkgType.toLowerCase() as 'agent' | 'command' }

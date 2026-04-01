@@ -2,7 +2,9 @@ import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
+import type { PackageType } from '@agentver/installer'
 import {
+  getCanonicalFilePath,
   getCanonicalSkillPath,
   removeAgentPlacements,
   resolveCanonicalCategory,
@@ -19,10 +21,15 @@ function findPackageEntry(
     {
       name?: string
       agents: string[]
+      packageType?: string
     }
   >,
   query: string
-): { key: string; displayName: string; pkg: { name?: string; agents: string[] } } | null {
+): {
+  key: string
+  displayName: string
+  pkg: { name?: string; agents: string[]; packageType?: string }
+} | null {
   if (query in packages) {
     const pkg = packages[query]!
     return { key: query, displayName: getPackageDisplayName(query, pkg), pkg }
@@ -68,24 +75,27 @@ export function registerRemoveTool(server: McpServer): void {
       }
 
       const { key: packageKey, displayName, pkg } = packageEntry
-      const shortName = displayName.split('/').pop()!
       const scope = isGlobal ? 'global' : 'project'
-      const category = resolveCanonicalCategory('SKILL')
+      const packageType = (pkg.packageType ?? 'SKILL') as PackageType
+      const category = resolveCanonicalCategory(packageType)
 
       // Remove canonical storage directory
-      const canonicalPath = getCanonicalSkillPath(root, shortName, scope)
+      const canonicalPath =
+        category === 'skills'
+          ? getCanonicalSkillPath(root, displayName, scope)
+          : getCanonicalFilePath(root, displayName, category, scope)
       if (existsSync(canonicalPath)) {
         rmSync(canonicalPath, { recursive: true, force: true })
       }
 
       // Remove agent placements (symlinks or copies) via installer
-      removeAgentPlacements(root, shortName, pkg.agents, scope, category)
+      removeAgentPlacements(root, displayName, pkg.agents, scope, category)
 
       // Fall back to legacy direct placement removal for packages installed
       // before the canonical storage migration
       const removedFrom: string[] = []
       for (const agentId of pkg.agents) {
-        const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
+        const placementPath = getSkillPlacementPath(agentId as AgentId, displayName, scope)
         if (!placementPath) continue
 
         const fullPath = isGlobal

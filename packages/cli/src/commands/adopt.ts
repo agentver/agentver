@@ -1,10 +1,11 @@
 import { homedir } from 'node:os'
-import { dirname } from 'node:path'
+import { basename, dirname } from 'node:path'
 import type { ScannedFile } from '@agentver/agent-definitions'
 import { scanForSkillFiles, scanGlobalSkillFiles } from '@agentver/agent-definitions'
 import type {
   AdoptResult,
   LocalSource,
+  ManifestV2,
   PackageSource,
   GitSource as SharedGitSource,
 } from '@agentver/shared'
@@ -72,6 +73,8 @@ type PendingAdoption = {
     agents: string[]
     installedAt: string
     modified: boolean
+    packageType?: ManifestV2['packages'][string]['packageType']
+    entryFile?: ManifestV2['packages'][string]['entryFile']
   }
   lockfileEntry: {
     source: PackageSource
@@ -106,7 +109,23 @@ function deduplicateByPath(files: ScannedFile[]): DeduplicatedFile[] {
  * Compute integrity from all files in a directory.
  * Uses the same multi-file hashing as install for consistency.
  */
-async function computeFullPackageIntegrity(entryFilePath: string): Promise<string> {
+async function computeAdoptedIntegrity(
+  entryFilePath: string,
+  detectedType: ScannedFile['detectedType']
+): Promise<string> {
+  if (detectedType === 'AGENT' || detectedType === 'COMMAND' || detectedType === 'AGENT_CONFIG') {
+    try {
+      const files = await readFilesFromDirectory(dirname(entryFilePath))
+      const entryFileName = basename(entryFilePath)
+      const entryFile = files.find((file) => file.path === entryFileName)
+      if (entryFile) {
+        return computeSha256FromFiles([{ path: entryFileName, content: entryFile.content }])
+      }
+    } catch {
+      return computeSha256FromFiles([{ path: basename(entryFilePath), content: '' }])
+    }
+  }
+
   const dirPath = dirname(entryFilePath)
   try {
     const files = await readFilesFromDirectory(dirPath)
@@ -279,7 +298,15 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
       const { source, modified, sourceInfo } = buildAdoptSource(gitContext, sourcePath)
 
       // Compute full-package integrity
-      const integrity = await computeFullPackageIntegrity(file.path)
+      const integrity = await computeAdoptedIntegrity(file.path, file.detectedType)
+      const entryFile =
+        file.detectedType === 'AGENT' || file.detectedType === 'COMMAND'
+          ? basename(file.path)
+          : undefined
+      const packageType =
+        file.detectedType === 'SKILL'
+          ? undefined
+          : (file.detectedType as ManifestV2['packages'][string]['packageType'])
 
       if (!options.dryRun) {
         pendingAdoptions.push({
@@ -292,6 +319,8 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
             agents: file.agents,
             installedAt: new Date().toISOString(),
             modified,
+            packageType,
+            entryFile,
           },
           lockfileEntry: {
             source,

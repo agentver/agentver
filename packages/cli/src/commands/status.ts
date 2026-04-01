@@ -125,6 +125,7 @@ async function readLocalFiles(
       packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
     const shortName = packageName.split('/').pop()!
     const fileName = entryFile ?? `${shortName}.md`
+    const files: Array<{ path: string; content: string }> = []
     for (const agentId of agents) {
       const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
       if (!placementPath) continue
@@ -132,10 +133,10 @@ async function readLocalFiles(
       if (!fullPath) continue
       if (existsSync(fullPath)) {
         const content = readFileSync(fullPath, 'utf-8')
-        return [{ path: fileName, content }]
+        files.push({ path: `${agentId}/${fileName}`, content })
       }
     }
-    return []
+    return files
   }
 
   const readPath = resolveReadPath(projectRoot, packageName, agents, scope)

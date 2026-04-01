@@ -14,6 +14,7 @@ export type BackupState = {
   projectRoot: string
   tempDir: string
   skillDir: string | null
+  skillDirs: string[]
   manifestEntry: ManifestEntry | null
   lockfileEntry: LockfileEntry | null
   scope: Scope
@@ -30,10 +31,11 @@ export type FilesystemBackupState = {
 export function createBackup(
   packageName: string,
   projectRoot: string,
-  skillDir: string | null,
+  skillDir: string | string[] | null,
   scope: Scope = 'project'
 ): BackupState {
   const tempDir = mkdtempSync(join(tmpdir(), 'agentver-backup-'))
+  const skillDirs = [...new Set(Array.isArray(skillDir) ? skillDir : skillDir ? [skillDir] : [])]
 
   const manifest = readManifest(projectRoot, scope)
   const manifestEntry = manifest.packages[packageName] ?? null
@@ -41,17 +43,22 @@ export function createBackup(
   const lockfile = readLockfile(projectRoot, scope)
   const lockfileEntry = lockfile.packages[packageName] ?? null
 
-  if (skillDir && existsSync(skillDir)) {
-    const backupSkillDir = join(tempDir, 'files')
-    mkdirSync(backupSkillDir, { recursive: true })
-    cpSync(skillDir, backupSkillDir, { recursive: true, dereference: true })
-  }
+  skillDirs.forEach((path, index) => {
+    if (!existsSync(path)) {
+      return
+    }
+
+    const backupSkillDir = join(tempDir, 'files', String(index))
+    mkdirSync(dirname(backupSkillDir), { recursive: true })
+    cpSync(path, backupSkillDir, { recursive: true, dereference: true })
+  })
 
   return {
     packageName,
     projectRoot,
     tempDir,
-    skillDir,
+    skillDir: skillDirs[0] ?? null,
+    skillDirs,
     manifestEntry,
     lockfileEntry,
     scope,
@@ -60,19 +67,27 @@ export function createBackup(
 
 export function restoreBackup(backup: BackupState): void {
   // Restore skill files from backup
-  if (backup.skillDir) {
-    const backupSkillDir = join(backup.tempDir, 'files')
+  const skillDirs =
+    (backup.skillDirs?.length ?? 0) > 0
+      ? backup.skillDirs
+      : backup.skillDir
+        ? [backup.skillDir]
+        : []
 
-    if (existsSync(backupSkillDir)) {
-      // Remove any partially-written new files
-      if (existsSync(backup.skillDir)) {
-        rmSync(backup.skillDir, { recursive: true, force: true })
-      }
+  skillDirs.forEach((skillDir, index) => {
+    const backupSkillDir = join(backup.tempDir, 'files', String(index))
 
-      mkdirSync(backup.skillDir, { recursive: true })
-      cpSync(backupSkillDir, backup.skillDir, { recursive: true })
+    if (!existsSync(backupSkillDir)) {
+      return
     }
-  }
+
+    if (existsSync(skillDir)) {
+      rmSync(skillDir, { recursive: true, force: true })
+    }
+
+    mkdirSync(skillDir, { recursive: true })
+    cpSync(backupSkillDir, skillDir, { recursive: true })
+  })
 
   // Restore manifest entry
   const manifest = readManifest(backup.projectRoot, backup.scope)

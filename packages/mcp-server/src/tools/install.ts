@@ -1,8 +1,7 @@
 import { detectInstalledAgents } from '@agentver/agent-definitions'
 import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
-import type { GitSource } from '@agentver/shared'
-import { AgentverError, createLogger } from '@agentver/shared'
-import { computeIntegrity, createStablePackageKey } from '@agentver/storage'
+import { AgentverError, createLogger, type GitSource, type PackageSource } from '@agentver/shared'
+import { computeIntegrity } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
@@ -30,6 +29,25 @@ type VersionListResponse = {
 
 const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 const logger = createLogger('mcp-server:install')
+
+function buildPackageKey(displayName: string, source: PackageSource): string {
+  const identity = (() => {
+    switch (source.type) {
+      case 'git':
+        return `${source.uri}#${source.path}#${source.ref}`
+      case 'platform':
+        return `${source.uri}#${source.path}#${source.ref}`
+      case 'well-known':
+        return `${source.baseUrl}#${source.skillName}`
+      case 'local':
+        return source.path
+      case 'unknown':
+        return [source.path ?? '', source.ref ?? '', source.commit ?? '', displayName].join('#')
+    }
+  })()
+
+  return `${source.type}:${encodeURIComponent(identity)}`
+}
 
 function extractFilesFromManifest(
   fileManifest: Record<string, unknown> | unknown[]
@@ -158,7 +176,7 @@ export function registerInstallTool(server: McpServer): void {
       }
 
       const request: InstallRequest = {
-        packageKey: createStablePackageKey(packageName, source),
+        packageKey: buildPackageKey(packageName, source),
         displayName: packageName,
         packageType: 'SKILL',
         source,

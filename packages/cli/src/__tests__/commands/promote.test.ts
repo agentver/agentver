@@ -346,6 +346,32 @@ describe('commands/promote', () => {
       const combinedOutput = stdout.join('')
       expect(combinedOutput).toContain('dirty')
     })
+
+    it('uses global scope when --global is passed', async () => {
+      const manifestPackage = createManifestPackage({
+        source: LOCAL_SOURCE,
+      })
+      Object.assign(manifestPackage, { name: 'test-skill' })
+
+      asMock(readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'local:/project/skills/test-skill': manifestPackage,
+          },
+        })
+      )
+      asMock(localContextModule.resolveLocalGitContext).mockResolvedValue(createMockGitContext())
+
+      captureOutput()
+      await promoteSkills('test-skill', { to: 'git', global: true })
+
+      expect(readManifest).toHaveBeenCalledWith('/project', 'global')
+      expect(updateManifestAndLockfile).toHaveBeenCalledWith(
+        '/project',
+        'global',
+        expect.any(Function)
+      )
+    })
   })
 
   // -------------------------------------------------------------------------

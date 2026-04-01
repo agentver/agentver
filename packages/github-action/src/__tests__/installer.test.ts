@@ -177,7 +177,7 @@ describe('installer', () => {
       )
     })
 
-    it('rejects a legacy manifest schema', () => {
+    it('migrates a legacy manifest schema in memory', () => {
       const legacyManifest = {
         version: 1,
         packages: {
@@ -191,10 +191,14 @@ describe('installer', () => {
       }
       writeManifest(tempDir, legacyManifest)
 
-      expect(() => readManifestFile(tempDir)).toThrow('schema validation failed')
-      expect(
-        JSON.parse(readFileSync(join(agentverDir(tempDir), 'manifest.json'), 'utf-8'))
-      ).toEqual(legacyManifest)
+      const result = readManifestFile(tempDir)
+      expect(Object.keys(result.packages)).toHaveLength(1)
+      expect(Object.values(result.packages)[0]).toEqual(
+        expect.objectContaining({
+          name: 'org/skill',
+          source: expect.objectContaining({ type: 'unknown' }),
+        })
+      )
     })
   })
 
@@ -464,6 +468,7 @@ describe('installer', () => {
 
       const results: InstallResult[] = [
         {
+          packageKey: 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0',
           name: 'org/skill',
           version: '1.0.0',
           agents: ['claude-code'],
@@ -476,7 +481,7 @@ describe('installer', () => {
         string,
         { response: DownloadResponse; files: Array<{ path: string; content: string }> }
       >()
-      resolvedData.set('org/skill', {
+      resolvedData.set('git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0', {
         response: {
           version: '1.0.0',
           content: null,
@@ -494,7 +499,8 @@ describe('installer', () => {
 
       const updated = updateLockfile(existingLockfile, results, resolvedData)
 
-      const pkg = updated.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
+      const packageKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0'
+      const pkg = updated.packages[packageKey]
       expect(pkg).toBeDefined()
       expect(pkg!.source.type).toBe('git')
       expect(pkg!.name).toBe('org/skill')
@@ -510,6 +516,7 @@ describe('installer', () => {
 
       const results: InstallResult[] = [
         {
+          packageKey: 'git:failed',
           name: 'org/failed',
           version: '1.0.0',
           agents: [],
@@ -555,6 +562,7 @@ describe('installer', () => {
 
       const results: InstallResult[] = [
         {
+          packageKey: 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0',
           name: 'org/skill',
           version: '1.0.0',
           agents: ['claude-code'],
@@ -567,7 +575,7 @@ describe('installer', () => {
         string,
         { response: DownloadResponse; files: Array<{ path: string; content: string }> }
       >()
-      resolvedData.set('org/skill', {
+      resolvedData.set('git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0', {
         response: {
           version: '1.0.0',
           content: null,
@@ -585,6 +593,80 @@ describe('installer', () => {
 
       const updated = updateLockfile(existingLockfile, results, resolvedData)
       expect(updated.packages['org/skill']).toBeUndefined()
+    })
+
+    it('keeps duplicate display names distinct by package key', () => {
+      const existingLockfile = { version: 2 as const, packages: {} }
+
+      const mainKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23main'
+      const releaseKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23release'
+
+      const results: InstallResult[] = [
+        {
+          packageKey: mainKey,
+          name: 'org/skill',
+          version: '1.0.0',
+          agents: ['claude-code'],
+          fileCount: 1,
+          success: true,
+        },
+        {
+          packageKey: releaseKey,
+          name: 'org/skill',
+          version: '1.0.0',
+          agents: ['cursor'],
+          fileCount: 1,
+          success: true,
+        },
+      ]
+
+      const resolvedData = new Map<
+        string,
+        { response: DownloadResponse; files: Array<{ path: string; content: string }> }
+      >([
+        [
+          mainKey,
+          {
+            response: {
+              version: '1.0.0',
+              content: null,
+              fileManifest: [{ path: 'SKILL.md', content: '# main' }],
+              sha256: 'abc',
+              size: 100,
+              gitRef: 'main',
+              gitCommitSha: 'commit123',
+              gitUri: 'https://github.com/org/repo',
+              gitPath: 'skills/skill',
+              createdAt: '2025-01-01T00:00:00Z',
+            },
+            files: [{ path: 'SKILL.md', content: '# main' }],
+          },
+        ],
+        [
+          releaseKey,
+          {
+            response: {
+              version: '1.0.0',
+              content: null,
+              fileManifest: [{ path: 'SKILL.md', content: '# release' }],
+              sha256: 'def',
+              size: 100,
+              gitRef: 'release',
+              gitCommitSha: 'commit456',
+              gitUri: 'https://github.com/org/repo',
+              gitPath: 'skills/skill',
+              createdAt: '2025-01-01T00:00:00Z',
+            },
+            files: [{ path: 'SKILL.md', content: '# release' }],
+          },
+        ],
+      ])
+
+      const updated = updateLockfile(existingLockfile, results, resolvedData)
+      expect(updated.packages[mainKey]).toBeDefined()
+      expect(updated.packages[releaseKey]).toBeDefined()
+      expect(updated.packages[mainKey]?.agents).toEqual(['claude-code'])
+      expect(updated.packages[releaseKey]?.agents).toEqual(['cursor'])
     })
   })
 })

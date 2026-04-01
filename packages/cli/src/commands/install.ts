@@ -34,7 +34,7 @@ import {
   type PlatformSource,
   type WellKnownSource,
 } from '@agentver/shared'
-import { computeIntegrity, createStablePackageKey } from '@agentver/storage'
+import { computeIntegrity } from '@agentver/storage'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import type ora from 'ora'
@@ -64,7 +64,11 @@ import { getCanonicalSkillPath } from '../storage/canonical'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
-import { setLockfilePackage, setManifestPackage } from '../storage/package-identity'
+import {
+  createStablePackageKey,
+  setLockfilePackage,
+  setManifestPackage,
+} from '../storage/package-identity'
 import { updateManifestAndLockfile } from '../storage/pair'
 import {
   cleanupBackup,

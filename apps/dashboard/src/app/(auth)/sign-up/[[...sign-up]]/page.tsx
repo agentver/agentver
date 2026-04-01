@@ -8,11 +8,12 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { signIn, signUp } from '@/lib/auth/client'
+import { sanitiseRedirectUrl } from '@/lib/auth/redirect'
 
 function SignUpContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectUrl = searchParams.get('redirect_url') ?? '/'
+  const redirectUrl = sanitiseRedirectUrl(searchParams.get('redirect_url'))
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

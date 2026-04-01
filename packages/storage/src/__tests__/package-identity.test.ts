@@ -59,13 +59,17 @@ const unknownSource: UnknownSource = {
 describe('createStablePackageKey', () => {
   it('creates correct key for git source', () => {
     const key = createStablePackageKey('my-skill', gitSource)
-    expect(key).toBe(`git:${encodeURIComponent('https://github.com/org/repo.git#skills/my-skill')}`)
+    expect(key).toBe(
+      `git:${encodeURIComponent('https://github.com/org/repo.git#skills/my-skill#main')}`
+    )
     expect(key.startsWith('git:')).toBe(true)
   })
 
   it('creates correct key for platform source', () => {
     const key = createStablePackageKey('platform-skill', platformSource)
-    expect(key).toBe(`platform:${encodeURIComponent('agentver://org/repo#skills/platform-skill')}`)
+    expect(key).toBe(
+      `platform:${encodeURIComponent('agentver://org/repo#skills/platform-skill#main')}`
+    )
   })
 
   it('creates correct key for well-known source', () => {
