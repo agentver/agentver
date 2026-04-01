@@ -181,6 +181,23 @@ describe('getRemoteUri', () => {
     expect(result.uri).toBe('github.com/a/repo')
     expect(result.remoteName).toBe('alpha')
   })
+
+  it('uses preferredRemote when it exists in the remotes list', async () => {
+    await git(['remote', 'add', 'origin', 'https://github.com/origin/repo.git'], tempDir)
+    await git(['remote', 'add', 'upstream', 'https://github.com/upstream/repo.git'], tempDir)
+
+    const result = await getRemoteUri(tempDir, 'upstream')
+    expect(result.uri).toBe('github.com/upstream/repo')
+    expect(result.remoteName).toBe('upstream')
+  })
+
+  it('falls back to default priority when preferredRemote does not exist', async () => {
+    await git(['remote', 'add', 'origin', 'https://github.com/origin/repo.git'], tempDir)
+
+    const result = await getRemoteUri(tempDir, 'nonexistent')
+    expect(result.uri).toBe('github.com/origin/repo')
+    expect(result.remoteName).toBe('origin')
+  })
 })
 
 describe('getCurrentRef', () => {

@@ -478,7 +478,43 @@ describe('commands/adopt', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 10. Full-package integrity
+  // 10. --prefer-remote flag
+  // -------------------------------------------------------------------------
+
+  describe('--prefer-remote flag', () => {
+    it('passes preferRemote through to resolveLocalGitContext', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(
+        createMockGitContext({ remoteName: 'upstream', remoteUri: 'github.com/upstream/repo' })
+      )
+
+      await adoptSkills(undefined, { preferRemote: 'upstream' })
+
+      expect(localContextModule.resolveLocalGitContext).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.anything(),
+        'upstream'
+      )
+    })
+
+    it('omits preferredRemote when flag is not set', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(localContextModule.resolveLocalGitContext).mockResolvedValue(createMockGitContext())
+
+      await adoptSkills(undefined, {})
+
+      expect(localContextModule.resolveLocalGitContext).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.anything(),
+        undefined
+      )
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 11. Full-package integrity
   // -------------------------------------------------------------------------
 
   describe('full-package integrity', () => {

@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { detectInstalledAgents } from '@agentver/agent-definitions'
+import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
 import type {
   LocalSource,
   PackageSource,
@@ -23,7 +25,7 @@ import { createStablePackageKey, resolvePackageQuery } from '../storage/package-
 import { updateManifestAndLockfile } from '../storage/pair.js'
 import { extractError } from '../utils.js'
 
-type PromoteTarget = 'platform' | 'git' | 'user'
+type PromoteTarget = 'platform' | 'git'
 
 type PromoteOptions = {
   to: PromoteTarget
@@ -287,12 +289,66 @@ async function promoteSingle(
         spinner
       )
     }
-
-    case 'user':
-      throw new Error(
-        'Personal namespace is not yet available. Use --to platform with an organisation.'
-      )
   }
+}
+
+/**
+ * Move package files into canonical storage with symlinks.
+ * Uses the installer's plan + execute pipeline to place files correctly.
+ */
+async function canonicalisePackage(
+  entry: PromoteEntry,
+  packagePath: string,
+  projectRoot: string,
+  agents: string[],
+  spinner: { text: string }
+): Promise<void> {
+  spinner.text = `Canonicalising ${entry.displayName}...`
+
+  const files = await readFilesFromDirectory(packagePath)
+  if (files.length === 0) {
+    throw new Error(`No files found in ${packagePath} to canonicalise.`)
+  }
+
+  const fileEntries = files.map((f) => ({ path: f.path, content: f.content }))
+  const integrity = computeSha256FromFiles(fileEntries)
+  const packageKey = createStablePackageKey(entry.displayName, entry.newSource)
+
+  const request: InstallRequest = {
+    packageKey,
+    displayName: entry.displayName,
+    packageType: 'SKILL',
+    source: entry.newSource,
+    files: fileEntries,
+    integrity,
+    target: {
+      scope: 'project',
+      projectRoot,
+      agents,
+    },
+    policy: {
+      conflictStrategy: 'force',
+      preferredLinkMode: 'symlink',
+      allowFallback: true,
+      dryRun: false,
+      persist: false,
+      securityScanPolicy: 'skip',
+    },
+  }
+
+  const plan = planInstall(request)
+  const result = executeInstall(plan)
+
+  if (!result.success) {
+    throw new Error(result.error?.message ?? 'Failed to canonicalise package files.')
+  }
+
+  for (const backup of result.backups) {
+    backup.cleanup()
+  }
+
+  entry.canonicalised = true
+  entry.newIntegrity = integrity
 }
 
 /**
@@ -322,12 +378,18 @@ function applyPromoteEntry(
   const oldKey = entry.packageKey
   const newKey = createStablePackageKey(entry.displayName, entry.newSource)
 
-  currentManifest.packages[newKey] = {
+  const updatedManifestPkg: (typeof currentManifest.packages)[string] = {
     ...manifestPkg,
     source: entry.newSource,
     modified: entry.dirty ?? false,
     name: entry.displayName,
   }
+
+  if (entry.canonicalised) {
+    delete (updatedManifestPkg as Record<string, unknown>).path
+  }
+
+  currentManifest.packages[newKey] = updatedManifestPkg
   if (newKey !== oldKey) {
     delete currentManifest.packages[oldKey]
   }
@@ -445,6 +507,18 @@ export async function promoteSkills(
             options,
             spinner
           )
+
+          if (options.canonicalise && !options.dryRun) {
+            const currentPath = resolvePackagePath(pkg.source, pkg.path)
+            if (currentPath) {
+              const agents =
+                pkg.agents.length > 0
+                  ? pkg.agents
+                  : detectInstalledAgents(projectRoot).map((a) => a.id)
+              await canonicalisePackage(entry, currentPath, projectRoot, agents, spinner)
+            }
+          }
+
           results.push(entry)
         } catch (error) {
           errors.push({
@@ -538,6 +612,15 @@ export async function promoteSkills(
       spinner
     )
 
+    if (options.canonicalise && !options.dryRun) {
+      const currentPath = resolvePackagePath(pkg.source, pkg.path)
+      if (currentPath) {
+        const agents =
+          pkg.agents.length > 0 ? pkg.agents : detectInstalledAgents(projectRoot).map((a) => a.id)
+        await canonicalisePackage(entry, currentPath, projectRoot, agents, spinner)
+      }
+    }
+
     if (!options.dryRun) {
       updateManifestAndLockfile(projectRoot, 'project', (currentManifest, currentLockfile) => {
         applyPromoteEntry(currentManifest, currentLockfile, entry)
@@ -578,7 +661,7 @@ export function registerPromoteCommand(program: Command): void {
   program
     .command('promote [name]')
     .description('Promote a local or unknown skill to a remote source (git or platform)')
-    .requiredOption('--to <target>', 'Promotion target: platform, git, or user')
+    .requiredOption('--to <target>', 'Promotion target: platform or git')
     .option('--org <slug>', 'Organisation slug (required for --to platform)')
     .option('--yes', 'Skip confirmation prompts')
     .option('--dry-run', 'Show what would happen without making changes')
@@ -588,7 +671,7 @@ export function registerPromoteCommand(program: Command): void {
     .option('--all', 'Promote all local packages')
     .option('--skip-audit', 'Skip security scan')
     .action(async (name: string | undefined, options: PromoteOptions) => {
-      const validTargets: PromoteTarget[] = ['platform', 'git', 'user']
+      const validTargets: PromoteTarget[] = ['platform', 'git']
       if (!validTargets.includes(options.to)) {
         const msg = `Invalid promotion target "${options.to}". Must be one of: ${validTargets.join(', ')}`
         if (isJSONMode()) {

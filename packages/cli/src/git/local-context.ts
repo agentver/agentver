@@ -72,7 +72,8 @@ export function createGitRepoCache(): GitRepoCache {
  */
 export async function resolveLocalGitContext(
   filePath: string,
-  cache?: GitRepoCache
+  cache?: GitRepoCache,
+  preferredRemote?: string
 ): Promise<LocalGitContext | null> {
   const effectiveCache = cache ?? createGitRepoCache()
 
@@ -85,7 +86,7 @@ export async function resolveLocalGitContext(
   let repoInfo = effectiveCache.repos.get(gitRoot)
   if (!repoInfo) {
     const [remoteResult, ref, commit] = await Promise.all([
-      getRemoteUri(gitRoot),
+      getRemoteUri(gitRoot, preferredRemote),
       getCurrentRef(gitRoot),
       getHeadCommit(gitRoot),
     ])
@@ -147,7 +148,8 @@ export async function findGitRoot(dirPath: string, cache?: GitRepoCache): Promis
  * Returns null if no remotes are configured.
  */
 export async function getRemoteUri(
-  gitRoot: string
+  gitRoot: string,
+  preferredRemote?: string
 ): Promise<{ uri: string | null; remoteName: string | null }> {
   try {
     const output = await execGitLocal(['remote'], gitRoot)
@@ -157,11 +159,17 @@ export async function getRemoteUri(
       return { uri: null, remoteName: null }
     }
 
-    const preferred = remotes.includes('origin')
-      ? 'origin'
-      : remotes.includes('upstream')
-        ? 'upstream'
-        : remotes.sort()[0]!
+    let preferred: string
+
+    if (preferredRemote && remotes.includes(preferredRemote)) {
+      preferred = preferredRemote
+    } else {
+      preferred = remotes.includes('origin')
+        ? 'origin'
+        : remotes.includes('upstream')
+          ? 'upstream'
+          : remotes.sort()[0]!
+    }
 
     if (preferred !== 'origin') {
       logger.debug(`Using remote "${preferred}" for ${gitRoot} (no "origin" configured)`)

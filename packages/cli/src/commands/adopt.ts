@@ -178,7 +178,7 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
     // Handle reclassify mode
     if (options.reclassify) {
       spinner.text = 'Reclassifying local entries...'
-      const reclassified = await reclassifyLocalEntries(projectRoot)
+      const reclassified = await reclassifyLocalEntries(projectRoot, options.preferRemote)
 
       if (jsonMode) {
         outputSuccess<AdoptResult>({ adopted: [], skipped: [] }, [
@@ -275,7 +275,7 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
       const sourcePath = isConfig ? file.path : dirname(file.path)
 
       // Resolve git context
-      const gitContext = await resolveLocalGitContext(sourcePath, gitCache)
+      const gitContext = await resolveLocalGitContext(sourcePath, gitCache, options.preferRemote)
       const { source, modified, sourceInfo } = buildAdoptSource(gitContext, sourcePath)
 
       // Compute full-package integrity
@@ -398,7 +398,10 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
  * Scans the manifest for `local` source entries, checks if their paths
  * now have git context, and upgrades the source if possible.
  */
-async function reclassifyLocalEntries(projectRoot: string): Promise<ReclassifiedEntry[]> {
+async function reclassifyLocalEntries(
+  projectRoot: string,
+  preferredRemote?: string
+): Promise<ReclassifiedEntry[]> {
   const manifest = readManifest(projectRoot)
   const reclassified: ReclassifiedEntry[] = []
   const gitCache = createGitRepoCache()
@@ -424,7 +427,7 @@ async function reclassifyLocalEntries(projectRoot: string): Promise<Reclassified
   }> = []
 
   for (const entry of localEntries) {
-    const context = await resolveLocalGitContext(entry.path, gitCache)
+    const context = await resolveLocalGitContext(entry.path, gitCache, preferredRemote)
     if (!context?.remoteUri) continue
 
     updates.push({

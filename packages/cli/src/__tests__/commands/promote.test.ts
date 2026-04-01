@@ -54,6 +54,40 @@ vi.mock('../../storage/integrity.js', () => ({
   computeSha256FromFiles: vi.fn().mockReturnValue('sha256-test-hash'),
 }))
 
+vi.mock('@agentver/installer', () => ({
+  planInstall: vi.fn().mockReturnValue({
+    request: {},
+    kind: 'fresh',
+    canonical: { path: '/project/.agents/skills/test-skill', category: 'skills' },
+    placements: [],
+    conflicts: [],
+    backupsRequired: [],
+    manifestEntry: {},
+    lockfileEntry: {},
+    skippedAgents: [],
+    skippedFiles: [],
+    executable: true,
+  }),
+  executeInstall: vi.fn().mockReturnValue({
+    success: true,
+    packageKey: 'test-key',
+    displayName: 'test-skill',
+    placements: [],
+    conflictsResolved: [],
+    backups: [],
+    manifestWritten: false,
+    lockfileWritten: false,
+    manifestEntry: {},
+    lockfileEntry: {},
+    filesPlacedCount: 1,
+    agentsInstalledCount: 1,
+  }),
+}))
+
+vi.mock('@agentver/agent-definitions', () => ({
+  detectInstalledAgents: vi.fn().mockReturnValue([{ id: 'claude-code' }]),
+}))
+
 vi.mock('chalk', () => {
   const identity = (s: string) => s
   const fn = Object.assign(identity, {
@@ -704,11 +738,11 @@ describe('commands/promote', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 8. --to user stub
+  // 8. --canonicalise
   // -------------------------------------------------------------------------
 
-  describe('--to user', () => {
-    it('errors with personal namespace not available message', async () => {
+  describe('--canonicalise', () => {
+    it('canonicalises files into canonical storage after promote', async () => {
       asMock(readManifest).mockReturnValue(
         createManifest({
           packages: {
@@ -719,15 +753,39 @@ describe('commands/promote', () => {
           },
         })
       )
+      asMock(localContextModule.resolveLocalGitContext).mockResolvedValue(createMockGitContext())
+      asMock(readFilesFromDirectory).mockResolvedValue([
+        { path: 'SKILL.md', content: '# Test', size: 6 },
+      ])
 
       captureOutput()
-      await promoteSkills('test-skill', { to: 'user' })
+      await promoteSkills('test-skill', { to: 'git', canonicalise: true })
 
-      const spinner = asMock(outputModule.createSpinner).mock.results[0]?.value
-      expect(spinner?.fail).toHaveBeenCalledWith(
-        expect.stringContaining('Personal namespace is not yet available')
+      const { planInstall: mockPlanInstall } = await import('@agentver/installer')
+      expect(mockPlanInstall).toHaveBeenCalled()
+
+      const { executeInstall: mockExecuteInstall } = await import('@agentver/installer')
+      expect(mockExecuteInstall).toHaveBeenCalled()
+    })
+
+    it('skips canonicalise in dry-run mode', async () => {
+      asMock(readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'local:/project/skills/test-skill': Object.assign(
+              createManifestPackage({ source: LOCAL_SOURCE }),
+              { name: 'test-skill' }
+            ),
+          },
+        })
       )
-      expect(process.exit).toHaveBeenCalledWith(1)
+      asMock(localContextModule.resolveLocalGitContext).mockResolvedValue(createMockGitContext())
+
+      captureOutput()
+      await promoteSkills('test-skill', { to: 'git', canonicalise: true, dryRun: true })
+
+      const { planInstall: mockPlanInstall } = await import('@agentver/installer')
+      expect(mockPlanInstall).not.toHaveBeenCalled()
     })
   })
 
