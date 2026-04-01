@@ -1,5 +1,12 @@
 import { execSync } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
@@ -8,6 +15,7 @@ import {
   type DoctorResult,
   lockfileV2Schema,
   manifestV2Schema,
+  STORAGE_SCHEMA_VERSION,
 } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -22,6 +30,10 @@ import { resolvePlacementPath, type Scope } from '../utils/paths.js'
 
 type CheckStatus = DoctorCheck['status']
 
+type FixableDoctorCheck = DoctorCheck & {
+  fix?: () => string | null
+}
+
 const MANIFEST_DIR = '.agentver'
 const MANIFEST_FILE = 'manifest.json'
 const LOCKFILE_FILE = 'lockfile.json'
@@ -32,11 +44,99 @@ function scopeLabel(scope: Scope): string {
   return scope === 'global' ? ' (global)' : ' (project)'
 }
 
-function check(name: string, status: CheckStatus, message: string): DoctorCheck {
-  return { name, status, message }
+function check(
+  name: string,
+  status: CheckStatus,
+  message: string,
+  fix?: () => string | null
+): FixableDoctorCheck {
+  return { name, status, message, fix }
 }
 
-function checkManifestIntegrity(projectRoot: string, scope: Scope): DoctorCheck {
+function writeEmptyManifest(manifestRoot: string): void {
+  mkdirSync(manifestRoot, { recursive: true })
+  writeFileSync(
+    join(manifestRoot, MANIFEST_FILE),
+    JSON.stringify({ version: STORAGE_SCHEMA_VERSION, packages: {} }, null, 2) + '\n'
+  )
+}
+
+function writeEmptyLockfile(lockfileRoot: string): void {
+  mkdirSync(lockfileRoot, { recursive: true })
+  writeFileSync(
+    join(lockfileRoot, LOCKFILE_FILE),
+    JSON.stringify({ version: STORAGE_SCHEMA_VERSION, packages: {} }, null, 2) + '\n'
+  )
+}
+
+/**
+ * Attempt to repair a manifest/lockfile that fails schema validation.
+ * Fixes known issues like empty commit fields, missing version, etc.
+ */
+function repairStorageFile(
+  filePath: string,
+  schema: typeof manifestV2Schema | typeof lockfileV2Schema
+): string | null {
+  let raw: string
+  try {
+    raw = readFileSync(filePath, 'utf-8')
+  } catch {
+    return null
+  }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return null // Can't fix invalid JSON
+  }
+
+  // Ensure version field
+  if (!parsed.version) {
+    parsed.version = STORAGE_SCHEMA_VERSION
+  }
+
+  // Ensure packages is an object
+  if (!parsed.packages || typeof parsed.packages !== 'object') {
+    parsed.packages = {}
+  }
+
+  // Fix each package entry
+  const packages = parsed.packages as Record<string, Record<string, unknown>>
+  for (const [key, pkg] of Object.entries(packages)) {
+    if (!pkg || typeof pkg !== 'object') continue
+
+    const source = pkg.source as Record<string, unknown> | undefined
+    if (source && typeof source === 'object') {
+      // Fix empty commit fields (must be >= 7 chars or absent)
+      if (source.type === 'git' || source.type === 'platform') {
+        if (typeof source.commit === 'string' && source.commit.length < 7) {
+          source.commit = '0000000'
+        }
+        // Fix empty ref fields
+        if (typeof source.ref === 'string' && source.ref.length === 0) {
+          source.ref = 'main'
+        }
+        // Fix empty uri fields
+        if (typeof source.uri === 'string' && source.uri.length === 0) {
+          // Can't reasonably guess a URI, remove the package
+          delete packages[key]
+        }
+      }
+    }
+  }
+
+  // Validate the repaired data
+  const result = schema.safeParse(parsed)
+  if (!result.success) {
+    return null // Repair wasn't enough
+  }
+
+  writeFileSync(filePath, JSON.stringify(parsed, null, 2) + '\n')
+  return 'Repaired invalid fields'
+}
+
+function checkManifestIntegrity(projectRoot: string, scope: Scope): FixableDoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const name = `manifest-integrity${suffix}`
   const label = scopeLabel(scope)
@@ -45,7 +145,10 @@ function checkManifestIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
   const manifestPath = join(manifestRoot, MANIFEST_FILE)
 
   if (!existsSync(manifestPath)) {
-    return check(name, 'warn', `Manifest file not found (no skills installed yet)${label}`)
+    return check(name, 'warn', `Manifest file not found (no skills installed yet)${label}`, () => {
+      writeEmptyManifest(manifestRoot)
+      return 'Created empty manifest'
+    })
   }
 
   let raw: string
@@ -59,18 +162,23 @@ function checkManifestIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return check(name, 'fail', `Manifest contains invalid JSON${label}`)
+    return check(name, 'fail', `Manifest contains invalid JSON${label}`, () => {
+      writeEmptyManifest(manifestRoot)
+      return 'Reset manifest (previous file had invalid JSON)'
+    })
   }
 
   const result = manifestV2Schema.safeParse(parsed)
   if (!result.success) {
-    return check(name, 'fail', `Manifest does not match expected schema${label}`)
+    return check(name, 'fail', `Manifest does not match expected schema${label}`, () => {
+      return repairStorageFile(manifestPath, manifestV2Schema)
+    })
   }
 
   return check(name, 'pass', `Manifest is valid${label}`)
 }
 
-function checkLockfileIntegrity(projectRoot: string, scope: Scope): DoctorCheck {
+function checkLockfileIntegrity(projectRoot: string, scope: Scope): FixableDoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const name = `lockfile-integrity${suffix}`
   const label = scopeLabel(scope)
@@ -79,7 +187,10 @@ function checkLockfileIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
   const lockfilePath = join(lockfileRoot, LOCKFILE_FILE)
 
   if (!existsSync(lockfilePath)) {
-    return check(name, 'warn', `Lockfile not found (no skills installed yet)${label}`)
+    return check(name, 'warn', `Lockfile not found (no skills installed yet)${label}`, () => {
+      writeEmptyLockfile(lockfileRoot)
+      return 'Created empty lockfile'
+    })
   }
 
   let raw: string
@@ -93,18 +204,23 @@ function checkLockfileIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return check(name, 'fail', `Lockfile contains invalid JSON${label}`)
+    return check(name, 'fail', `Lockfile contains invalid JSON${label}`, () => {
+      writeEmptyLockfile(lockfileRoot)
+      return 'Reset lockfile (previous file had invalid JSON)'
+    })
   }
 
   const result = lockfileV2Schema.safeParse(parsed)
   if (!result.success) {
-    return check(name, 'fail', `Lockfile does not match expected schema${label}`)
+    return check(name, 'fail', `Lockfile does not match expected schema${label}`, () => {
+      return repairStorageFile(lockfilePath, lockfileV2Schema)
+    })
   }
 
   return check(name, 'pass', `Lockfile is valid${label}`)
 }
 
-function checkManifestLockfileSync(projectRoot: string, scope: Scope): DoctorCheck {
+function checkManifestLockfileSync(projectRoot: string, scope: Scope): FixableDoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const checkName = `manifest-lockfile-sync${suffix}`
   const label = scopeLabel(scope)
@@ -142,7 +258,26 @@ function checkManifestLockfileSync(projectRoot: string, scope: Scope): DoctorChe
     if (inLockfileOnly.length > 0) {
       parts.push(`in lockfile but not manifest: ${inLockfileOnly.join(', ')}`)
     }
-    return check(checkName, 'fail', `Out of sync — ${parts.join('; ')}${label}`)
+    return check(checkName, 'fail', `Out of sync — ${parts.join('; ')}${label}`, () => {
+      const manifestRoot =
+        scope === 'global' ? join(homedir(), MANIFEST_DIR) : join(projectRoot, MANIFEST_DIR)
+      const manifestPath = join(manifestRoot, MANIFEST_FILE)
+      const lockfilePath = join(manifestRoot, LOCKFILE_FILE)
+
+      // Remove orphan entries from both sides to bring them in sync
+      for (const name of inManifestOnly) {
+        delete manifest.packages[name]
+      }
+      for (const name of inLockfileOnly) {
+        delete lockfile.packages[name]
+      }
+
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+      writeFileSync(lockfilePath, JSON.stringify(lockfile, null, 2) + '\n')
+
+      const removed = [...inManifestOnly, ...inLockfileOnly]
+      return `Removed orphan entries: ${removed.join(', ')}`
+    })
   }
 
   return check(checkName, 'pass', `Manifest and lockfile are in sync${label}`)
@@ -331,11 +466,13 @@ export function registerDoctorCommand(program: Command): void {
     .command('doctor')
     .description('Run health checks to diagnose common issues')
     .option('--json', 'Output as JSON')
-    .action(async (options: { json?: boolean }) => {
+    .option('--fix', 'Attempt to auto-fix issues that have known remedies')
+    .action(async (options: { json?: boolean; fix?: boolean }) => {
       const jsonMode = isJSONMode() || options.json === true
+      const fixMode = options.fix === true
       const projectRoot = process.cwd()
 
-      const checks: DoctorCheck[] = []
+      const checks: FixableDoctorCheck[] = []
 
       const scopes: Scope[] = ['project', 'global']
       for (const scope of scopes) {
@@ -349,12 +486,41 @@ export function registerDoctorCommand(program: Command): void {
       checks.push(checkGitAvailable())
       checks.push(checkNodeVersion())
 
+      // Run fixes for any failed/warned checks that have fix functions
+      const fixResults: Array<{ name: string; result: string }> = []
+      if (fixMode) {
+        for (const c of checks) {
+          if ((c.status === 'fail' || c.status === 'warn') && c.fix) {
+            try {
+              const result = c.fix()
+              fixResults.push({ name: c.name, result })
+              c.status = 'pass'
+              c.message = `${c.message} → fixed: ${result}`
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              fixResults.push({ name: c.name, result: `FAILED: ${msg}` })
+              c.message = `${c.message} → fix failed: ${msg}`
+            }
+          }
+        }
+      }
+
       const passed = checks.filter((c) => c.status === 'pass').length
       const failed = checks.filter((c) => c.status === 'fail').length
       const warnings = checks.filter((c) => c.status === 'warn').length
 
       if (jsonMode) {
-        const result: DoctorResult = { checks, passed, failed, warnings }
+        // Strip fix functions from JSON output
+        const sanitized = checks.map(({ fix: _fix, ...rest }) => rest)
+        const result: DoctorResult & { fixes?: typeof fixResults } = {
+          checks: sanitized,
+          passed,
+          failed,
+          warnings,
+        }
+        if (fixResults.length > 0) {
+          result.fixes = fixResults
+        }
         outputSuccess(result)
         process.exit(failed > 0 ? 1 : 0)
         return
@@ -364,6 +530,27 @@ export function registerDoctorCommand(program: Command): void {
 
       for (const result of checks) {
         console.log(formatCheck(result))
+      }
+
+      if (fixResults.length > 0) {
+        console.log(chalk.bold('\nFixes applied:\n'))
+        for (const fix of fixResults) {
+          const icon = fix.result.startsWith('FAILED') ? chalk.red('✗') : chalk.green('✓')
+          console.log(`  ${icon} ${fix.name}: ${fix.result}`)
+        }
+      } else if (fixMode && failed === 0 && warnings === 0) {
+        console.log(chalk.dim('\nNothing to fix — all checks passed.'))
+      } else if (!fixMode && failed > 0) {
+        const fixableCount = checks.filter(
+          (c) => (c.status === 'fail' || c.status === 'warn') && c.fix
+        ).length
+        if (fixableCount > 0) {
+          console.log(
+            chalk.dim(
+              `\nTip: run ${chalk.bold('agentver doctor --fix')} to auto-repair ${String(fixableCount)} issue${fixableCount > 1 ? 's' : ''}`
+            )
+          )
+        }
       }
 
       console.log()
