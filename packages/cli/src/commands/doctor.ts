@@ -492,7 +492,12 @@ export function registerDoctorCommand(program: Command): void {
         for (const c of checks) {
           if ((c.status === 'fail' || c.status === 'warn') && c.fix) {
             try {
-              const result = c.fix() ?? 'Fixed'
+              const result = c.fix()
+              if (result === null) {
+                fixResults.push({ name: c.name, result: 'FAILED: repair was not sufficient' })
+                c.message = `${c.message} → fix could not fully repair`
+                continue
+              }
               fixResults.push({ name: c.name, result })
               c.status = 'pass'
               c.message = `${c.message} → fixed: ${result}`
@@ -511,9 +516,9 @@ export function registerDoctorCommand(program: Command): void {
 
       if (jsonMode) {
         // Strip fix functions from JSON output
-        const sanitized = checks.map(({ fix: _fix, ...rest }) => rest)
+        const sanitised = checks.map(({ fix: _fix, ...rest }) => rest)
         const result: DoctorResult & { fixes?: typeof fixResults } = {
-          checks: sanitized,
+          checks: sanitised,
           passed,
           failed,
           warnings,
@@ -540,7 +545,7 @@ export function registerDoctorCommand(program: Command): void {
         }
       } else if (fixMode && failed === 0 && warnings === 0) {
         console.log(chalk.dim('\nNothing to fix — all checks passed.'))
-      } else if (!fixMode && failed > 0) {
+      } else if (!fixMode) {
         const fixableCount = checks.filter(
           (c) => (c.status === 'fail' || c.status === 'warn') && c.fix
         ).length
