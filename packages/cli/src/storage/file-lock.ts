@@ -41,7 +41,7 @@ export function acquireLock(
   try {
     return acquireLockRaw(projectRoot, scope, toLockOptions(options))
   } catch (error) {
-    wrapLockError(error)
+    return wrapLockError(error)
   }
 }
 
@@ -59,6 +59,6 @@ export function withStorageLock<T>(
       options ? toLockOptions(options) : undefined
     )
   } catch (error) {
-    wrapLockError(error)
+    return wrapLockError(error)
   }
 }

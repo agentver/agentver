@@ -135,7 +135,7 @@ describe('acquireLock', () => {
       }
     })
 
-    it('does not reclaim a lock from a still-running process just because it is old', () => {
+    it('reclaims a lock from a still-running process when older than staleThresholdMs', () => {
       const agentverDir = join(tmpDir, '.agentver')
       rmSync(agentverDir, { recursive: true, force: true })
       mkdirSync(agentverDir, { recursive: true })
@@ -145,10 +145,28 @@ describe('acquireLock', () => {
         JSON.stringify({ pid: process.pid, createdAt: Date.now() - 60_000 })
       )
 
+      const release = acquireLock(tmpDir, 'project', {
+        staleThresholdMs: 1000,
+        acquireTimeoutMs: 2000,
+      })
+      expect(release).toBeTypeOf('function')
+      release()
+    })
+
+    it('does not reclaim a lock from a still-running process within staleThresholdMs', () => {
+      const agentverDir = join(tmpDir, '.agentver')
+      rmSync(agentverDir, { recursive: true, force: true })
+      mkdirSync(agentverDir, { recursive: true })
+
+      writeFileSync(
+        getLockFilePath(),
+        JSON.stringify({ pid: process.pid, createdAt: Date.now() - 500 })
+      )
+
       expect(() =>
         acquireLock(tmpDir, 'project', {
-          staleThresholdMs: 1000,
-          acquireTimeoutMs: 2000,
+          staleThresholdMs: 30_000,
+          acquireTimeoutMs: 1000,
         })
       ).toThrow(StorageLockError)
     })

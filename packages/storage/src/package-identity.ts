@@ -1,9 +1,10 @@
-import type {
-  GitSource,
-  LockfileV2,
-  ManifestV2,
-  PackageSource,
-  PlatformSource,
+import {
+  createPackageKey,
+  type GitSource,
+  type LockfileV2,
+  type ManifestV2,
+  type PackageSource,
+  type PlatformSource,
 } from '@agentver/shared'
 import type { PackageLookupResult } from './types'
 
@@ -33,22 +34,7 @@ export function resolveBundleDisplayName<T extends NamedPackage>(
 
 /** Creates a deterministic key from a display name and source. */
 export function createStablePackageKey(displayName: string, source: PackageSource): string {
-  const identity = (() => {
-    switch (source.type) {
-      case 'git':
-        return `${source.uri}#${source.path}#${source.ref}`
-      case 'platform':
-        return `${source.uri}#${source.path}#${source.ref}`
-      case 'well-known':
-        return `${source.baseUrl}#${source.skillName}`
-      case 'local':
-        return source.path
-      case 'unknown':
-        return [source.path ?? '', source.ref ?? '', source.commit ?? '', displayName].join('#')
-    }
-  })()
-
-  return `${source.type}:${encodeURIComponent(identity)}`
+  return createPackageKey(displayName, source)
 }
 
 /** Finds a package by query (exact key, exact name, or short name). */

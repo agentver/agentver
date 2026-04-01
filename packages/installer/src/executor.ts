@@ -352,6 +352,10 @@ export async function executeRestore(
  * Rolls back a completed install by restoring all backups and
  * removing files placed by the executor.
  *
+ * Note: canonical skill directories (.agents/skills/<name>/) are not
+ * removed — the scope needed to resolve the path is not stored on the
+ * result. Agent placements are removed, which is the primary rollback target.
+ *
  * Idempotent — safe to call multiple times.
  */
 export function rollbackInstall(result: InstallResult): void {

@@ -224,6 +224,30 @@ export function createPackageKey(displayName: string, source: PackageSource): st
   return `${source.type}:${encodeURIComponent(identity)}`
 }
 
+/**
+ * Extracts file entries from a registry download response's fileManifest.
+ *
+ * The fileManifest is stored as JSON — it may be:
+ * - A record of { [filename]: content } (flat map)
+ * - An array of { path, content } objects
+ * - An empty object
+ */
+export function extractFilesFromManifest(
+  fileManifest: Record<string, unknown> | unknown[]
+): Array<{ path: string; content: string }> {
+  if (Array.isArray(fileManifest)) {
+    return fileManifest.filter((entry): entry is { path: string; content: string } => {
+      if (typeof entry !== 'object' || entry === null) return false
+      const record = entry as Record<string, unknown>
+      return typeof record.path === 'string' && typeof record.content === 'string'
+    })
+  }
+
+  return Object.entries(fileManifest)
+    .filter(([, value]) => typeof value === 'string')
+    .map(([path, content]) => ({ path, content: content as string }))
+}
+
 export function getPackageDisplayName(manifestKey: string, pkg: { name?: string }): string {
   return pkg.name?.trim() || manifestKey
 }

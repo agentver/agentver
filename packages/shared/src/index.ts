@@ -136,6 +136,7 @@ export {
   type AgentConfigFile,
   agentConfigSchema,
   createPackageKey,
+  extractFilesFromManifest,
   type FileManifest,
   type FileManifestEntry,
   fileManifestEntrySchema,

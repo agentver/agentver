@@ -1,8 +1,15 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('node:os', () => ({
-  homedir: vi.fn().mockReturnValue('/home/testuser'),
-}))
+vi.mock('node:os', async () => {
+  const actual = await vi.importActual<typeof import('node:os')>('node:os')
+  return {
+    ...actual,
+    homedir: vi.fn().mockReturnValue('/home/testuser'),
+  }
+})
 
 vi.mock('@agentver/agent-definitions', () => ({
   getSkillPlacementPath: vi.fn(),
@@ -10,7 +17,14 @@ vi.mock('@agentver/agent-definitions', () => ({
   getCommandPlacementPath: vi.fn(),
 }))
 
-import { getCanonicalFilePath, getCanonicalSkillPath, resolveCanonicalCategory } from '../index'
+import { getSkillPlacementPath } from '@agentver/agent-definitions'
+import {
+  getCanonicalFilePath,
+  getCanonicalSkillPath,
+  isCanonicalInstall,
+  resolveCanonicalCategory,
+  resolveReadPath,
+} from '../index'
 
 describe('canonical', () => {
   beforeEach(() => {
@@ -99,6 +113,103 @@ describe('canonical', () => {
 
     it('maps PROMPT to skills', () => {
       expect(resolveCanonicalCategory('PROMPT')).toBe('skills')
+    })
+  })
+
+  describe('isCanonicalInstall', () => {
+    let tmpDir: string
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), 'agentver-canonical-test-'))
+    })
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true })
+    })
+
+    it('returns true when canonical skill directory exists', () => {
+      const skillDir = join(tmpDir, '.agents', 'skills', 'my-skill')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(join(skillDir, 'SKILL.md'), '# Test')
+
+      expect(isCanonicalInstall(tmpDir, 'my-skill', 'project', 'skills')).toBe(true)
+    })
+
+    it('returns false when canonical skill directory does not exist', () => {
+      expect(isCanonicalInstall(tmpDir, 'my-skill', 'project', 'skills')).toBe(false)
+    })
+
+    it('returns true when canonical agent file exists', () => {
+      const agentDir = join(tmpDir, '.agents', 'agents')
+      mkdirSync(agentDir, { recursive: true })
+      writeFileSync(join(agentDir, 'my-agent.md'), '# Agent')
+
+      expect(isCanonicalInstall(tmpDir, 'my-agent', 'project', 'agents')).toBe(true)
+    })
+
+    it('returns false when canonical agent file does not exist', () => {
+      expect(isCanonicalInstall(tmpDir, 'my-agent', 'project', 'agents')).toBe(false)
+    })
+  })
+
+  describe('resolveReadPath', () => {
+    let tmpDir: string
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), 'agentver-readpath-test-'))
+    })
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true })
+    })
+
+    it('returns canonical path when directory exists', () => {
+      const skillDir = join(tmpDir, '.agents', 'skills', 'my-skill')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(join(skillDir, 'SKILL.md'), '# Test')
+
+      const result = resolveReadPath(tmpDir, 'my-skill', ['claude-code'], 'project', 'skills')
+      expect(result).toBe(skillDir)
+    })
+
+    it('falls back to agent placement path when canonical is absent', () => {
+      const mockGetSkill = vi.mocked(getSkillPlacementPath)
+      mockGetSkill.mockReturnValue('.claude/skills/my-skill')
+
+      // Create the agent placement path but NOT the canonical path
+      const placementDir = join(tmpDir, '.claude', 'skills', 'my-skill')
+      mkdirSync(placementDir, { recursive: true })
+      writeFileSync(join(placementDir, 'SKILL.md'), '# Test')
+
+      const result = resolveReadPath(tmpDir, 'my-skill', ['claude-code'], 'project', 'skills')
+      expect(result).toBe(placementDir)
+    })
+
+    it('follows symlinks to the real target', () => {
+      const mockGetSkill = vi.mocked(getSkillPlacementPath)
+      mockGetSkill.mockReturnValue('.claude/skills/my-skill')
+
+      // Create canonical directory as the symlink target
+      const canonicalDir = join(tmpDir, '.agents', 'skills', 'my-skill')
+      mkdirSync(canonicalDir, { recursive: true })
+      writeFileSync(join(canonicalDir, 'SKILL.md'), '# Test')
+
+      // Create a symlink from the placement path to the canonical path
+      const placementDir = join(tmpDir, '.claude', 'skills', 'my-skill')
+      mkdirSync(join(tmpDir, '.claude', 'skills'), { recursive: true })
+      symlinkSync(canonicalDir, placementDir)
+
+      // Since canonical exists, it should return canonical directly
+      const result = resolveReadPath(tmpDir, 'my-skill', ['claude-code'], 'project', 'skills')
+      expect(result).toBe(canonicalDir)
+    })
+
+    it('returns null when nothing is found', () => {
+      const mockGetSkill = vi.mocked(getSkillPlacementPath)
+      mockGetSkill.mockReturnValue('.claude/skills/my-skill')
+
+      const result = resolveReadPath(tmpDir, 'my-skill', ['claude-code'], 'project', 'skills')
+      expect(result).toBeNull()
     })
   })
 })

@@ -259,10 +259,7 @@ function resolveAgents(target: {
 }): string[] {
   if (target.agents.length > 0) return target.agents
 
-  const detected =
-    target.scope === 'global'
-      ? detectInstalledAgents(target.projectRoot)
-      : detectInstalledAgents(target.projectRoot)
+  const detected = detectInstalledAgents(target.projectRoot)
 
   return detected.map((a) => a.id)
 }

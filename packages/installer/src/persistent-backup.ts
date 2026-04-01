@@ -7,7 +7,7 @@ import {
   readFileSync,
   rmSync,
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { BackupIndex, BackupIndexEntry, BackupItem, BackupReason } from '@agentver/shared'
 import type { Scope } from '@agentver/storage'
 import { getStorageRoot, writeJsonFileAtomic } from '@agentver/storage'
@@ -48,14 +48,18 @@ export function readBackupIndex(projectRoot: string, scope: Scope): BackupIndex 
     return { version: 1, entries: [] }
   }
 
-  const raw = readFileSync(indexPath, 'utf-8')
-  const parsed = JSON.parse(raw) as BackupIndex
+  try {
+    const raw = readFileSync(indexPath, 'utf-8')
+    const parsed = JSON.parse(raw) as BackupIndex
 
-  if (parsed.version !== 1) {
+    if (parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+      return { version: 1, entries: [] }
+    }
+
+    return parsed
+  } catch {
     return { version: 1, entries: [] }
   }
-
-  return parsed
 }
 
 /**
@@ -87,8 +91,9 @@ function generateBackupId(backupsRoot: string): string {
 /**
  * Measures the size of a path (file or directory, recursively).
  */
-function measureSize(targetPath: string): number {
+function measureSize(targetPath: string, depth = 0): number {
   if (!existsSync(targetPath)) return 0
+  if (depth > 50) return 0
 
   const stat = lstatSync(targetPath)
 
@@ -98,7 +103,7 @@ function measureSize(targetPath: string): number {
     let total = 0
     const entries = readdirSync(targetPath, { withFileTypes: true })
     for (const entry of entries) {
-      total += measureSize(join(targetPath, entry.name))
+      total += measureSize(join(targetPath, entry.name), depth + 1)
     }
     return total
   }
@@ -208,6 +213,11 @@ export function restorePersistentBackup(
     const backupPath = join(itemsDir, item.backupRelativePath)
 
     if (!existsSync(backupPath)) continue
+
+    // Validate originalPath does not contain path traversal
+    if (item.originalPath.includes('..') || !resolve(item.originalPath).startsWith('/')) {
+      continue
+    }
 
     if (existsSync(item.originalPath)) {
       rmSync(item.originalPath, { recursive: true, force: true })

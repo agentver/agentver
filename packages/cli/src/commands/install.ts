@@ -1868,7 +1868,9 @@ function formatRestoreStatusLabel(
   }
 }
 
-export async function restoreFromManifest(options: InstallOptions): Promise<void> {
+export async function restoreFromManifest(
+  options: InstallOptions
+): Promise<RestoreResultOutput | undefined> {
   const jsonMode = isJSONMode()
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
@@ -1890,11 +1892,12 @@ export async function restoreFromManifest(options: InstallOptions): Promise<void
         success: true,
       }
       outputSuccess(result)
+      return result
     } else {
       const spinner = createSpinner('Checking manifest...').start()
       spinner.info('No packages found in manifest')
     }
-    return
+    return undefined
   }
 
   const spinner = createSpinner(`Planning restore of ${packageCount} package(s)...`).start()
@@ -1969,11 +1972,12 @@ export async function restoreFromManifest(options: InstallOptions): Promise<void
         success: true,
       }
       outputSuccess(result)
+      return result
     } else {
       const doneSpinner = createSpinner('')
       doneSpinner.succeed('All packages are up to date')
     }
-    return
+    return undefined
   }
 
   const restoreSpinner = createSpinner(
@@ -1985,25 +1989,26 @@ export async function restoreFromManifest(options: InstallOptions): Promise<void
 
   restoreSpinner.stop()
 
+  const output: RestoreResultOutput = {
+    type: 'RESTORE_COMPLETE',
+    packages: restoreResult.packages.map((p) => ({
+      packageKey: p.packageKey,
+      displayName: p.displayName,
+      status: p.status,
+      agents: p.agents,
+      filesPlacedCount: p.filesPlacedCount,
+      reason: p.reason,
+      error: p.error,
+    })),
+    installedCount: restoreResult.installedCount,
+    upToDateCount: restoreResult.upToDateCount,
+    skippedCount: restoreResult.skippedCount,
+    failedCount: restoreResult.failedCount,
+    success: restoreResult.success,
+  }
+
   if (jsonMode) {
-    const result: RestoreResultOutput = {
-      type: 'RESTORE_COMPLETE',
-      packages: restoreResult.packages.map((p) => ({
-        packageKey: p.packageKey,
-        displayName: p.displayName,
-        status: p.status,
-        agents: p.agents,
-        filesPlacedCount: p.filesPlacedCount,
-        reason: p.reason,
-        error: p.error,
-      })),
-      installedCount: restoreResult.installedCount,
-      upToDateCount: restoreResult.upToDateCount,
-      skippedCount: restoreResult.skippedCount,
-      failedCount: restoreResult.failedCount,
-      success: restoreResult.success,
-    }
-    outputSuccess(result)
+    outputSuccess(output)
   } else {
     for (const pkg of restoreResult.packages) {
       const icon = formatRestoreStatus(pkg.status)
@@ -2043,6 +2048,8 @@ export async function restoreFromManifest(options: InstallOptions): Promise<void
   if (!restoreResult.success) {
     process.exitCode = 1
   }
+
+  return output
 }
 
 export function registerInstallCommand(program: Command): void {

@@ -23,11 +23,11 @@ vi.mock('@actions/core', () => ({
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
 
+import { extractFilesFromManifest } from '@agentver/shared'
 import type { DownloadResponse } from '../installer'
 import {
   computeIntegrity,
   detectAgents,
-  extractFilesFromManifest,
   IntegrityError,
   ManifestNotFoundError,
   RegistryAuthError,

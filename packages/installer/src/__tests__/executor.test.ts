@@ -361,6 +361,40 @@ describe('executor', () => {
       // Path traversal files should NOT be written
       expect(existsSync(join(tmpDir, 'escape.md'))).toBe(false)
     })
+
+    it('cleans up canonical files and placements on mid-install failure', () => {
+      const mockGetSkill = vi.mocked(getSkillPlacementPath)
+      mockGetSkill.mockReturnValue('.claude/skills/test-skill')
+
+      // Make manifest/lockfile update throw to simulate mid-install failure
+      mockUpdateManifestAndLockfile.mockImplementation(() => {
+        throw new Error('Simulated write failure')
+      })
+
+      const request = createTestRequest({
+        displayName: 'test-skill',
+        policy: {
+          conflictStrategy: 'error',
+          preferredLinkMode: 'symlink',
+          allowFallback: true,
+          dryRun: false,
+          persist: true,
+          securityScanPolicy: 'skip',
+        },
+      })
+      const plan = planInstall(request)
+
+      const result = executeInstall(plan)
+
+      expect(result.success).toBe(false)
+      expect(result.error?.code).toBe('INSTALL_FAILED')
+      expect(result.error?.message).toContain('Simulated write failure')
+      expect(result.filesPlacedCount).toBe(0)
+      expect(result.agentsInstalledCount).toBe(0)
+
+      // Canonical directory should have been cleaned up
+      expect(existsSync(plan.canonical.path)).toBe(false)
+    })
   })
 
   describe('executeRestore', () => {

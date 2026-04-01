@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { LockfileV2, ManifestV2 } from '@agentver/shared'
 import { STORAGE_SCHEMA_VERSION } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { recoverPendingStorageTransaction } from '../index'
+import { recoverPendingStorageTransaction, updateManifestAndLockfile } from '../index'
 
 let tmpDir: string
 let agentverDir: string
@@ -164,5 +164,50 @@ describe('recoverPendingStorageTransaction', () => {
     })
 
     expect(warnings.some((w) => w.includes('Recovered'))).toBe(true)
+  })
+})
+
+describe('writeStorageTransaction (via updateManifestAndLockfile)', () => {
+  it('writes manifest and lockfile and cleans up journal', () => {
+    mkdirSync(agentverDir, { recursive: true })
+
+    updateManifestAndLockfile(tmpDir, 'project', (manifest, lockfile) => {
+      manifest.packages['git:test'] = {
+        name: 'test-skill',
+        source: {
+          type: 'git',
+          uri: 'https://github.com/org/repo.git',
+          path: 'skills/test',
+          ref: 'main',
+          commit: 'abc1234',
+        },
+        agents: ['claude-code'],
+        installedAt: '2025-01-01T00:00:00.000Z',
+        modified: false,
+      }
+      lockfile.packages['git:test'] = {
+        name: 'test-skill',
+        source: {
+          type: 'git',
+          uri: 'https://github.com/org/repo.git',
+          path: 'skills/test',
+          ref: 'main',
+          commit: 'abc1234',
+        },
+        integrity: 'sha256-dGVzdA',
+        agents: ['claude-code'],
+      }
+      return { manifest, lockfile }
+    })
+
+    expect(existsSync(manifestPath)).toBe(true)
+    const manifestContent = JSON.parse(readFileSync(manifestPath, 'utf-8')) as ManifestV2
+    expect(manifestContent.packages['git:test']?.name).toBe('test-skill')
+
+    expect(existsSync(lockfilePath)).toBe(true)
+    const lockfileContent = JSON.parse(readFileSync(lockfilePath, 'utf-8')) as LockfileV2
+    expect(lockfileContent.packages['git:test']?.name).toBe('test-skill')
+
+    expect(existsSync(transactionPath)).toBe(false)
   })
 })

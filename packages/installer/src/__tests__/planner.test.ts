@@ -644,6 +644,33 @@ describe('planner', () => {
       expect(aIndex).toBeLessThan(bIndex)
     })
 
+    it('handles circular dependencies without crashing', () => {
+      const manifest = createManifest({
+        'git:skill-a': {
+          name: 'skill-a',
+          source: gitSource,
+          dependsOn: ['git:skill-b'],
+        },
+        'git:skill-b': {
+          name: 'skill-b',
+          source: gitSource,
+          dependsOn: ['git:skill-a'],
+        },
+      })
+      const lockfile = createLockfile({
+        'git:skill-a': { source: gitSource, integrity: 'sha256-a' },
+        'git:skill-b': { source: gitSource, integrity: 'sha256-b' },
+      })
+
+      const plan = planRestore(manifest, lockfile, createPolicy())
+
+      // Both entries should be present (cycle falls back to insertion order)
+      expect(plan.toInstall).toHaveLength(2)
+      const keys = plan.toInstall.map((e) => e.packageKey)
+      expect(keys).toContain('git:skill-a')
+      expect(keys).toContain('git:skill-b')
+    })
+
     it('auto-detects agents when policy.agents is empty', () => {
       const manifest = createManifest({
         'git:skill-a': { name: 'skill-a', source: gitSource },

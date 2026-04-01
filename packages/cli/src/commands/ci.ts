@@ -1,4 +1,4 @@
-import type { CiResult, RestoreResultOutput } from '@agentver/shared'
+import type { CiResult } from '@agentver/shared'
 import type { Command } from 'commander'
 import { isJSONMode, outputError, outputSuccess } from '../output.js'
 import { extractError } from '../utils.js'
@@ -19,63 +19,17 @@ export function registerCiCommand(program: Command): void {
       const jsonMode = isJSONMode()
 
       try {
-        // Capture the restore result by intercepting JSON output
-        let restoreOutput: RestoreResultOutput | undefined
+        const restoreOutput = await restoreFromManifest({
+          agent: options.agent,
+          global: options.global,
+          skipAudit: options.skipAudit,
+          concurrency: options.concurrency,
+          yes: true,
+          force: false,
+          offline: false,
+        })
 
         if (jsonMode) {
-          // In JSON mode, we need to capture the restore output instead of
-          // letting restoreFromManifest write it directly. We do this by
-          // intercepting stdout writes.
-          const originalWrite = process.stdout.write.bind(process.stdout)
-          let captured = ''
-
-          process.stdout.write = ((
-            chunk: string | Uint8Array,
-            encodingOrCb?: BufferEncoding | ((err?: Error) => void),
-            cb?: (err?: Error) => void
-          ): boolean => {
-            if (typeof chunk === 'string') {
-              captured += chunk
-            }
-            // Suppress the output — we'll write our own
-            if (typeof encodingOrCb === 'function') {
-              encodingOrCb()
-              return true
-            }
-            if (typeof cb === 'function') {
-              cb()
-              return true
-            }
-            return true
-          }) as typeof process.stdout.write
-
-          try {
-            await restoreFromManifest({
-              agent: options.agent,
-              global: options.global,
-              skipAudit: options.skipAudit,
-              concurrency: options.concurrency,
-              yes: true,
-              force: false,
-              offline: false,
-            })
-          } finally {
-            process.stdout.write = originalWrite
-          }
-
-          // Parse captured output to extract the restore result
-          const lines = captured.trim().split('\n').filter(Boolean)
-          for (const line of lines) {
-            try {
-              const parsed = JSON.parse(line) as { success: boolean; data?: RestoreResultOutput }
-              if (parsed.data?.type === 'RESTORE_COMPLETE') {
-                restoreOutput = parsed.data
-              }
-            } catch {
-              // Not JSON — ignore
-            }
-          }
-
           const success =
             restoreOutput?.success ?? (process.exitCode === undefined || process.exitCode === 0)
 
@@ -97,17 +51,6 @@ export function registerCiCommand(program: Command): void {
           if (!success) {
             process.exitCode = 1
           }
-        } else {
-          // In text mode, just run restore with --yes (non-interactive)
-          await restoreFromManifest({
-            agent: options.agent,
-            global: options.global,
-            skipAudit: options.skipAudit,
-            concurrency: options.concurrency,
-            yes: true,
-            force: false,
-            offline: false,
-          })
         }
       } catch (error) {
         const { code, message } = extractError(error, 'CI_FAILED')

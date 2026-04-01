@@ -42,11 +42,11 @@ function readLockPayload(lockPath: string): LockPayload | null {
   }
 }
 
-function isLockStale(payload: LockPayload, _staleThresholdMs: number): boolean {
+function isLockStale(payload: LockPayload, staleThresholdMs: number): boolean {
   if (!isProcessAlive(payload.pid)) {
     return true
   }
-  return false
+  return Date.now() - payload.createdAt > staleThresholdMs
 }
 
 function isEexistError(error: unknown): boolean {

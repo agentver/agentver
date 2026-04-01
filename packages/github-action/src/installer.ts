@@ -4,7 +4,12 @@ import * as core from '@actions/core'
 import { detectInstalledAgents } from '@agentver/agent-definitions'
 import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
 import type { LockfileV2, ManifestV2, PackageSource } from '@agentver/shared'
-import { getPackageDisplayName, getPackageSourceReference } from '@agentver/shared'
+import {
+  createPackageKey,
+  extractFilesFromManifest,
+  getPackageDisplayName,
+  getPackageSourceReference,
+} from '@agentver/shared'
 import {
   computeIntegrity,
   getManifestPath,
@@ -72,25 +77,6 @@ type LegacyManifest = {
       path?: string
     }
   >
-}
-
-function buildPackageKey(displayName: string, source: PackageSource): string {
-  const identity = (() => {
-    switch (source.type) {
-      case 'git':
-        return `${source.uri}#${source.path}#${source.ref}`
-      case 'platform':
-        return `${source.uri}#${source.path}#${source.ref}`
-      case 'well-known':
-        return `${source.baseUrl}#${source.skillName}`
-      case 'local':
-        return source.path
-      case 'unknown':
-        return [source.path ?? '', source.ref ?? '', source.commit ?? '', displayName].join('#')
-    }
-  })()
-
-  return `${source.type}:${encodeURIComponent(identity)}`
 }
 
 // -- Errors ------------------------------------------------------------------
@@ -205,7 +191,7 @@ function tryReadLegacyManifest(manifestPath: string): ManifestV2 | null {
             reason: 'Migrated from legacy manifest',
           }
 
-      const packageKey = buildPackageKey(displayName, source)
+      const packageKey = createPackageKey(displayName, source)
       packages[packageKey] = {
         name: displayName,
         source,
@@ -284,30 +270,6 @@ function assertDownloadResponse(data: unknown): asserts data is DownloadResponse
       'Invalid response from registry: missing required fields (version, createdAt, fileManifest)'
     )
   }
-}
-
-/**
- * Extract files from the download response's fileManifest.
- *
- * The fileManifest is stored as Prisma JSON — it may be:
- * - A record of { [filename]: content } (flat map)
- * - An array of { path, content } objects
- * - An empty object
- */
-export function extractFilesFromManifest(
-  fileManifest: Record<string, unknown> | unknown[]
-): Array<{ path: string; content: string }> {
-  if (Array.isArray(fileManifest)) {
-    return fileManifest.filter((entry): entry is { path: string; content: string } => {
-      if (typeof entry !== 'object' || entry === null) return false
-      const record = entry as Record<string, unknown>
-      return typeof record.path === 'string' && typeof record.content === 'string'
-    })
-  }
-
-  return Object.entries(fileManifest)
-    .filter(([, value]) => typeof value === 'string')
-    .map(([path, content]) => ({ path, content: content as string }))
 }
 
 async function resolveLatestVersion(
@@ -414,7 +376,7 @@ export function updateLockfile(
       commit: entry.response.gitCommitSha,
     }
 
-    updated.packages[buildPackageKey(result.name, source)] = {
+    updated.packages[createPackageKey(result.name, source)] = {
       name: result.name,
       source,
       integrity: computeIntegrity(entry.files),
@@ -477,7 +439,7 @@ function installPackageWithData(
     const source = buildSourceFromResponse(response)
 
     const request: InstallRequest = {
-      packageKey: buildPackageKey(packageName, source),
+      packageKey: createPackageKey(packageName, source),
       displayName: packageName,
       packageType: 'SKILL',
       source,
