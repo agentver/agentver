@@ -137,14 +137,24 @@ describe('E2E: backup lifecycle', () => {
 
       expect(success).toBe(true)
       expect(data.backups).toHaveLength(1)
-      expect(data.backups[0].id).toBe('backup-001')
-      expect(data.backups[0].displayName).toBe('seeded-skill')
-      expect(data.backups[0].packageKey).toBe('test-org/seeded-skill')
-      expect(data.backups[0].reason).toBe('conflict-replace')
-      expect(data.backups[0].items).toHaveLength(1)
-      expect(data.backups[0].items[0].originalPath).toBe(originalPath)
-      expect(data.backups[0].items[0].kind).toBe('file')
-      expect(data.backups[0].items[0].size).toBeGreaterThan(0)
+
+      const backup = data.backups[0]
+      expect(backup).toBeDefined()
+      if (!backup) return
+
+      expect(backup.id).toBe('backup-001')
+      expect(backup.displayName).toBe('seeded-skill')
+      expect(backup.packageKey).toBe('test-org/seeded-skill')
+      expect(backup.reason).toBe('conflict-replace')
+      expect(backup.items).toHaveLength(1)
+
+      const item = backup.items[0]
+      expect(item).toBeDefined()
+      if (!item) return
+
+      expect(item.originalPath).toBe(originalPath)
+      expect(item.kind).toBe('file')
+      expect(item.size).toBeGreaterThan(0)
     })
   })
 

@@ -175,11 +175,9 @@ describe('E2E: install (in-process, real filesystem)', () => {
     const manifestResult = manifestV2Schema.safeParse(JSON.parse(manifestRaw) as unknown)
     expect(manifestResult.success).toBe(true)
     if (manifestResult.success) {
-      const manifestPkg = Object.values(manifestResult.data.packages).find((p) =>
-        p.agents?.includes('claude-code')
-      )
-      expect(manifestPkg).toBeDefined()
-      expect(manifestPkg!.agents).toContain('claude-code')
+      const manifestPackages = Object.values(manifestResult.data.packages)
+      expect(manifestPackages).toHaveLength(1)
+      expect(manifestPackages[0]!.agents).toContain('claude-code')
     }
 
     // Verify lockfile schema
@@ -188,11 +186,9 @@ describe('E2E: install (in-process, real filesystem)', () => {
     const lockfileResult = lockfileV2Schema.safeParse(JSON.parse(lockfileRaw) as unknown)
     expect(lockfileResult.success).toBe(true)
     if (lockfileResult.success) {
-      const lockfilePkg = Object.values(lockfileResult.data.packages).find((p) =>
-        p.integrity?.startsWith('sha256-')
-      )
-      expect(lockfilePkg).toBeDefined()
-      expect(lockfilePkg!.integrity).toMatch(/^sha256-/)
+      const lockfilePackages = Object.values(lockfileResult.data.packages)
+      expect(lockfilePackages).toHaveLength(1)
+      expect(lockfilePackages[0]!.integrity).toMatch(/^sha256-/)
     }
   })
 

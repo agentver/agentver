@@ -13,7 +13,7 @@ import { lockfileV2Schema, manifestV2Schema } from '@agentver/shared'
 import { describe, expect, it } from 'vitest'
 import { createPlatformSource, createSharedGitSource, createSkillMd } from '../helpers/fixtures'
 import { readProjectState, seedProject, withTempDir } from '../helpers/mock-fs'
-import { runCli, runCliJson, setupInstalledSkill } from './helpers'
+import { parseCiJson, type RestoreResult, runCli, runCliJson, setupInstalledSkill } from './helpers'
 
 // ---------------------------------------------------------------------------
 // Git helpers (same pattern as adopt-promote-lifecycle.test.ts)
@@ -52,26 +52,6 @@ type AdoptOutput = {
   skipped: Array<{ name: string; reason: string }>
 }
 
-type RestorePackageResult = {
-  packageKey: string
-  displayName: string
-  status: 'installed' | 'up-to-date' | 'skipped' | 'failed' | 'integrity-mismatch'
-  agents?: string[]
-  filesPlacedCount?: number
-  reason?: string
-  error?: string
-}
-
-type RestoreResult = {
-  type: 'RESTORE_COMPLETE'
-  packages: RestorePackageResult[]
-  installedCount: number
-  upToDateCount: number
-  skippedCount: number
-  failedCount: number
-  success: boolean
-}
-
 type StatusOutput = {
   packages: Array<{
     name: string
@@ -95,25 +75,6 @@ type DoctorOutput = {
   passed: number
   failed: number
   warnings: number
-}
-
-type CiResult = {
-  restore: RestoreResult
-  success: boolean
-}
-
-function parseCiJson(stdout: string): { data: CiResult; success: boolean } {
-  const lines = stdout.trim().split('\n')
-  const jsonLines = lines.filter((line) => line.startsWith('{'))
-
-  if (jsonLines.length === 0) {
-    throw new Error(`No JSON output found in CI stdout.\nstdout: ${stdout}`)
-  }
-
-  const lastJsonLine = jsonLines[jsonLines.length - 1]!
-  const parsed = JSON.parse(lastJsonLine) as { success: boolean; data: CiResult }
-
-  return { data: parsed.data, success: parsed.success }
 }
 
 // ---------------------------------------------------------------------------

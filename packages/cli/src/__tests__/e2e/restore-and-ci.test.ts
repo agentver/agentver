@@ -9,36 +9,7 @@ import type { LocalSource, ManifestV2Package } from '@agentver/shared'
 import { describe, expect, it } from 'vitest'
 import { createSharedGitSource, createSkillMd } from '../helpers/fixtures'
 import { seedProject, withTempDir } from '../helpers/mock-fs'
-import { runCli, runCliJson, setupInstalledSkill } from './helpers'
-
-// ---------------------------------------------------------------------------
-// Types matching the JSON output shapes from restoreFromManifest / ci
-// ---------------------------------------------------------------------------
-
-type RestorePackageResult = {
-  packageKey: string
-  displayName: string
-  status: 'installed' | 'up-to-date' | 'skipped' | 'failed' | 'integrity-mismatch'
-  agents?: string[]
-  filesPlacedCount?: number
-  reason?: string
-  error?: string
-}
-
-type RestoreResult = {
-  type: 'RESTORE_COMPLETE'
-  packages: RestorePackageResult[]
-  installedCount: number
-  upToDateCount: number
-  skippedCount: number
-  failedCount: number
-  success: boolean
-}
-
-type CiResult = {
-  restore: RestoreResult
-  success: boolean
-}
+import { parseCiJson, type RestoreResult, runCli, runCliJson, setupInstalledSkill } from './helpers'
 
 // ---------------------------------------------------------------------------
 // E2E: restore from manifest
@@ -183,30 +154,6 @@ describe('E2E: restore from manifest', () => {
     })
   })
 })
-
-// ---------------------------------------------------------------------------
-// CI output helper
-// ---------------------------------------------------------------------------
-
-/**
- * The `ci` command wraps `restoreFromManifest`, which itself outputs JSON in
- * --json mode. The ci handler then outputs a second JSON envelope. We need the
- * LAST JSON line (the CiResult wrapper), not the first (the inner RestoreResult).
- */
-function parseCiJson(stdout: string): { data: CiResult; success: boolean } {
-  const lines = stdout.trim().split('\n')
-  const jsonLines = lines.filter((line) => line.startsWith('{'))
-
-  if (jsonLines.length === 0) {
-    throw new Error(`No JSON output found in CI stdout.\nstdout: ${stdout}`)
-  }
-
-  // The last JSON line is the CiResult envelope
-  const lastJsonLine = jsonLines[jsonLines.length - 1]!
-  const parsed = JSON.parse(lastJsonLine) as { success: boolean; data: CiResult }
-
-  return { data: parsed.data, success: parsed.success }
-}
 
 // ---------------------------------------------------------------------------
 // E2E: ci command

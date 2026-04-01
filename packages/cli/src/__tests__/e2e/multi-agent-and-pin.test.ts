@@ -150,7 +150,9 @@ describe('E2E: pin and unpin', () => {
       // Verify manifest on disk
       const manifestRaw = readFileSync(join(dir, '.agentver/manifest.json'), 'utf-8')
       const manifest = manifestV2Schema.parse(JSON.parse(manifestRaw) as unknown)
-      expect(manifest.packages['test-skill']!.pinned).toBe(true)
+      const manifestPackages = Object.values(manifest.packages)
+      expect(manifestPackages).toHaveLength(1)
+      expect(manifestPackages[0]!.pinned).toBe(true)
     })
   })
 
@@ -171,7 +173,9 @@ describe('E2E: pin and unpin', () => {
       const manifestBefore = JSON.parse(
         readFileSync(join(dir, '.agentver/manifest.json'), 'utf-8')
       ) as { packages: Record<string, { pinned?: boolean }> }
-      expect(manifestBefore.packages['test-skill']!.pinned).toBe(true)
+      const manifestBeforePackages = Object.values(manifestBefore.packages)
+      expect(manifestBeforePackages).toHaveLength(1)
+      expect(manifestBeforePackages[0]!.pinned).toBe(true)
 
       // Unpin
       const { success, exitCode, data } = await runCliJson<{ name: string; pinned: boolean }>(
@@ -187,7 +191,9 @@ describe('E2E: pin and unpin', () => {
       const manifestAfter = JSON.parse(
         readFileSync(join(dir, '.agentver/manifest.json'), 'utf-8')
       ) as { packages: Record<string, { pinned?: boolean }> }
-      expect(manifestAfter.packages['test-skill']!.pinned).toBeUndefined()
+      const manifestAfterPackages = Object.values(manifestAfter.packages)
+      expect(manifestAfterPackages).toHaveLength(1)
+      expect(manifestAfterPackages[0]!.pinned).toBeUndefined()
     })
   })
 
