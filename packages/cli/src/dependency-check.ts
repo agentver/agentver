@@ -8,6 +8,7 @@
 import type { ManifestV2 } from '@agentver/shared'
 import { AgentverError, parseSkillFrontmatter } from '@agentver/shared'
 import type { FetchedFile } from './git/types'
+import { getPackageDisplayName, resolvePackageQuery } from './storage/package-identity'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,8 +66,7 @@ export function enforceDependencies(
 ): void {
   if (dependsOn.length === 0) return
 
-  const installed = new Set(Object.keys(manifest.packages))
-  const missing = dependsOn.filter((dep) => !installed.has(dep))
+  const missing = dependsOn.filter((dep) => !resolvePackageQuery(manifest.packages, dep).ok)
 
   if (missing.length > 0) {
     const list = missing.map((d) => `  - ${d}`).join('\n')
@@ -88,8 +88,9 @@ export function enforceConflicts(
 ): void {
   if (conflictsWith.length === 0) return
 
-  const installed = new Set(Object.keys(manifest.packages))
-  const conflicts = conflictsWith.filter((c) => installed.has(c))
+  const conflicts = conflictsWith.filter(
+    (conflict) => resolvePackageQuery(manifest.packages, conflict).ok
+  )
 
   if (conflicts.length > 0) {
     const list = conflicts.map((c) => `  - ${c}`).join('\n')
@@ -113,12 +114,15 @@ export function findReverseDependencies(
   manifest: ManifestV2
 ): ReverseDependency[] {
   const dependents: ReverseDependency[] = []
+  const targetLookup = resolvePackageQuery(manifest.packages, targetName)
+  const targetPackageDisplayName = targetLookup.ok ? targetLookup.displayName : targetName
 
-  for (const [name, pkg] of Object.entries(manifest.packages)) {
-    if (name === targetName) continue
+  for (const [packageKey, pkg] of Object.entries(manifest.packages)) {
+    const displayName = getPackageDisplayName(packageKey, pkg)
+    if (displayName === targetPackageDisplayName || packageKey === targetName) continue
     const deps = pkg.dependsOn ?? []
-    if (deps.includes(targetName)) {
-      dependents.push({ name, dependsOn: deps })
+    if (deps.includes(targetPackageDisplayName) || deps.includes(targetName)) {
+      dependents.push({ name: displayName, dependsOn: deps })
     }
   }
 

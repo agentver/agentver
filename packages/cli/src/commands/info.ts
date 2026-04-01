@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { InfoResult } from '@agentver/shared'
-import { parseSkillFrontmatter } from '@agentver/shared'
+import {
+  getPackageSourceCommit,
+  getPackageSourceLocation,
+  getPackageSourceReference,
+  parseSkillFrontmatter,
+} from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { readFilesFromDirectory } from '../git/fetcher.js'
@@ -10,6 +15,7 @@ import { resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { resolveBundleDisplayName, resolvePackageQuery } from '../storage/package-identity.js'
 import type { Scope } from '../utils/paths.js'
 
 function formatBytes(bytes: number): string {
@@ -29,12 +35,12 @@ export function registerInfoCommand(program: Command): void {
       const scope: Scope = options.global ? 'global' : 'project'
       const projectRoot = process.cwd()
       const manifest = readManifest(projectRoot, scope)
+      const packageLookup = resolvePackageQuery(manifest.packages, name)
 
-      const pkg = manifest.packages[name]
-      if (!pkg) {
+      if (!packageLookup.ok) {
         const otherScope: Scope = scope === 'project' ? 'global' : 'project'
         const otherManifest = readManifest(projectRoot, otherScope)
-        const foundInOther = name in otherManifest.packages
+        const foundInOther = resolvePackageQuery(otherManifest.packages, name).ok
 
         const hint = foundInOther
           ? otherScope === 'global'
@@ -56,11 +62,13 @@ export function registerInfoCommand(program: Command): void {
         process.exit(1)
       }
 
+      const { key: packageKey, displayName, pkg } = packageLookup
+
       const spinner = createSpinner('Reading package information...').start()
 
       const lockfile = readLockfile(projectRoot, scope)
-      const lockfileEntry = lockfile.packages[name]
-      const shortName = name.split('/').pop()!
+      const lockfileEntry = lockfile.packages[packageKey]
+      const shortName = displayName.split('/').pop()!
 
       let fileCount = 0
       let totalSize = 0
@@ -103,10 +111,25 @@ export function registerInfoCommand(program: Command): void {
               ref: pkg.source.ref,
               commit: pkg.source.commit,
             }
-          : { type: 'well-known' as const, hostname: pkg.source.hostname }
+          : pkg.source.type === 'platform'
+            ? {
+                type: 'platform' as const,
+                uri: pkg.source.uri,
+                ref: pkg.source.ref,
+                commit: pkg.source.commit,
+              }
+            : pkg.source.type === 'local'
+              ? { type: 'local' as const, uri: pkg.source.path }
+              : pkg.source.type === 'unknown'
+                ? {
+                    type: 'unknown' as const,
+                    ref: pkg.source.ref,
+                    commit: pkg.source.commit,
+                  }
+                : { type: 'well-known' as const, hostname: pkg.source.hostname }
 
       const result: InfoResult = {
-        name,
+        name: displayName,
         source: sourceInfo,
         agents: pkg.agents,
         installedAt: pkg.installedAt,
@@ -118,7 +141,7 @@ export function registerInfoCommand(program: Command): void {
         },
         pinned: pkg.pinned === true,
         packageType: pkg.packageType,
-        bundle: pkg.bundle,
+        bundle: resolveBundleDisplayName(manifest.packages, pkg.bundle),
         skill:
           skillTitle && skillDescription
             ? { title: skillTitle, description: skillDescription }
@@ -134,16 +157,28 @@ export function registerInfoCommand(program: Command): void {
       spinner.stop()
 
       console.log()
-      console.log(chalk.bold(name))
+      console.log(chalk.bold(displayName))
       console.log()
 
-      if (pkg.source.type === 'git') {
-        console.log(`  ${chalk.dim('Source:')}    ${pkg.source.uri}`)
-        console.log(`  ${chalk.dim('Ref:')}       ${chalk.cyan(pkg.source.ref)}`)
-        console.log(`  ${chalk.dim('Commit:')}    ${chalk.dim(pkg.source.commit.slice(0, 7))}`)
+      if (pkg.source.type === 'git' || pkg.source.type === 'platform') {
+        console.log(`  ${chalk.dim('Source:')}    ${getPackageSourceLocation(pkg.source)}`)
+        console.log(
+          `  ${chalk.dim('Ref:')}       ${chalk.cyan(getPackageSourceReference(pkg.source))}`
+        )
+        console.log(
+          `  ${chalk.dim('Commit:')}    ${chalk.dim(getPackageSourceCommit(pkg.source).slice(0, 7))}`
+        )
+      } else if (pkg.source.type === 'local') {
+        console.log(
+          `  ${chalk.dim('Source:')}    ${getPackageSourceLocation(pkg.source)} ${chalk.dim('[local]')}`
+        )
+      } else if (pkg.source.type === 'unknown') {
+        console.log(
+          `  ${chalk.dim('Source:')}    ${chalk.dim(getPackageSourceLocation(pkg.source))}`
+        )
       } else {
         console.log(
-          `  ${chalk.dim('Source:')}    ${pkg.source.hostname} ${chalk.dim('[well-known]')}`
+          `  ${chalk.dim('Source:')}    ${getPackageSourceLocation(pkg.source)} ${chalk.dim('[well-known]')}`
         )
       }
 
@@ -157,7 +192,8 @@ export function registerInfoCommand(program: Command): void {
         console.log(`  ${chalk.dim('Type:')}      ${pkg.packageType}`)
       }
       if (pkg.bundle) {
-        console.log(`  ${chalk.dim('Bundle:')}    ${pkg.bundle}`)
+        const bundleName = resolveBundleDisplayName(manifest.packages, pkg.bundle) ?? pkg.bundle
+        console.log(`  ${chalk.dim('Bundle:')}    ${bundleName}`)
       }
       console.log(`  ${chalk.dim('Installed:')} ${pkg.installedAt}`)
       console.log(

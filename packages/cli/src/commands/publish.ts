@@ -9,6 +9,11 @@ import { createSpinner, outputSuccess } from '../output.js'
 import { platformFetch } from '../registry/platform.js'
 import { scanFiles } from '../security/index.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
+import {
+  isPlatformManagedSource,
+  resolvePackageQuery,
+  toPlatformSource,
+} from '../storage/package-identity.js'
 import { updateManifestAndLockfile } from '../storage/pair.js'
 import { extractError, SEMVER_REGEX } from '../utils.js'
 import { resolveNamespace } from './skill-context.js'
@@ -193,33 +198,26 @@ export function registerPublishCommand(program: Command): void {
         )
 
         updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
-          const manifestEntry = manifest.packages[frontmatter.name]
-          const lockEntry = lockfile.packages[frontmatter.name]
-          const sourcePath =
-            manifestEntry?.source.type === 'git' &&
-            manifestEntry.source.uri.startsWith('agentver://')
-              ? manifestEntry.source.path
-              : ''
+          const manifestEntryLookup = resolvePackageQuery(manifest.packages, frontmatter.name)
+          const lockEntryLookup = resolvePackageQuery(lockfile.packages, frontmatter.name)
+          const manifestEntry = manifestEntryLookup.ok ? manifestEntryLookup.pkg : undefined
+          const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-          if (manifestEntry?.source.type === 'git') {
-            manifestEntry.source = {
-              type: 'git',
+          if (manifestEntry && isPlatformManagedSource(manifestEntry.source)) {
+            manifestEntry.source = toPlatformSource(manifestEntry.source, {
               uri: `agentver://${namespace.org}`,
-              path: sourcePath,
               ref: 'main',
               commit: result.commitSha,
-            }
+            })
             manifestEntry.modified = false
           }
 
-          if (lockEntry?.source.type === 'git') {
-            lockEntry.source = {
-              type: 'git',
+          if (lockEntry && isPlatformManagedSource(lockEntry.source)) {
+            lockEntry.source = toPlatformSource(lockEntry.source, {
               uri: `agentver://${namespace.org}`,
-              path: sourcePath,
               ref: 'main',
               commit: result.commitSha,
-            }
+            })
             lockEntry.integrity = integrity
           }
 

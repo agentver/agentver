@@ -9,6 +9,7 @@ import { readInstalledPackageFiles } from '../storage/installed-package-files.js
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { getPackageDisplayName, resolvePackageQuery } from '../storage/package-identity.js'
 import { extractError } from '../utils.js'
 
 type SuggestionFile = {
@@ -101,17 +102,18 @@ export function registerSuggestCommand(program: Command): void {
 
         const modifiedPackages: string[] = []
 
-        for (const [name, manifestEntry] of Object.entries(manifest.packages)) {
-          const lockfileEntry = lockfile.packages[name]
+        for (const [packageKey, manifestEntry] of Object.entries(manifest.packages)) {
+          const lockfileEntry = lockfile.packages[packageKey]
           if (!lockfileEntry) continue
 
+          const displayName = getPackageDisplayName(packageKey, manifestEntry)
           const { agents } = manifestEntry
-          const localFiles = await readInstalledPackageFiles(projectRoot, name, agents)
+          const localFiles = await readInstalledPackageFiles(projectRoot, displayName, agents)
           if (localFiles.length === 0) continue
 
           const currentIntegrity = computeSha256FromFiles(localFiles)
           if (currentIntegrity !== lockfileEntry.integrity) {
-            modifiedPackages.push(name)
+            modifiedPackages.push(packageKey)
           }
         }
 
@@ -124,12 +126,20 @@ export function registerSuggestCommand(program: Command): void {
           return
         }
 
-        const targets = options.name
-          ? modifiedPackages.filter((n) => n === options.name)
-          : modifiedPackages
+        const targets = (() => {
+          if (!options.name) {
+            return modifiedPackages
+          }
+
+          const lookup = resolvePackageQuery(manifest.packages, options.name)
+          return lookup.ok && modifiedPackages.includes(lookup.key) ? [lookup.key] : []
+        })()
 
         if (targets.length === 0 && options.name) {
-          const message = `Package "${options.name}" is not in the modified list. Modified: ${modifiedPackages.join(', ')}`
+          const modifiedList = modifiedPackages
+            .map((packageKey) => getPackageDisplayName(packageKey, manifest.packages[packageKey]!))
+            .join(', ')
+          const message = `Package "${options.name}" is not in the modified list. Modified: ${modifiedList}`
           if (json) {
             outputError('NOT_FOUND', message)
             process.exit(1)
@@ -139,21 +149,27 @@ export function registerSuggestCommand(program: Command): void {
         }
 
         const unsupportedTargets = targets.filter(
-          (name) => manifest.packages[name]?.source.type === 'well-known'
+          (packageKey) => manifest.packages[packageKey]?.source.type === 'well-known'
         )
 
         if (unsupportedTargets.length > 0) {
-          for (const name of unsupportedTargets) {
-            const source = manifest.packages[name]!.source
+          for (const packageKey of unsupportedTargets) {
+            const manifestEntry = manifest.packages[packageKey]
+            if (!manifestEntry) {
+              continue
+            }
+
+            const displayName = getPackageDisplayName(packageKey, manifestEntry)
+            const source = manifestEntry.source
             if (json) {
               outputError(
                 'UNSUPPORTED_SOURCE',
-                `Package "${name}" was installed from a well-known source. Suggestions are not supported.`
+                `Package "${displayName}" was installed from a well-known source. Suggestions are not supported.`
               )
             } else {
               console.error(
                 chalk.red(
-                  `Package "${name}" was installed from a well-known source (${source.type === 'well-known' ? source.hostname : 'unknown'}).`
+                  `Package "${displayName}" was installed from a well-known source (${source.type === 'well-known' ? source.hostname : 'unknown'}).`
                 )
               )
               console.error(chalk.dim('Suggestions are not supported for well-known sources.'))
@@ -175,15 +191,16 @@ export function registerSuggestCommand(program: Command): void {
 
           for (const targetName of validTargets) {
             const manifestEntry = manifest.packages[targetName]!
+            const displayName = getPackageDisplayName(targetName, manifestEntry)
             const localFiles = await readInstalledPackageFiles(
               projectRoot,
-              targetName,
+              displayName,
               manifestEntry.agents
             )
-            const endpoint = buildEndpoint(manifestEntry, targetName)
+            const endpoint = buildEndpoint(manifestEntry, displayName)
 
             dryRunResults.push({
-              package: targetName,
+              package: displayName,
               title,
               description: options.description,
               files: localFiles.map((f) => ({
@@ -224,12 +241,13 @@ export function registerSuggestCommand(program: Command): void {
 
         for (const targetName of validTargets) {
           const manifestEntry = manifest.packages[targetName]!
-          const spinner = createSpinner(`Creating suggestion for ${targetName}...`).start()
+          const displayName = getPackageDisplayName(targetName, manifestEntry)
+          const spinner = createSpinner(`Creating suggestion for ${displayName}...`).start()
 
           try {
             const { result } = await submitSuggestion(
               projectRoot,
-              targetName,
+              displayName,
               manifestEntry,
               title,
               options.description
@@ -241,11 +259,11 @@ export function registerSuggestCommand(program: Command): void {
               url: result.url ?? '',
             }
 
-            outcomes.push({ package: targetName, success: true, result: proposeResult })
+            outcomes.push({ package: displayName, success: true, result: proposeResult })
 
             if (!json) {
               spinner.succeed(
-                `Created suggestion for ${chalk.bold(targetName)}: ${chalk.bold(proposeResult.title)}`
+                `Created suggestion for ${chalk.bold(displayName)}: ${chalk.bold(proposeResult.title)}`
               )
               if (result.url) {
                 console.log(chalk.dim(`  ${result.url}`))
@@ -255,10 +273,10 @@ export function registerSuggestCommand(program: Command): void {
             }
           } catch (error) {
             const { message } = extractError(error, 'SUGGEST_FAILED')
-            outcomes.push({ package: targetName, success: false, error: message })
+            outcomes.push({ package: displayName, success: false, error: message })
 
             if (!json) {
-              spinner.fail(`Failed to create suggestion for ${chalk.bold(targetName)}: ${message}`)
+              spinner.fail(`Failed to create suggestion for ${chalk.bold(displayName)}: ${message}`)
             } else {
               spinner.stop()
             }

@@ -59,10 +59,12 @@ describe('storage/lockfile', () => {
     })
 
     it('reads a valid v2 lockfile', () => {
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/my-skill#main')}`
       const validLockfile = {
         version: 2,
         packages: {
-          'my-skill': {
+          [stableKey]: {
+            name: 'my-skill',
             source: {
               type: 'git',
               uri: 'https://github.com/org/repo',
@@ -81,11 +83,11 @@ describe('storage/lockfile', () => {
 
       const result = lockfileModule.readLockfile('/project')
       expect(result.version).toBe(2)
-      expect(result.packages['my-skill']).toBeDefined()
-      expect(result.packages['my-skill']!.integrity).toBe('sha256-abc123')
+      expect(result.packages[stableKey]).toBeDefined()
+      expect(result.packages[stableKey]!.integrity).toBe('sha256-abc123')
     })
 
-    it('migrates v1 lockfile to v2', () => {
+    it('treats legacy v1 lockfiles as invalid state', () => {
       const v1Lockfile = {
         version: 1,
         packages: {
@@ -102,10 +104,8 @@ describe('storage/lockfile', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(v1Lockfile))
 
       const result = lockfileModule.readLockfile('/project')
-      expect(result.version).toBe(2)
-      expect(result.packages['old-skill']).toBeDefined()
-      expect(result.packages['old-skill']!.source.type).toBe('git')
-      expect(fs.writeFileSync).toHaveBeenCalled()
+      expect(result).toEqual({ version: 2, packages: {} })
+      expect(fs.writeFileSync).not.toHaveBeenCalled()
     })
 
     it('returns empty lockfile when schema validation fails', () => {
@@ -173,10 +173,12 @@ describe('storage/lockfile', () => {
 
   describe('updateLockfile', () => {
     it('updates the current lockfile and returns the written value', () => {
+      const existingKey = `git:${encodeURIComponent('github.com/org/repo##main')}`
       const existingLockfile = {
         version: 2 as const,
         packages: {
-          existing: {
+          [existingKey]: {
+            name: 'existing',
             source: {
               type: 'git' as const,
               uri: 'github.com/org/repo',
@@ -193,11 +195,13 @@ describe('storage/lockfile', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existingLockfile))
 
+      const addedKey = `git:${encodeURIComponent('github.com/org/repo#skills/added#main')}`
       const result = lockfileModule.updateLockfile('/project', 'project', (lockfile) => ({
         ...lockfile,
         packages: {
           ...lockfile.packages,
-          added: {
+          [addedKey]: {
+            name: 'added',
             source: {
               type: 'git',
               uri: 'github.com/org/repo',
@@ -211,9 +215,9 @@ describe('storage/lockfile', () => {
         },
       }))
 
-      expect(result.packages.added).toBeDefined()
+      expect(result.packages[addedKey]).toBeDefined()
 
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      const written = vi.mocked(fs.writeFileSync).mock.calls.at(-1)![1] as string
       expect(JSON.parse(written)).toEqual(result)
     })
   })

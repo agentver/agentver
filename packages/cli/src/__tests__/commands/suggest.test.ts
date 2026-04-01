@@ -1,5 +1,5 @@
 import { createCLIOutputSchema, proposeResultSchema } from '@agentver/shared'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import {
   createCredentials,
   createLockfile,
@@ -90,18 +90,22 @@ async function runSuggest(args: string[]): Promise<void> {
   await program.parseAsync(['node', 'agentver', ...args])
 }
 
+function asMock(value: unknown): Mock {
+  return value as Mock
+}
+
 function setupSuggestMocks() {
   const source = createSharedGitSource({ uri: 'github.com/test-org/skills' })
-  vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
-  vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
-  vi.mocked(manifestModule.readManifest).mockReturnValue(
+  asMock(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+  asMock(authModule.getCredentials).mockResolvedValue(createCredentials())
+  asMock(manifestModule.readManifest).mockReturnValue(
     createManifest({
       packages: {
         'my-skill': createManifestPackage({ source }),
       },
     })
   )
-  vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+  asMock(lockfileModule.readLockfile).mockReturnValue(
     createLockfile({
       packages: {
         'my-skill': createLockfilePackage({
@@ -112,11 +116,11 @@ function setupSuggestMocks() {
     })
   )
   // Return different hash to simulate modification
-  vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
+  asMock(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
 
-  vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/my-skill')
-  vi.mocked(existsSync).mockReturnValue(true)
-  vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+  asMock(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/my-skill')
+  asMock(existsSync).mockReturnValue(true)
+  asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue([
     { path: 'SKILL.md', content: '# Modified skill content', size: 25 },
   ])
 }
@@ -129,6 +133,7 @@ describe('commands/suggest', () => {
   const originalCwd = process.cwd
   const originalArgv = process.argv
   const originalExit = process.exit
+  const originalFetch = globalThis.fetch
   let platformMock: PlatformMockHandle
 
   beforeEach(() => {
@@ -137,10 +142,10 @@ describe('commands/suggest', () => {
     process.argv = ['node', 'agentver', 'suggest']
     process.exit = vi.fn() as never
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(
+    asMock(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
-    vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+    asMock(outputModule.isJSONMode).mockReturnValue(false)
 
     platformMock = setupPlatformMock()
   })
@@ -149,7 +154,7 @@ describe('commands/suggest', () => {
     process.cwd = originalCwd
     process.argv = originalArgv
     process.exit = originalExit
-    vi.unstubAllGlobals()
+    globalThis.fetch = originalFetch
   })
 
   // -----------------------------------------------------------------------
@@ -171,13 +176,13 @@ describe('commands/suggest', () => {
           }),
       })
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.proposalId).toBe('sug-123')
       expect(typed.title).toBe('Fix typo')
@@ -205,7 +210,7 @@ describe('commands/suggest', () => {
         },
       })
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo', '--description', 'Corrected a spelling mistake'])
@@ -223,14 +228,14 @@ describe('commands/suggest', () => {
     it('shows what would be sent without submitting', async () => {
       setupSuggestMocks()
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo', '--dry-run'])
 
       // Should not call fetch for the submission
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Array<Record<string, unknown>>
       expect(typed).toHaveLength(1)
       expect(typed[0]!.package).toBe('my-skill')
@@ -257,13 +262,13 @@ describe('commands/suggest', () => {
           }),
       })
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const envelope = { success: true, data }
       const outputSchema = createCLIOutputSchema(proposeResultSchema)
       const result = outputSchema.safeParse(envelope)
@@ -277,12 +282,12 @@ describe('commands/suggest', () => {
 
   describe('suggest not authenticated', () => {
     it('outputs AUTH_REQUIRED error when not connected', async () => {
-      vi.mocked(configModule.getPlatformUrl).mockReturnValue(null)
-      vi.mocked(authModule.getCredentials).mockResolvedValue(null)
-      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
-      vi.mocked(lockfileModule.readLockfile).mockReturnValue(createLockfile())
+      asMock(configModule.getPlatformUrl).mockReturnValue(null)
+      asMock(authModule.getCredentials).mockResolvedValue(null)
+      asMock(manifestModule.readManifest).mockReturnValue(createManifest())
+      asMock(lockfileModule.readLockfile).mockReturnValue(createLockfile())
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo'])
@@ -301,14 +306,14 @@ describe('commands/suggest', () => {
 
   describe('suggest no changes', () => {
     it('outputs NO_CHANGES error when no packages are modified', async () => {
-      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
-      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      asMock(authModule.getCredentials).mockResolvedValue(createCredentials())
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: { 'my-skill': createManifestPackage() },
         })
       )
-      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+      asMock(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'my-skill': createLockfilePackage({ integrity: 'sha256-same' }),
@@ -316,14 +321,14 @@ describe('commands/suggest', () => {
         })
       )
       // Return the same hash — not modified
-      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-same')
-      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/my-skill')
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+      asMock(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-same')
+      asMock(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/my-skill')
+      asMock(existsSync).mockReturnValue(true)
+      asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: '# Unchanged', size: 12 },
       ])
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'No change'])
@@ -344,9 +349,9 @@ describe('commands/suggest', () => {
       const sourceA = createSharedGitSource({ uri: 'github.com/org/repo-a' })
       const sourceB = createSharedGitSource({ uri: 'github.com/org/repo-b' })
 
-      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
-      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      asMock(authModule.getCredentials).mockResolvedValue(createCredentials())
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'skill-a': createManifestPackage({ source: sourceA }),
@@ -354,7 +359,7 @@ describe('commands/suggest', () => {
           },
         })
       )
-      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+      asMock(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'skill-a': createLockfilePackage({ source: sourceA, integrity: 'sha256-originalA' }),
@@ -363,10 +368,10 @@ describe('commands/suggest', () => {
         })
       )
       // Both packages are modified
-      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
-      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test')
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+      asMock(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
+      asMock(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test')
+      asMock(existsSync).mockReturnValue(true)
+      asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: '# Modified', size: 10 },
       ])
 
@@ -382,7 +387,7 @@ describe('commands/suggest', () => {
         },
       })
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo', '--name', 'skill-a'])
@@ -393,7 +398,7 @@ describe('commands/suggest', () => {
     it('outputs NOT_FOUND when --name does not match any modified package', async () => {
       setupSuggestMocks()
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo', '--name', 'nonexistent'])
@@ -414,16 +419,16 @@ describe('commands/suggest', () => {
     it('rejects well-known source packages as unsupported', async () => {
       const wkSource = createWellKnownSource()
 
-      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
-      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      asMock(authModule.getCredentials).mockResolvedValue(createCredentials())
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'wk-skill': createManifestPackage({ source: wkSource }),
           },
         })
       )
-      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+      asMock(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'wk-skill': createLockfilePackage({
@@ -433,14 +438,14 @@ describe('commands/suggest', () => {
           },
         })
       )
-      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
-      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/wk-skill')
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+      asMock(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
+      asMock(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/wk-skill')
+      asMock(existsSync).mockReturnValue(true)
+      asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: '# Modified well-known skill', size: 28 },
       ])
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Improve docs'])
@@ -462,9 +467,9 @@ describe('commands/suggest', () => {
       const sourceA = createSharedGitSource({ uri: 'github.com/org/repo-a' })
       const sourceB = createSharedGitSource({ uri: 'github.com/org/repo-b' })
 
-      vi.mocked(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
-      vi.mocked(authModule.getCredentials).mockResolvedValue(createCredentials())
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(configModule.getPlatformUrl).mockReturnValue('https://app.agentver.com')
+      asMock(authModule.getCredentials).mockResolvedValue(createCredentials())
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             'skill-a': createManifestPackage({ source: sourceA }),
@@ -472,7 +477,7 @@ describe('commands/suggest', () => {
           },
         })
       )
-      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+      asMock(lockfileModule.readLockfile).mockReturnValue(
         createLockfile({
           packages: {
             'skill-a': createLockfilePackage({ source: sourceA, integrity: 'sha256-originalA' }),
@@ -480,10 +485,10 @@ describe('commands/suggest', () => {
           },
         })
       )
-      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
-      vi.mocked(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test')
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([
+      asMock(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-modifiedHash')
+      asMock(agentDefs.getSkillPlacementPath).mockReturnValue('.claude/skills/test')
+      asMock(existsSync).mockReturnValue(true)
+      asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue([
         { path: 'SKILL.md', content: '# Modified', size: 10 },
       ])
     }
@@ -505,13 +510,13 @@ describe('commands/suggest', () => {
         },
       })
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Array<{ package: string; success: boolean }>
       expect(typed).toHaveLength(2)
       expect(typed.every((o) => o.success)).toBe(true)
@@ -538,13 +543,13 @@ describe('commands/suggest', () => {
         },
       })
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Array<{ package: string; success: boolean; error?: string }>
       expect(typed).toHaveLength(2)
 
@@ -570,7 +575,7 @@ describe('commands/suggest', () => {
         handler: () => mockFetchResponse(500, 'Internal server error'),
       })
 
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'suggest', '--json']
 
       await runSuggest(['suggest', 'Fix typo'])

@@ -4,17 +4,26 @@ import {
   getAgentPlacementPath,
   getCommandPlacementPath,
 } from '@agentver/agent-definitions'
-import type { ManifestV2Package, StatusResult } from '@agentver/shared'
+import {
+  getPackageSourceCommit,
+  getPackageSourceLocation,
+  getPackageSourceReference,
+  type ManifestV2Package,
+  type StatusResult,
+} from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { readFilesFromDirectory } from '../git/fetcher.js'
 import { resolveRef } from '../git/index.js'
 import type { GitSource as CliGitSource } from '../git/types.js'
 import { createSpinner, isJSONMode, outputSuccess } from '../output'
+import type { PlatformResolveResponse } from '../registry/platform.js'
+import { platformFetch } from '../registry/platform.js'
 import { resolveReadPath } from '../storage/canonical.js'
-import { computeSha256FromFiles } from '../storage/integrity.js'
+import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { getPackageDisplayName } from '../storage/package-identity'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 type StatusCategory = 'up-to-date' | 'modified' | 'upstream' | 'both' | 'unknown'
@@ -72,6 +81,37 @@ function parseManifestUri(uri: string): CliGitSource | null {
   }
 }
 
+async function resolveLatestPlatformCommit(
+  source: ManifestV2Package['source']
+): Promise<string | null> {
+  if (source.type !== 'platform') return null
+
+  const org = source.uri.slice('agentver://'.length).trim()
+  if (!org) return null
+
+  const resolveName = source.path ? `${org}/${source.path}` : org
+  const resolved = await platformFetch<PlatformResolveResponse>(
+    `/resolve?name=${encodeURIComponent(resolveName)}`
+  )
+
+  if (resolved.source === 'platform') {
+    if (!resolved.files || resolved.files.length === 0) return null
+    const integrity = computeSha256FromFiles(
+      resolved.files.map((file) => ({ path: file.path, content: file.content }))
+    )
+    return deriveCommitFromIntegrity(integrity)
+  }
+
+  const cliSource = parseManifestUri(resolved.gitUri)
+  if (!cliSource) return null
+
+  cliSource.path = resolved.gitPath ?? source.path
+  cliSource.ref = resolved.gitRef ?? source.ref
+
+  const gitResolved = await resolveRef(cliSource)
+  return gitResolved.commitSha
+}
+
 async function readLocalFiles(
   projectRoot: string,
   packageName: string,
@@ -85,6 +125,7 @@ async function readLocalFiles(
       packageType === 'AGENT' ? getAgentPlacementPath : getCommandPlacementPath
     const shortName = packageName.split('/').pop()!
     const fileName = entryFile ?? `${shortName}.md`
+    const files: Array<{ path: string; content: string }> = []
     for (const agentId of agents) {
       const placementPath = getPlacementPath(agentId as AgentId, fileName, scope)
       if (!placementPath) continue
@@ -92,10 +133,10 @@ async function readLocalFiles(
       if (!fullPath) continue
       if (existsSync(fullPath)) {
         const content = readFileSync(fullPath, 'utf-8')
-        return [{ path: fileName, content }]
+        files.push({ path: `${agentId}/${fileName}`, content })
       }
     }
-    return []
+    return files
   }
 
   const readPath = resolveReadPath(projectRoot, packageName, agents, scope)
@@ -149,13 +190,44 @@ async function checkPackageStatus(
     }
   }
 
-  if (source.uri === 'unknown') {
+  if (source.type === 'unknown') {
     return {
       name,
       category: 'unknown',
-      sourceUri: source.uri,
-      ref: source.ref,
-      commit: source.commit,
+      sourceUri: 'unknown',
+      ref: source.ref ?? 'unknown',
+      commit: source.commit ?? 'unknown',
+      agents,
+      pinned: pinned || undefined,
+    }
+  }
+
+  if (source.type === 'local') {
+    let locallyModified = false
+
+    try {
+      const localFiles = await readLocalFiles(
+        projectRoot,
+        name,
+        agents,
+        scope,
+        packageType,
+        entryFile
+      )
+      if (lockfileIntegrity && localFiles.length > 0) {
+        const localIntegrity = computeSha256FromFiles(localFiles)
+        locallyModified = localIntegrity !== lockfileIntegrity
+      }
+    } catch {
+      locallyModified = false
+    }
+
+    return {
+      name,
+      category: locallyModified ? 'modified' : 'up-to-date',
+      sourceUri: source.path,
+      ref: 'local',
+      commit: 'local',
       agents,
       pinned: pinned || undefined,
     }
@@ -185,14 +257,24 @@ async function checkPackageStatus(
 
   if (!offline) {
     try {
-      const cliSource = parseManifestUri(source.uri)
-      if (cliSource) {
-        cliSource.ref = source.ref
-        const resolved = await resolveRef(cliSource)
-        upstreamCommit = resolved.commitSha
-
-        if (resolved.commitSha !== source.commit) {
+      if (source.type === 'platform') {
+        const latestPlatformCommit = await resolveLatestPlatformCommit(source)
+        if (latestPlatformCommit) {
+          upstreamCommit = latestPlatformCommit
+        }
+        if (latestPlatformCommit && latestPlatformCommit !== source.commit) {
           upstreamChanged = true
+        }
+      } else {
+        const cliSource = parseManifestUri(source.uri)
+        if (cliSource) {
+          cliSource.ref = source.ref
+          const resolved = await resolveRef(cliSource)
+          upstreamCommit = resolved.commitSha
+
+          if (resolved.commitSha !== source.commit) {
+            upstreamChanged = true
+          }
         }
       }
     } catch {
@@ -226,7 +308,9 @@ function formatStatusLine(status: PackageStatus): string {
   const padding = status.category === 'both' ? '' : ' '
 
   if (status.category === 'unknown') {
-    return `  ${symbol}  ${chalk.white(status.name)}  ${chalk.dim('unknown source')}`
+    const detail =
+      status.sourceUri && status.sourceUri !== 'unknown' ? status.sourceUri : 'unknown source'
+    return `  ${symbol}  ${chalk.white(status.name)}  ${chalk.dim(detail)}`
   }
 
   const shortCommit = status.commit.slice(0, 7)
@@ -307,12 +391,13 @@ export function registerStatusCommand(program: Command): void {
 
           const statusResults = await Promise.allSettled(
             entries.map(async ([name, pkg]) => {
-              if (spinner) spinner.text = `Checking ${name}...`
+              const displayName = getPackageDisplayName(name, pkg)
+              if (spinner) spinner.text = `Checking ${displayName}...`
 
               const lockfileEntry = lockfile.packages[name]
               return checkPackageStatus(
                 projectRoot,
-                name,
+                displayName,
                 pkg,
                 lockfileEntry?.integrity,
                 options.offline ?? false,
@@ -330,11 +415,11 @@ export function registerStatusCommand(program: Command): void {
 
             const [name, pkg] = entries[index]!
             const fallbackStatus: PackageStatus = {
-              name,
+              name: getPackageDisplayName(name, pkg),
               category: 'unknown',
-              sourceUri: pkg.source.type === 'git' ? pkg.source.uri : pkg.source.hostname,
-              ref: pkg.source.type === 'git' ? pkg.source.ref : 'well-known',
-              commit: pkg.source.type === 'git' ? pkg.source.commit : '',
+              sourceUri: getPackageSourceLocation(pkg.source),
+              ref: getPackageSourceReference(pkg.source),
+              commit: getPackageSourceCommit(pkg.source),
               agents: pkg.agents,
               pinned: pkg.pinned || undefined,
               error: result.reason instanceof Error ? result.reason.message : String(result.reason),

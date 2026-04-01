@@ -1,8 +1,14 @@
 import type { ListResult, ManifestV2Package } from '@agentver/shared'
+import {
+  getPackageSourceCommit,
+  getPackageSourceLocation,
+  getPackageSourceReference,
+} from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputSuccess } from '../output.js'
 import { readManifest } from '../storage/manifest'
+import { getPackageDisplayName, resolveBundleDisplayName } from '../storage/package-identity'
 import type { Scope } from '../utils/paths'
 
 const SCOPE_LABELS: Record<Scope, string> = {
@@ -17,18 +23,34 @@ function resolveScopes(options: { global?: boolean; all?: boolean }): Scope[] {
 }
 
 function formatPackageLine(name: string, pkg: ManifestV2Package, indent: string): string {
+  const displayName = getPackageDisplayName(name, pkg)
   const agents = pkg.agents.length > 0 ? chalk.dim(` [${pkg.agents.join(', ')}]`) : ''
   const pinned = pkg.pinned === true ? chalk.yellow(' [pinned]') : ''
 
-  if (pkg.source.type === 'git') {
-    const ref = pkg.source.ref
-    const commit = pkg.source.commit.slice(0, 7)
+  if (pkg.source.type === 'git' || pkg.source.type === 'platform') {
+    const ref = getPackageSourceReference(pkg.source)
+    const commit = getPackageSourceCommit(pkg.source).slice(0, 7)
     const commitDisplay = commit ? ` ${chalk.dim(`(${commit})`)}` : ''
-    return `${indent}${chalk.green(name)}@${chalk.cyan(ref)}${commitDisplay}${pinned}${agents}`
+    const sourceLabel =
+      pkg.source.type === 'platform' ? chalk.dim(' [platform]') : chalk.dim(' [git]')
+    return `${indent}${chalk.green(displayName)}@${chalk.cyan(ref)}${commitDisplay}${sourceLabel}${pinned}${agents}`
   }
 
-  const hostname = pkg.source.hostname
-  return `${indent}${chalk.green(name)} ${chalk.dim(`(${hostname})`)} ${chalk.dim('[well-known]')}${pinned}${agents}`
+  if (pkg.source.type === 'well-known') {
+    return `${indent}${chalk.green(displayName)} ${chalk.dim(`(${getPackageSourceLocation(pkg.source)})`)} ${chalk.dim('[well-known]')}${pinned}${agents}`
+  }
+
+  if (pkg.source.type === 'local') {
+    return `${indent}${chalk.green(displayName)} ${chalk.dim(`(${getPackageSourceLocation(pkg.source)})`)} ${chalk.dim('[local]')}${pinned}${agents}`
+  }
+
+  return `${indent}${chalk.green(displayName)} ${chalk.dim('[unknown]')}${pinned}${agents}`
+}
+
+type BundleGroup = {
+  displayName: string
+  bundlePkg?: ManifestV2Package
+  constituents: Array<[string, ManifestV2Package]>
 }
 
 export function registerListCommand(program: Command): void {
@@ -49,7 +71,18 @@ export function registerListCommand(program: Command): void {
         for (const scope of scopes) {
           const manifest = readManifest(projectRoot, scope)
           for (const [name, pkg] of Object.entries(manifest.packages)) {
-            allPackages.push({ name, scope, package: pkg })
+            allPackages.push({
+              name: getPackageDisplayName(name, pkg),
+              scope,
+              package: {
+                ...pkg,
+                ...(pkg.bundle
+                  ? {
+                      bundle: resolveBundleDisplayName(manifest.packages, pkg.bundle) ?? pkg.bundle,
+                    }
+                  : {}),
+              },
+            })
           }
         }
         outputSuccess<ListResult>({ packages: allPackages })
@@ -70,40 +103,45 @@ export function registerListCommand(program: Command): void {
         }
 
         // Separate bundles from standalone packages
-        const bundles = new Map<string, [string, ManifestV2Package][]>()
+        const bundles = new Map<string, BundleGroup>()
         const standalone: [string, ManifestV2Package][] = []
-        const bundleEntries: [string, ManifestV2Package][] = []
 
-        for (const [name, pkg] of entries) {
+        for (const [packageKey, pkg] of entries) {
+          const displayName = getPackageDisplayName(packageKey, pkg)
           if (pkg.packageType === 'BUNDLE') {
-            bundleEntries.push([name, pkg])
-            if (!bundles.has(name)) {
-              bundles.set(name, [])
-            }
+            const existing = bundles.get(packageKey)
+            bundles.set(packageKey, {
+              displayName,
+              bundlePkg: pkg,
+              constituents: existing?.constituents ?? [],
+            })
           } else if (pkg.bundle) {
-            const existing = bundles.get(pkg.bundle) ?? []
-            existing.push([name, pkg])
-            bundles.set(pkg.bundle, existing)
+            const bundleKey = pkg.bundle
+            const existing = bundles.get(bundleKey)
+            bundles.set(bundleKey, {
+              displayName: resolveBundleDisplayName(manifest.packages, bundleKey) ?? bundleKey,
+              bundlePkg: existing?.bundlePkg,
+              constituents: [...(existing?.constituents ?? []), [packageKey, pkg]],
+            })
           } else {
-            standalone.push([name, pkg])
+            standalone.push([packageKey, pkg])
           }
         }
 
         // Print bundle groups
-        for (const [bundleName, constituents] of bundles) {
-          const bundlePkg = bundleEntries.find(([name]) => name === bundleName)?.[1]
-          if (bundlePkg) {
+        for (const [, bundleGroup] of bundles) {
+          if (bundleGroup.bundlePkg) {
             console.log(
-              `  ${chalk.magenta('▸')} ${formatPackageLine(bundleName, bundlePkg, '')} ${chalk.dim('[bundle]')}`
+              `  ${chalk.magenta('▸')} ${formatPackageLine(bundleGroup.displayName, bundleGroup.bundlePkg, '')} ${chalk.dim('[bundle]')}`
             )
           } else {
             console.log(
-              `  ${chalk.magenta('▸')} ${chalk.green(bundleName)} ${chalk.dim('[bundle]')}`
+              `  ${chalk.magenta('▸')} ${chalk.green(bundleGroup.displayName)} ${chalk.dim('[bundle]')}`
             )
           }
 
-          for (const [name, pkg] of constituents) {
-            console.log(`    ${formatPackageLine(name, pkg, '')}`)
+          for (const [packageKey, pkg] of bundleGroup.constituents) {
+            console.log(`    ${formatPackageLine(packageKey, pkg, '')}`)
           }
         }
 

@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPackageKey } from '@agentver/shared'
+import { computeIntegrity } from '@agentver/storage'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -75,6 +77,9 @@ function makeDownloadResponse(overrides: Partial<Record<string, unknown>> = {}) 
 
 describe('install tool', () => {
   let tempDir: string
+  let getWorkingDirectoryMock: Mock
+  let isAuthenticatedMock: Mock
+  let registryFetchMock: Mock
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -83,8 +88,11 @@ describe('install tool', () => {
       `agentver-install-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
     )
     mkdirSync(tempDir, { recursive: true })
-    vi.mocked(contextModule.getWorkingDirectory).mockReturnValue(tempDir)
-    vi.mocked(registryModule.isAuthenticated).mockReturnValue(true)
+    getWorkingDirectoryMock = contextModule.getWorkingDirectory as unknown as Mock
+    isAuthenticatedMock = registryModule.isAuthenticated as unknown as Mock
+    registryFetchMock = registryModule.registryFetch as unknown as Mock
+    getWorkingDirectoryMock.mockReturnValue(tempDir)
+    isAuthenticatedMock.mockReturnValue(true)
   })
 
   afterEach(() => {
@@ -109,7 +117,7 @@ describe('install tool', () => {
   // ---------------------------------------------------------------------------
 
   it('throws UNAUTHORISED when not authenticated', async () => {
-    vi.mocked(registryModule.isAuthenticated).mockReturnValue(false)
+    isAuthenticatedMock.mockReturnValue(false)
 
     const { server, getHandler } = createMockServer()
     registerInstallTool(server as never)
@@ -151,7 +159,7 @@ describe('install tool', () => {
   // ---------------------------------------------------------------------------
 
   it('returns a message when no agents are detected and none specified', async () => {
-    vi.mocked(registryModule.registryFetch)
+    registryFetchMock
       .mockResolvedValueOnce({ versions: [{ version: '1.0.0', status: 'PUBLISHED' }] })
       .mockResolvedValueOnce(makeDownloadResponse())
 
@@ -169,7 +177,7 @@ describe('install tool', () => {
   // ---------------------------------------------------------------------------
 
   it('returns a message when the file manifest is empty', async () => {
-    vi.mocked(registryModule.registryFetch)
+    registryFetchMock
       .mockResolvedValueOnce({ versions: [{ version: '1.0.0', status: 'PUBLISHED' }] })
       .mockResolvedValueOnce(makeDownloadResponse({ fileManifest: {} }))
 
@@ -187,7 +195,7 @@ describe('install tool', () => {
   // ---------------------------------------------------------------------------
 
   it('throws when registry response is missing required git provenance fields', async () => {
-    vi.mocked(registryModule.registryFetch)
+    registryFetchMock
       .mockResolvedValueOnce({ versions: [{ version: '1.0.0', status: 'PUBLISHED' }] })
       .mockResolvedValueOnce(makeDownloadResponse({ gitUri: null }))
 
@@ -205,7 +213,7 @@ describe('install tool', () => {
   it('installs files to specified agents and updates manifest/lockfile', async () => {
     mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
-    vi.mocked(registryModule.registryFetch)
+    registryFetchMock
       .mockResolvedValueOnce({ versions: [{ version: '1.0.0', status: 'PUBLISHED' }] })
       .mockResolvedValueOnce(makeDownloadResponse())
 
@@ -227,15 +235,25 @@ describe('install tool', () => {
     const manifestPath = join(tempDir, '.agentver', 'manifest.json')
     expect(existsSync(manifestPath)).toBe(true)
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
-    expect(manifest.packages['org/my-skill']).toBeDefined()
-    expect(manifest.packages['org/my-skill'].source.type).toBe('git')
+    const packageKey = createPackageKey('org/my-skill', {
+      type: 'git',
+      uri: 'https://github.com/org/repo',
+      path: 'skills/my-skill',
+      ref: 'v1.0.0',
+      commit: 'abc1234def567890',
+    })
+    expect(manifest.packages[packageKey]).toBeDefined()
+    expect(manifest.packages[packageKey].name).toBe('org/my-skill')
+    expect(manifest.packages[packageKey].source.type).toBe('git')
 
     // Verify lockfile was written
     const lockfilePath = join(tempDir, '.agentver', 'lockfile.json')
     expect(existsSync(lockfilePath)).toBe(true)
     const lockfile = JSON.parse(readFileSync(lockfilePath, 'utf-8'))
-    expect(lockfile.packages['org/my-skill']).toBeDefined()
-    expect(lockfile.packages['org/my-skill'].integrity).toBe('sha256-abc123hash')
+    expect(lockfile.packages[packageKey]).toBeDefined()
+    expect(lockfile.packages[packageKey].name).toBe('org/my-skill')
+    const expectedIntegrity = computeIntegrity([{ path: 'SKILL.md', content: '# My Skill' }])
+    expect(lockfile.packages[packageKey].integrity).toBe(expectedIntegrity)
   })
 
   // ---------------------------------------------------------------------------
@@ -245,9 +263,7 @@ describe('install tool', () => {
   it('uses the specified version instead of resolving latest', async () => {
     mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
-    vi.mocked(registryModule.registryFetch).mockResolvedValueOnce(
-      makeDownloadResponse({ version: '2.0.0' })
-    )
+    registryFetchMock.mockResolvedValueOnce(makeDownloadResponse({ version: '2.0.0' }))
 
     const { server, getHandler } = createMockServer()
     registerInstallTool(server as never)
@@ -262,7 +278,7 @@ describe('install tool', () => {
     expect(result.content[0]!.text).toContain('org/skill@2.0.0')
 
     // Should only call registryFetch once (download, not version resolution)
-    expect(registryModule.registryFetch).toHaveBeenCalledOnce()
+    expect(registryFetchMock).toHaveBeenCalledOnce()
   })
 
   // ---------------------------------------------------------------------------
@@ -272,7 +288,7 @@ describe('install tool', () => {
   it('handles record-style file manifests (key-value map)', async () => {
     mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
-    vi.mocked(registryModule.registryFetch)
+    registryFetchMock
       .mockResolvedValueOnce({ versions: [{ version: '1.0.0', status: 'PUBLISHED' }] })
       .mockResolvedValueOnce(
         makeDownloadResponse({
@@ -302,7 +318,7 @@ describe('install tool', () => {
   it('skips yanked versions when resolving latest', async () => {
     mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
-    vi.mocked(registryModule.registryFetch)
+    registryFetchMock
       .mockResolvedValueOnce({
         versions: [
           { version: '2.0.0', status: 'YANKED' },
@@ -324,7 +340,7 @@ describe('install tool', () => {
   })
 
   it('throws when all versions are yanked', async () => {
-    vi.mocked(registryModule.registryFetch).mockResolvedValueOnce({
+    registryFetchMock.mockResolvedValueOnce({
       versions: [{ version: '1.0.0', status: 'YANKED' }],
     })
 

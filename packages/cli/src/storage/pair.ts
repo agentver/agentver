@@ -1,5 +1,5 @@
 import type { LockfileV2, ManifestV2 } from '@agentver/shared'
-import type { Scope } from '../utils/paths'
+import type { Scope } from '@agentver/storage'
 import { type FileLockOptions, withStorageLock } from './file-lock'
 import { readLockfile } from './lockfile'
 import { readManifest } from './manifest'

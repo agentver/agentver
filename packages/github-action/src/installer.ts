@@ -1,19 +1,25 @@
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import * as core from '@actions/core'
+import { detectInstalledAgents } from '@agentver/agent-definitions'
+import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
+import type { LockfileV2, ManifestV2, PackageSource } from '@agentver/shared'
 import {
-  detectInstalledAgents,
-  getSkillPlacementPath,
-  resolveAgentId,
-} from '@agentver/agent-definitions'
-import type { LockfileV2, ManifestV2 } from '@agentver/shared'
-import {
-  lockfileAnySchema,
-  manifestAnySchema,
-  migrateLockfileV1ToV2,
-  migrateManifestV1ToV2,
+  createPackageKey,
+  extractFilesFromManifest,
+  getPackageSourceReference,
 } from '@agentver/shared'
+import {
+  computeIntegrity,
+  getManifestPath,
+  getPackageDisplayName,
+  IntegrityError,
+  readLockfile,
+  readManifest,
+  StorageCorruptionError,
+  verifyIntegrity,
+  writeLockfile,
+} from '@agentver/storage'
 import type { InstallResult } from './reporter'
 
 const REQUEST_TIMEOUT_MS = 30_000
@@ -57,6 +63,7 @@ type InstallerConfig = {
 }
 
 export type { DownloadResponse, InstallerConfig }
+export { IntegrityError }
 
 // -- Errors ------------------------------------------------------------------
 
@@ -91,81 +98,50 @@ export class RegistryTimeoutError extends Error {
   }
 }
 
-export class IntegrityError extends Error {
-  constructor(packageName: string, expected: string, actual: string) {
-    super(`Integrity check failed for ${packageName}: expected ${expected}, got ${actual}`)
-    this.name = 'IntegrityError'
-  }
-}
+// -- File I/O (delegated to @agentver/storage) --------------------------------
 
-// -- File I/O ----------------------------------------------------------------
+export function readManifestFile(projectRoot: string): ManifestV2 {
+  const manifestPath = getManifestPath(projectRoot, 'project')
 
-export function readManifestFile(manifestPath: string): ManifestV2 {
   if (!existsSync(manifestPath)) {
     throw new ManifestNotFoundError(manifestPath)
   }
 
-  const raw = readFileSync(manifestPath, 'utf-8')
-
-  let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error(`Failed to parse manifest at ${manifestPath}: invalid JSON`)
+    const { data } = readManifest(projectRoot, 'project', {
+      onWarning: (msg) => core.warning(msg),
+    })
+    return data
+  } catch (error) {
+    if (error instanceof StorageCorruptionError) {
+      if (error.reason === 'invalid-json') {
+        throw new Error(`Failed to parse manifest at ${manifestPath}: invalid JSON`)
+      }
+      throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`)
+    }
+    throw error
   }
-
-  const result = manifestAnySchema.safeParse(parsed)
-  if (!result.success) {
-    throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`)
-  }
-
-  if (result.data.version === 1) {
-    core.info('Migrating v1 manifest to v2 format')
-    const migrated = migrateManifestV1ToV2(result.data)
-    writeFileSync(manifestPath, JSON.stringify(migrated, null, 2), 'utf-8')
-    return migrated
-  }
-
-  return result.data
 }
 
-export function readLockfileFile(lockfilePath: string): LockfileV2 | null {
+export function readLockfileFile(projectRoot: string): LockfileV2 | null {
+  const lockfilePath = resolve(projectRoot, '.agentver', 'lockfile.json')
+
   if (!existsSync(lockfilePath)) {
     return null
   }
 
-  const raw = readFileSync(lockfilePath, 'utf-8')
-
-  let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
+    const { data } = readLockfile(projectRoot, 'project', {
+      onWarning: (msg) => core.warning(msg),
+    })
+    return data
   } catch {
     return null
   }
-
-  const result = lockfileAnySchema.safeParse(parsed)
-  if (!result.success) {
-    return null
-  }
-
-  if (result.data.version === 1) {
-    core.info('Migrating v1 lockfile to v2 format')
-    const migrated = migrateLockfileV1ToV2(result.data)
-    writeFileSync(lockfilePath, JSON.stringify(migrated, null, 2), 'utf-8')
-    return migrated
-  }
-
-  return result.data
 }
 
-export function writeLockfileFile(lockfilePath: string, lockfile: LockfileV2): void {
-  const dir = dirname(lockfilePath)
-
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-
-  writeFileSync(lockfilePath, JSON.stringify(lockfile, null, 2), 'utf-8')
+export function writeLockfileFile(projectRoot: string, lockfile: LockfileV2): void {
+  writeLockfile(projectRoot, lockfile, 'project', { mode: 'none' })
 }
 
 // -- Registry ----------------------------------------------------------------
@@ -232,30 +208,6 @@ function assertDownloadResponse(data: unknown): asserts data is DownloadResponse
   }
 }
 
-/**
- * Extract files from the download response's fileManifest.
- *
- * The fileManifest is stored as Prisma JSON — it may be:
- * - A record of { [filename]: content } (flat map)
- * - An array of { path, content } objects
- * - An empty object
- */
-export function extractFilesFromManifest(
-  fileManifest: Record<string, unknown> | unknown[]
-): Array<{ path: string; content: string }> {
-  if (Array.isArray(fileManifest)) {
-    return fileManifest.filter((entry): entry is { path: string; content: string } => {
-      if (typeof entry !== 'object' || entry === null) return false
-      const record = entry as Record<string, unknown>
-      return typeof record.path === 'string' && typeof record.content === 'string'
-    })
-  }
-
-  return Object.entries(fileManifest)
-    .filter(([, value]) => typeof value === 'string')
-    .map(([path, content]) => ({ path, content: content as string }))
-}
-
 async function resolveLatestVersion(
   org: string,
   name: string,
@@ -298,16 +250,11 @@ export async function resolvePackage(
   return data
 }
 
-// -- Integrity ---------------------------------------------------------------
+// -- Integrity (re-exported from @agentver/storage) --------------------------
 
-export function computeIntegrity(files: Array<{ path: string; content: string }>): string {
-  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
-  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join('\0')
-  const hash = createHash('sha256').update(combined).digest('base64')
-  return `sha256-${hash}`
-}
+export { computeIntegrity }
 
-export function verifyIntegrity(
+export function verifyIntegrityWithWarning(
   files: Array<{ path: string; content: string }>,
   lockfileIntegrity: string | undefined,
   packageName: string
@@ -317,11 +264,7 @@ export function verifyIntegrity(
     return
   }
 
-  const actual = computeIntegrity(files)
-
-  if (actual !== lockfileIntegrity) {
-    throw new IntegrityError(packageName, lockfileIntegrity, actual)
-  }
+  verifyIntegrity(files, lockfileIntegrity, packageName)
 }
 
 // -- Agent detection ---------------------------------------------------------
@@ -333,62 +276,6 @@ export function detectAgents(workingDirectory: string, specifiedAgents: string[]
 
   const detected = detectInstalledAgents(workingDirectory)
   return detected.map((a) => a.id)
-}
-
-// -- File placement ----------------------------------------------------------
-
-export function placeFiles(
-  files: Array<{ path: string; content: string }>,
-  packageName: string,
-  agents: string[],
-  workingDirectory: string
-): number {
-  let filesWritten = 0
-  const skillName = packageName.split('/').pop() ?? packageName
-
-  for (const agentId of agents) {
-    const resolvedId = resolveAgentId(agentId)
-
-    if (!resolvedId) {
-      core.warning(`Unrecognised agent ID '${agentId}', skipping.`)
-      continue
-    }
-
-    const placementPath = getSkillPlacementPath(resolvedId, skillName, 'project')
-
-    if (!placementPath) {
-      core.warning(`No placement path found for agent '${agentId}', skipping.`)
-      continue
-    }
-
-    const fullPath = join(workingDirectory, placementPath)
-
-    if (!existsSync(fullPath)) {
-      mkdirSync(fullPath, { recursive: true })
-    }
-
-    for (const file of files) {
-      const filePath = resolve(fullPath, file.path)
-      const resolvedBase = resolve(fullPath)
-      const rel = relative(resolvedBase, filePath)
-
-      if (rel.startsWith('..') || isAbsolute(rel)) {
-        core.warning(`Skipping file that escapes target directory: '${file.path}'`)
-        continue
-      }
-
-      const fileDir = dirname(filePath)
-
-      if (!existsSync(fileDir)) {
-        mkdirSync(fileDir, { recursive: true })
-      }
-
-      writeFileSync(filePath, file.content, 'utf-8')
-      filesWritten++
-    }
-  }
-
-  return filesWritten
 }
 
 // -- Lockfile update ---------------------------------------------------------
@@ -405,8 +292,9 @@ export function updateLockfile(
 
   for (const result of results) {
     if (!result.success) continue
+    if (!result.packageKey) continue
 
-    const entry = resolvedData.get(result.name)
+    const entry = resolvedData.get(result.packageKey)
     if (!entry) continue
 
     if (!entry.response.gitUri || !entry.response.gitRef || !entry.response.gitCommitSha) {
@@ -416,14 +304,17 @@ export function updateLockfile(
       continue
     }
 
-    updated.packages[result.name] = {
-      source: {
-        type: 'git',
-        uri: entry.response.gitUri,
-        path: entry.response.gitPath ?? '',
-        ref: entry.response.gitRef,
-        commit: entry.response.gitCommitSha,
-      },
+    const source = {
+      type: 'git' as const,
+      uri: entry.response.gitUri,
+      path: entry.response.gitPath ?? '',
+      ref: entry.response.gitRef,
+      commit: entry.response.gitCommitSha,
+    }
+
+    updated.packages[createPackageKey(result.name, source)] = {
+      name: result.name,
+      source,
       integrity: computeIntegrity(entry.files),
       agents: result.agents,
     }
@@ -432,24 +323,46 @@ export function updateLockfile(
   return updated
 }
 
+// -- Source building ---------------------------------------------------------
+
+function buildSourceFromResponse(response: DownloadResponse): PackageSource {
+  if (response.gitUri && response.gitRef && response.gitCommitSha) {
+    return {
+      type: 'git',
+      uri: response.gitUri,
+      path: response.gitPath ?? '',
+      ref: response.gitRef,
+      commit: response.gitCommitSha,
+    }
+  }
+
+  return {
+    type: 'unknown',
+    path: '',
+    ref: response.gitRef ?? undefined,
+    commit: response.gitCommitSha ?? undefined,
+  }
+}
+
 // -- Orchestration -----------------------------------------------------------
 
-async function installPackageWithData(
+function installPackageWithData(
   packageName: string,
   response: DownloadResponse,
   files: Array<{ path: string; content: string }>,
   config: InstallerConfig,
   lockfileIntegrity: string | undefined
-): Promise<InstallResult> {
+): InstallResult {
   try {
     if (config.verifyIntegrity) {
-      verifyIntegrity(files, lockfileIntegrity, packageName)
+      verifyIntegrityWithWarning(files, lockfileIntegrity, packageName)
     }
 
     const agents = detectAgents(config.workingDirectory, config.agents)
 
     if (agents.length === 0) {
       return {
+        packageKey: packageName,
         name: packageName,
         version: response.version,
         agents: [],
@@ -459,18 +372,48 @@ async function installPackageWithData(
       }
     }
 
-    const fileCount = placeFiles(files, packageName, agents, config.workingDirectory)
+    const source = buildSourceFromResponse(response)
+
+    const request: InstallRequest = {
+      packageKey: createPackageKey(packageName, source),
+      displayName: packageName,
+      packageType: 'SKILL',
+      source,
+      files,
+      integrity: computeIntegrity(files),
+      target: {
+        scope: 'project',
+        projectRoot: config.workingDirectory,
+        agents,
+      },
+      policy: {
+        conflictStrategy: 'force',
+        preferredLinkMode: 'copy',
+        allowFallback: false,
+        dryRun: false,
+        persist: false,
+        securityScanPolicy: 'skip',
+      },
+    }
+
+    const plan = planInstall(request)
+    const result = executeInstall(plan)
+
+    const installedAgents = result.placements.filter((p) => p.success).map((p) => p.agentId)
 
     return {
+      packageKey: request.packageKey,
       name: packageName,
       version: response.version,
-      agents,
-      fileCount,
-      success: true,
+      agents: installedAgents.length > 0 ? installedAgents : agents,
+      fileCount: result.filesPlacedCount,
+      success: result.success,
+      error: result.error?.message,
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return {
+      packageKey: packageName,
       name: packageName,
       version: response.version,
       agents: [],
@@ -482,8 +425,8 @@ async function installPackageWithData(
 }
 
 function resolveVersionFromSource(pkg: ManifestV2['packages'][string]): string {
-  if (pkg.source.type === 'git') {
-    const ref = pkg.source.ref
+  if (pkg.source.type === 'git' || pkg.source.type === 'platform') {
+    const ref = getPackageSourceReference(pkg.source)
     if (ref === 'unknown') return 'latest'
     // Strip git ref prefixes to extract semver (refs/tags/v1.0.0 -> 1.0.0, v1.0.0 -> 1.0.0)
     const stripped = ref.replace(/^(refs\/tags\/)?v?/, '')
@@ -510,20 +453,21 @@ export async function installAllPackages(
   >()
   const packageEntries = Object.entries(manifest.packages)
 
-  for (const [packageName, packageInfo] of packageEntries) {
+  for (const [packageKey, packageInfo] of packageEntries) {
+    const displayName = getPackageDisplayName(packageKey, packageInfo)
     const version = resolveVersionFromSource(packageInfo)
-    core.info(`Resolving ${packageName}@${version}...`)
+    core.info(`Resolving ${displayName}@${version}...`)
 
     let response: DownloadResponse
     let files: Array<{ path: string; content: string }>
     try {
-      response = await resolvePackage(packageName, version, config.registryUrl, config.apiKey)
+      response = await resolvePackage(displayName, version, config.registryUrl, config.apiKey)
       files = extractFilesFromManifest(response.fileManifest)
 
       if (files.length === 0) {
-        core.warning(`Package ${packageName}@${response.version} has no files in its manifest`)
+        core.warning(`Package ${displayName}@${response.version} has no files in its manifest`)
         results.push({
-          name: packageName,
+          name: displayName,
           version: response.version,
           agents: [],
           fileCount: 0,
@@ -533,12 +477,12 @@ export async function installAllPackages(
         continue
       }
 
-      resolvedData.set(packageName, { response, files })
+      resolvedData.set(packageKey, { response, files })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      core.warning(`Failed to resolve ${packageName}@${version}: ${message}`)
+      core.warning(`Failed to resolve ${displayName}@${version}: ${message}`)
       results.push({
-        name: packageName,
+        name: displayName,
         version,
         agents: [],
         fileCount: 0,
@@ -548,23 +492,17 @@ export async function installAllPackages(
       continue
     }
 
-    core.info(`Installing ${packageName}@${response.version}...`)
-    const lockfileIntegrity = existingLockfile?.packages[packageName]?.integrity
-    const result = await installPackageWithData(
-      packageName,
-      response,
-      files,
-      config,
-      lockfileIntegrity
-    )
+    core.info(`Installing ${displayName}@${response.version}...`)
+    const lockfileIntegrity = existingLockfile?.packages[packageKey]?.integrity
+    const result = installPackageWithData(displayName, response, files, config, lockfileIntegrity)
     results.push(result)
 
     if (result.success) {
       core.info(
-        `Installed ${packageName}@${result.version} to ${result.agents.join(', ')} (${result.fileCount} files)`
+        `Installed ${displayName}@${result.version} to ${result.agents.join(', ')} (${result.fileCount} files)`
       )
     } else {
-      core.warning(`Failed to install ${packageName}: ${result.error}`)
+      core.warning(`Failed to install ${displayName}: ${result.error}`)
     }
   }
 

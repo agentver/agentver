@@ -1,4 +1,6 @@
 import { homedir } from 'node:os'
+import { getPackageSourceLocation, getPackageSourceReference } from '@agentver/shared'
+import { getPackageDisplayName } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
@@ -34,10 +36,13 @@ export function registerListTool(server: McpServer): void {
       }
 
       const lines = entries.map(([name, pkg]) => {
+        const displayName = getPackageDisplayName(name, pkg)
         const agents = pkg.agents.length > 0 ? ` [${pkg.agents.join(', ')}]` : ''
         const sourceInfo =
-          pkg.source.type === 'git' ? `${pkg.source.uri}@${pkg.source.ref}` : pkg.source.skillName
-        return `- ${name} (${sourceInfo})${agents}`
+          pkg.source.type === 'git' || pkg.source.type === 'platform'
+            ? `${getPackageSourceLocation(pkg.source)}@${getPackageSourceReference(pkg.source)}`
+            : getPackageSourceLocation(pkg.source)
+        return `- ${displayName} (${sourceInfo})${agents}`
       })
 
       const scope = isGlobal ? 'Global' : 'Project'

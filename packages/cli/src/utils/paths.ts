@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-export type Scope = 'project' | 'global'
+export type { Scope } from '@agentver/storage'
 
 /**
  * Resolves a skill placement path to a full absolute path.
@@ -15,7 +15,7 @@ export type Scope = 'project' | 'global'
 export function resolvePlacementPath(
   placementPath: string,
   projectRoot: string,
-  scope: Scope
+  scope: 'project' | 'global'
 ): string | null {
   if (scope === 'global') {
     const home = homedir()

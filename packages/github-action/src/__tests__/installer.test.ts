@@ -23,24 +23,44 @@ vi.mock('@actions/core', () => ({
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
 
-import type { DownloadResponse } from '../installer'
+import type { ManifestV2 } from '@agentver/shared'
+import { extractFilesFromManifest } from '@agentver/shared'
+import type { DownloadResponse, InstallerConfig } from '../installer'
 import {
   computeIntegrity,
   detectAgents,
-  extractFilesFromManifest,
   IntegrityError,
+  installAllPackages,
   ManifestNotFoundError,
-  placeFiles,
   RegistryAuthError,
   RegistryNetworkError,
   RegistryTimeoutError,
   readLockfileFile,
   readManifestFile,
   updateLockfile,
-  verifyIntegrity,
+  verifyIntegrityWithWarning,
   writeLockfileFile,
 } from '../installer'
 import type { InstallResult } from '../reporter'
+
+/** Helper: path to .agentver dir within a project root. */
+function agentverDir(projectRoot: string): string {
+  return join(projectRoot, '.agentver')
+}
+
+/** Helper: write a manifest file in the standard storage location. */
+function writeManifest(projectRoot: string, data: unknown): void {
+  const dir = agentverDir(projectRoot)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify(data), 'utf-8')
+}
+
+/** Helper: write a lockfile in the standard storage location. */
+function writeLockfile(projectRoot: string, data: unknown): void {
+  const dir = agentverDir(projectRoot)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'lockfile.json'), JSON.stringify(data), 'utf-8')
+}
 
 describe('installer', () => {
   let tempDir: string
@@ -113,29 +133,31 @@ describe('installer', () => {
 
   describe('readManifestFile', () => {
     it('throws ManifestNotFoundError when file does not exist', () => {
-      expect(() => readManifestFile(join(tempDir, 'nonexistent.json'))).toThrow(
+      expect(() => readManifestFile(join(tempDir, 'nonexistent-project'))).toThrow(
         ManifestNotFoundError
       )
     })
 
     it('throws on invalid JSON', () => {
-      const path = join(tempDir, 'manifest.json')
-      writeFileSync(path, '{bad json', 'utf-8')
-      expect(() => readManifestFile(path)).toThrow('invalid JSON')
+      const dir = agentverDir(tempDir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'manifest.json'), '{bad json', 'utf-8')
+      expect(() => readManifestFile(tempDir)).toThrow('invalid JSON')
     })
 
-    it('throws on schema validation failure', () => {
-      const path = join(tempDir, 'manifest.json')
-      writeFileSync(path, JSON.stringify({ foo: 'bar' }), 'utf-8')
-      expect(() => readManifestFile(path)).toThrow('schema validation failed')
+    it('returns empty manifest when schema validation fails', () => {
+      writeManifest(tempDir, { foo: 'bar' })
+      const result = readManifestFile(tempDir)
+      expect(result).toEqual({ version: 2, packages: {} })
     })
 
     it('reads a valid v2 manifest', () => {
-      const path = join(tempDir, 'manifest.json')
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const manifest = {
         version: 2,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git',
               uri: 'https://github.com/org/repo',
@@ -149,33 +171,15 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(manifest), 'utf-8')
+      writeManifest(tempDir, manifest)
 
-      const result = readManifestFile(path)
+      const result = readManifestFile(tempDir)
       expect(result.version).toBe(2)
-      expect(result.packages['org/skill']).toBeDefined()
-    })
-
-    it('migrates a v1 manifest to v2 and persists the result', () => {
-      const path = join(tempDir, 'manifest.json')
-      const v1Manifest = {
-        version: 1,
-        packages: {
-          'org/skill': {
-            name: 'org/skill',
-            version: '1.0.0',
-            agents: ['claude-code'],
-            installedAt: new Date().toISOString(),
-          },
-        },
-      }
-      writeFileSync(path, JSON.stringify(v1Manifest), 'utf-8')
-
-      const result = readManifestFile(path)
-      expect(result.version).toBe(2)
-
-      const persisted = JSON.parse(readFileSync(path, 'utf-8'))
-      expect(persisted.version).toBe(2)
+      expect(result.packages[stableKey]).toEqual(
+        expect.objectContaining({
+          name: 'org/skill',
+        })
+      )
     })
   })
 
@@ -185,27 +189,29 @@ describe('installer', () => {
 
   describe('readLockfileFile', () => {
     it('returns null when file does not exist', () => {
-      expect(readLockfileFile(join(tempDir, 'nonexistent.json'))).toBeNull()
+      expect(readLockfileFile(join(tempDir, 'nonexistent-project'))).toBeNull()
     })
 
     it('returns null for invalid JSON', () => {
-      const path = join(tempDir, 'lockfile.json')
-      writeFileSync(path, 'not json', 'utf-8')
-      expect(readLockfileFile(path)).toBeNull()
+      const dir = agentverDir(tempDir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'lockfile.json'), 'not json', 'utf-8')
+      expect(readLockfileFile(tempDir)).toBeNull()
     })
 
-    it('returns null when schema validation fails', () => {
-      const path = join(tempDir, 'lockfile.json')
-      writeFileSync(path, JSON.stringify({ invalid: true }), 'utf-8')
-      expect(readLockfileFile(path)).toBeNull()
+    it('returns empty lockfile when schema validation fails', () => {
+      writeLockfile(tempDir, { invalid: true })
+      const result = readLockfileFile(tempDir)
+      expect(result).toEqual({ version: 2, packages: {} })
     })
 
     it('reads a valid v2 lockfile', () => {
-      const path = join(tempDir, 'lockfile.json')
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const lockfile = {
         version: 2,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git',
               uri: 'https://github.com/org/repo',
@@ -218,31 +224,16 @@ describe('installer', () => {
           },
         },
       }
-      writeFileSync(path, JSON.stringify(lockfile), 'utf-8')
+      writeLockfile(tempDir, lockfile)
 
-      const result = readLockfileFile(path)
+      const result = readLockfileFile(tempDir)
       expect(result).not.toBeNull()
       expect(result!.version).toBe(2)
-    })
-
-    it('migrates a v1 lockfile to v2', () => {
-      const path = join(tempDir, 'lockfile.json')
-      const v1Lockfile = {
-        version: 1,
-        packages: {
-          'org/skill': {
-            version: '1.0.0',
-            resolved: 'https://example.com/package.tar.gz',
-            integrity: 'sha256-abc',
-            agents: ['claude-code'],
-          },
-        },
-      }
-      writeFileSync(path, JSON.stringify(v1Lockfile), 'utf-8')
-
-      const result = readLockfileFile(path)
-      expect(result).not.toBeNull()
-      expect(result!.version).toBe(2)
+      expect(result!.packages[stableKey]).toEqual(
+        expect.objectContaining({
+          name: 'org/skill',
+        })
+      )
     })
   })
 
@@ -252,17 +243,18 @@ describe('installer', () => {
 
   describe('writeLockfileFile', () => {
     it('creates parent directories if they do not exist', () => {
-      const path = join(tempDir, 'nested', 'dir', 'lockfile.json')
-      writeLockfileFile(path, { version: 2, packages: {} })
-      expect(existsSync(path)).toBe(true)
+      const projectRoot = join(tempDir, 'nested', 'dir')
+      mkdirSync(projectRoot, { recursive: true })
+      writeLockfileFile(projectRoot, { version: 2, packages: {} })
+      expect(existsSync(join(agentverDir(projectRoot), 'lockfile.json'))).toBe(true)
     })
 
     it('writes valid JSON that can be read back', () => {
-      const path = join(tempDir, 'lockfile.json')
+      mkdirSync(agentverDir(tempDir), { recursive: true })
       const lockfile = { version: 2 as const, packages: {} }
-      writeLockfileFile(path, lockfile)
+      writeLockfileFile(tempDir, lockfile)
 
-      const raw = readFileSync(path, 'utf-8')
+      const raw = readFileSync(join(agentverDir(tempDir), 'lockfile.json'), 'utf-8')
       expect(JSON.parse(raw)).toEqual(lockfile)
     })
   })
@@ -359,13 +351,13 @@ describe('installer', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // verifyIntegrity
+  // verifyIntegrityWithWarning
   // ---------------------------------------------------------------------------
 
-  describe('verifyIntegrity', () => {
+  describe('verifyIntegrityWithWarning', () => {
     it('does nothing when lockfile integrity is undefined', () => {
       expect(() => {
-        verifyIntegrity([{ path: 'a.md', content: 'hello' }], undefined, 'org/skill')
+        verifyIntegrityWithWarning([{ path: 'a.md', content: 'hello' }], undefined, 'org/skill')
       }).not.toThrow()
     })
 
@@ -374,7 +366,7 @@ describe('installer', () => {
       const integrity = computeIntegrity(files)
 
       expect(() => {
-        verifyIntegrity(files, integrity, 'org/skill')
+        verifyIntegrityWithWarning(files, integrity, 'org/skill')
       }).not.toThrow()
     })
 
@@ -382,7 +374,7 @@ describe('installer', () => {
       const files = [{ path: 'a.md', content: 'hello' }]
 
       expect(() => {
-        verifyIntegrity(files, 'sha256-wrong', 'org/skill')
+        verifyIntegrityWithWarning(files, 'sha256-wrong', 'org/skill')
       }).toThrow(IntegrityError)
     })
   })
@@ -411,67 +403,20 @@ describe('installer', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // placeFiles
+  // installer integration (planInstall + executeInstall via installAllPackages)
   // ---------------------------------------------------------------------------
 
-  describe('placeFiles', () => {
-    it('writes files to the correct agent skill directory', () => {
+  describe('installer integration', () => {
+    it('detects agents correctly for the installer request', () => {
       mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
-      const files = [{ path: 'SKILL.md', content: '# Test Skill' }]
-      const count = placeFiles(files, 'org/my-skill', ['claude-code'], tempDir)
-
-      expect(count).toBe(1)
-
-      const skillDir = join(tempDir, '.claude', 'skills', 'my-skill')
-      expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(true)
-      expect(readFileSync(join(skillDir, 'SKILL.md'), 'utf-8')).toBe('# Test Skill')
+      const agents = detectAgents(tempDir, [])
+      expect(agents).toContain('claude-code')
     })
 
-    it('writes files to multiple agents', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-      mkdirSync(join(tempDir, '.cursor'), { recursive: true })
-
-      const files = [{ path: 'SKILL.md', content: '# Test' }]
-      const count = placeFiles(files, 'org/skill', ['claude-code', 'cursor'], tempDir)
-
-      expect(count).toBe(2) // 1 file x 2 agents
-    })
-
-    it('skips unrecognised agent IDs', () => {
-      const files = [{ path: 'SKILL.md', content: '# Test' }]
-      const count = placeFiles(files, 'org/skill', ['nonexistent-agent-xyz'], tempDir)
-
-      expect(count).toBe(0)
-    })
-
-    it('skips files that escape the target directory', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-
-      const files = [
-        { path: 'SKILL.md', content: '# Good' },
-        { path: '../../../etc/passwd', content: 'evil' },
-      ]
-      const count = placeFiles(files, 'org/skill', ['claude-code'], tempDir)
-
-      expect(count).toBe(1)
-    })
-
-    it('creates nested directories for files with subdirectories', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-
-      const files = [{ path: 'sub/dir/file.md', content: '# Nested' }]
-      const count = placeFiles(files, 'org/skill', ['claude-code'], tempDir)
-
-      expect(count).toBe(1)
-      const nestedPath = join(tempDir, '.claude', 'skills', 'skill', 'sub', 'dir', 'file.md')
-      expect(existsSync(nestedPath)).toBe(true)
-    })
-
-    it('returns 0 when files array is empty', () => {
-      mkdirSync(join(tempDir, '.claude'), { recursive: true })
-      const count = placeFiles([], 'org/skill', ['claude-code'], tempDir)
-      expect(count).toBe(0)
+    it('uses specified agents when provided', () => {
+      const agents = detectAgents(tempDir, ['claude-code', 'cursor'])
+      expect(agents).toEqual(['claude-code', 'cursor'])
     })
   })
 
@@ -485,6 +430,7 @@ describe('installer', () => {
 
       const results: InstallResult[] = [
         {
+          packageKey: 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0',
           name: 'org/skill',
           version: '1.0.0',
           agents: ['claude-code'],
@@ -497,7 +443,7 @@ describe('installer', () => {
         string,
         { response: DownloadResponse; files: Array<{ path: string; content: string }> }
       >()
-      resolvedData.set('org/skill', {
+      resolvedData.set('git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0', {
         response: {
           version: '1.0.0',
           content: null,
@@ -515,9 +461,11 @@ describe('installer', () => {
 
       const updated = updateLockfile(existingLockfile, results, resolvedData)
 
-      const pkg = updated.packages['org/skill']
+      const packageKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0'
+      const pkg = updated.packages[packageKey]
       expect(pkg).toBeDefined()
       expect(pkg!.source.type).toBe('git')
+      expect(pkg!.name).toBe('org/skill')
       if (pkg!.source.type === 'git') {
         expect(pkg!.source.uri).toBe('https://github.com/org/repo')
       }
@@ -530,6 +478,7 @@ describe('installer', () => {
 
       const results: InstallResult[] = [
         {
+          packageKey: 'git:failed',
           name: 'org/failed',
           version: '1.0.0',
           agents: [],
@@ -575,6 +524,7 @@ describe('installer', () => {
 
       const results: InstallResult[] = [
         {
+          packageKey: 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0',
           name: 'org/skill',
           version: '1.0.0',
           agents: ['claude-code'],
@@ -587,7 +537,7 @@ describe('installer', () => {
         string,
         { response: DownloadResponse; files: Array<{ path: string; content: string }> }
       >()
-      resolvedData.set('org/skill', {
+      resolvedData.set('git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23v1.0.0', {
         response: {
           version: '1.0.0',
           content: null,
@@ -605,6 +555,289 @@ describe('installer', () => {
 
       const updated = updateLockfile(existingLockfile, results, resolvedData)
       expect(updated.packages['org/skill']).toBeUndefined()
+    })
+
+    it('keeps duplicate display names distinct by package key', () => {
+      const existingLockfile = { version: 2 as const, packages: {} }
+
+      const mainKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23main'
+      const releaseKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill%23release'
+
+      const results: InstallResult[] = [
+        {
+          packageKey: mainKey,
+          name: 'org/skill',
+          version: '1.0.0',
+          agents: ['claude-code'],
+          fileCount: 1,
+          success: true,
+        },
+        {
+          packageKey: releaseKey,
+          name: 'org/skill',
+          version: '1.0.0',
+          agents: ['cursor'],
+          fileCount: 1,
+          success: true,
+        },
+      ]
+
+      const resolvedData = new Map<
+        string,
+        { response: DownloadResponse; files: Array<{ path: string; content: string }> }
+      >([
+        [
+          mainKey,
+          {
+            response: {
+              version: '1.0.0',
+              content: null,
+              fileManifest: [{ path: 'SKILL.md', content: '# main' }],
+              sha256: 'abc',
+              size: 100,
+              gitRef: 'main',
+              gitCommitSha: 'commit123',
+              gitUri: 'https://github.com/org/repo',
+              gitPath: 'skills/skill',
+              createdAt: '2025-01-01T00:00:00Z',
+            },
+            files: [{ path: 'SKILL.md', content: '# main' }],
+          },
+        ],
+        [
+          releaseKey,
+          {
+            response: {
+              version: '1.0.0',
+              content: null,
+              fileManifest: [{ path: 'SKILL.md', content: '# release' }],
+              sha256: 'def',
+              size: 100,
+              gitRef: 'release',
+              gitCommitSha: 'commit456',
+              gitUri: 'https://github.com/org/repo',
+              gitPath: 'skills/skill',
+              createdAt: '2025-01-01T00:00:00Z',
+            },
+            files: [{ path: 'SKILL.md', content: '# release' }],
+          },
+        ],
+      ])
+
+      const updated = updateLockfile(existingLockfile, results, resolvedData)
+      expect(updated.packages[mainKey]).toBeDefined()
+      expect(updated.packages[releaseKey]).toBeDefined()
+      expect(updated.packages[mainKey]?.agents).toEqual(['claude-code'])
+      expect(updated.packages[releaseKey]?.agents).toEqual(['cursor'])
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // installAllPackages
+  // ---------------------------------------------------------------------------
+
+  describe('installAllPackages', () => {
+    /** Helper: build an InstallerConfig pointing at the temp directory. */
+    function makeConfig(overrides: Partial<InstallerConfig> = {}): InstallerConfig {
+      return {
+        registryUrl: 'https://registry.example.com',
+        apiKey: 'test-api-key',
+        workingDirectory: tempDir,
+        verifyIntegrity: false,
+        agents: ['claude-code'],
+        ...overrides,
+      }
+    }
+
+    /** Helper: build a valid DownloadResponse. */
+    function makeDownloadResponse(overrides: Partial<DownloadResponse> = {}): DownloadResponse {
+      return {
+        version: '1.0.0',
+        content: null,
+        fileManifest: [{ path: 'SKILL.md', content: '# Test skill' }],
+        sha256: 'abc123',
+        size: 42,
+        gitRef: 'v1.0.0',
+        gitCommitSha: 'deadbeef1234',
+        gitUri: 'https://git.example.com/org/repo',
+        gitPath: 'skills/test',
+        createdAt: '2025-06-01T00:00:00Z',
+        ...overrides,
+      }
+    }
+
+    /** Helper: build a ManifestV2 with the given packages. */
+    function makeManifest(packages: ManifestV2['packages'] = {}): ManifestV2 {
+      return { version: 2, packages }
+    }
+
+    /**
+     * Mock fetch so that calls to the download endpoint return the given response.
+     * Accepts an optional handler map keyed by URL substring for multi-package scenarios.
+     */
+    function mockFetchWith(handlers: Record<string, { status: number; body: unknown }>): void {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: string | URL | Request) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+
+        for (const [pattern, handler] of Object.entries(handlers)) {
+          if (url.includes(pattern)) {
+            return new Response(JSON.stringify(handler.body), {
+              status: handler.status,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
+        }
+
+        return new Response('Not found', { status: 404 })
+      })
+    }
+
+    it('installs a single package successfully', async () => {
+      const downloadResponse = makeDownloadResponse()
+
+      mockFetchWith({
+        '/skills/testorg/testskill/1.0.0/download': {
+          status: 200,
+          body: downloadResponse,
+        },
+      })
+
+      const manifest = makeManifest({
+        'git:https%3A%2F%2Fgit.example.com%2Forg%2Frepo%23skills%2Ftest': {
+          name: 'testorg/testskill',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/org/repo',
+            path: 'skills/test',
+            ref: 'v1.0.0',
+            commit: 'deadbeef1234',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+      })
+
+      const config = makeConfig()
+      const { results, resolvedData } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.success).toBe(true)
+      expect(results[0]!.name).toBe('testorg/testskill')
+      expect(results[0]!.version).toBe('1.0.0')
+      expect(results[0]!.agents).toContain('claude-code')
+      expect(results[0]!.fileCount).toBeGreaterThan(0)
+      expect(resolvedData.size).toBe(1)
+    })
+
+    it('returns empty results for a manifest with no packages', async () => {
+      const manifest = makeManifest({})
+      const config = makeConfig()
+      const { results, resolvedData } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(0)
+      expect(resolvedData.size).toBe(0)
+    })
+
+    it('collects per-package errors without aborting subsequent packages', async () => {
+      const downloadResponse = makeDownloadResponse({
+        version: '2.0.0',
+        gitRef: 'v2.0.0',
+      })
+
+      mockFetchWith({
+        '/skills/failing/pkg/1.0.0/download': {
+          status: 401,
+          body: 'Unauthorised',
+        },
+        '/skills/passing/pkg/2.0.0/download': {
+          status: 200,
+          body: downloadResponse,
+        },
+      })
+
+      const manifest = makeManifest({
+        'git:failing-key': {
+          name: 'failing/pkg',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/failing/repo',
+            path: 'skills/pkg',
+            ref: 'v1.0.0',
+            commit: 'aaa111',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+        'git:passing-key': {
+          name: 'passing/pkg',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/passing/repo',
+            path: 'skills/pkg',
+            ref: 'v2.0.0',
+            commit: 'bbb222',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+      })
+
+      const config = makeConfig()
+      const { results } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(2)
+
+      const failedResult = results.find((r) => r.name === 'failing/pkg')
+      expect(failedResult).toBeDefined()
+      expect(failedResult!.success).toBe(false)
+      expect(failedResult!.error).toContain('Authentication failed')
+
+      const passedResult = results.find((r) => r.name === 'passing/pkg')
+      expect(passedResult).toBeDefined()
+      expect(passedResult!.success).toBe(true)
+      expect(passedResult!.version).toBe('2.0.0')
+    })
+
+    it('records a failure when a package has no files in its manifest', async () => {
+      const downloadResponse = makeDownloadResponse({
+        fileManifest: [],
+      })
+
+      mockFetchWith({
+        '/skills/emptyorg/emptyskill/1.0.0/download': {
+          status: 200,
+          body: downloadResponse,
+        },
+      })
+
+      const manifest = makeManifest({
+        'git:empty-key': {
+          name: 'emptyorg/emptyskill',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/emptyorg/repo',
+            path: 'skills/emptyskill',
+            ref: 'v1.0.0',
+            commit: 'ccc333',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+      })
+
+      const config = makeConfig()
+      const { results, resolvedData } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.success).toBe(false)
+      expect(results[0]!.error).toContain('no files')
+      expect(results[0]!.fileCount).toBe(0)
+      expect(resolvedData.size).toBe(0)
     })
   })
 })

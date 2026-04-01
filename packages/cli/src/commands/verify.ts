@@ -12,6 +12,7 @@ import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { resolvePackageQuery } from '../storage/package-identity.js'
 
 type VerifyOptions = {
   json?: boolean
@@ -223,11 +224,18 @@ export function registerVerifyCommand(program: Command): void {
       try {
         const manifest = readManifest(projectRoot)
         const lockfile = readLockfile(projectRoot)
-        const pkg = manifest.packages[skillName]
-        const lockPkg = lockfile.packages[skillName]
+        const pkgLookup = resolvePackageQuery(manifest.packages, skillName)
+        const lockPkgLookup = resolvePackageQuery(lockfile.packages, skillName)
+        const pkg = pkgLookup.ok ? pkgLookup.pkg : undefined
+        const lockPkg = lockPkgLookup.ok ? lockPkgLookup.pkg : undefined
 
         if (pkg && lockPkg?.integrity) {
-          const canonicalPath = getCanonicalSkillPath(projectRoot, skillName, 'project')
+          const displayName = pkgLookup.ok ? pkgLookup.displayName : skillName
+          const canonicalPath = getCanonicalSkillPath(
+            projectRoot,
+            displayName.split('/').pop() ?? displayName,
+            'project'
+          )
           const files = await readFilesFromDirectory(canonicalPath)
 
           if (files.length > 0) {
@@ -275,10 +283,16 @@ export function registerVerifyCommand(program: Command): void {
 
       try {
         const manifest = readManifest(projectRoot)
-        const pkg = manifest.packages[skillName]
+        const pkgLookup = resolvePackageQuery(manifest.packages, skillName)
+        const pkg = pkgLookup.ok ? pkgLookup.pkg : undefined
 
         if (pkg) {
-          const canonicalPath = getCanonicalSkillPath(projectRoot, skillName, 'project')
+          const secDisplayName = pkgLookup.ok ? pkgLookup.displayName : skillName
+          const canonicalPath = getCanonicalSkillPath(
+            projectRoot,
+            secDisplayName.split('/').pop() ?? secDisplayName,
+            'project'
+          )
           const source = buildSourceFromManifest(pkg)
           const scanResult = await runSecurityScan(canonicalPath, source, strict)
 
@@ -325,15 +339,14 @@ export function registerVerifyCommand(program: Command): void {
 
       if (jsonMode) {
         outputSuccess(result)
-        if (!overallPassed) {
-          process.exitCode = 1
-        }
+        process.exitCode = overallPassed ? 0 : 1
         return
       }
 
       process.stderr.write('\n')
 
       if (overallPassed) {
+        process.exitCode = 0
         process.stderr.write(chalk.green.bold('Skill is verified and safe to use.\n'))
       } else {
         process.stderr.write(chalk.red.bold('Skill verification failed.\n'))

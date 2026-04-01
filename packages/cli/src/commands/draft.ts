@@ -7,6 +7,11 @@ import { type PlatformResolveResponse, platformFetch } from '../registry/platfor
 import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
+import {
+  getTrackedSourceRef,
+  isPlatformManagedSource,
+  resolvePackageQuery,
+} from '../storage/package-identity.js'
 import { updateManifestAndLockfile } from '../storage/pair.js'
 import { resolveCurrentSkillIdentity } from './skill-context.js'
 
@@ -165,9 +170,11 @@ export function registerDraftCommand(program: Command): void {
       let draftCommitSha: string | undefined
       let syncWarning: string | undefined
       const draftRef = `draft/${identity.name}/${name}`
-      const lockEntry = readLockfile(projectRoot).packages[identity.name]
+      const currentLockfile = readLockfile(projectRoot)
+      const lockEntryLookup = resolvePackageQuery(currentLockfile.packages, identity.name)
+      const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-      if (!lockEntry || lockEntry.source.type !== 'git') {
+      if (!lockEntry || !isPlatformManagedSource(lockEntry.source)) {
         process.stderr.write(chalk.red(`Skill "${identity.name}" not found in lockfile.\n`))
         process.exit(1)
       }
@@ -182,10 +189,12 @@ export function registerDraftCommand(program: Command): void {
           let warning: string | undefined
 
           updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
-            const manifestEntry = manifest.packages[identity.name]
-            const lockEntry = lockfile.packages[identity.name]
+            const manifestEntryLookup = resolvePackageQuery(manifest.packages, identity.name)
+            const lockEntryLookup = resolvePackageQuery(lockfile.packages, identity.name)
+            const manifestEntry = manifestEntryLookup.ok ? manifestEntryLookup.pkg : undefined
+            const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-            if (!manifestEntry || !lockEntry || lockEntry.source.type !== 'git') {
+            if (!manifestEntry || !lockEntry || !isPlatformManagedSource(lockEntry.source)) {
               throw new Error(`Skill "${identity.name}" not found in lockfile.`)
             }
 
@@ -207,7 +216,7 @@ export function registerDraftCommand(program: Command): void {
               syncedFiles = true
             }
 
-            if (manifestEntry.source.type === 'git') {
+            if (isPlatformManagedSource(manifestEntry.source)) {
               manifestEntry.source.ref = draftRef
               if (draftCommitSha) {
                 manifestEntry.source.commit = draftCommitSha
@@ -235,14 +244,16 @@ export function registerDraftCommand(program: Command): void {
         }
 
         updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
-          const manifestEntry = manifest.packages[identity.name]
-          const lockEntry = lockfile.packages[identity.name]
+          const manifestEntryLookup = resolvePackageQuery(manifest.packages, identity.name)
+          const lockEntryLookup = resolvePackageQuery(lockfile.packages, identity.name)
+          const manifestEntry = manifestEntryLookup.ok ? manifestEntryLookup.pkg : undefined
+          const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-          if (!lockEntry || lockEntry.source.type !== 'git') {
+          if (!lockEntry || !isPlatformManagedSource(lockEntry.source)) {
             throw new Error(`Skill "${identity.name}" not found in lockfile.`)
           }
 
-          if (manifestEntry?.source.type === 'git') {
+          if (manifestEntry && isPlatformManagedSource(manifestEntry.source)) {
             manifestEntry.source.ref = draftRef
           }
 
@@ -287,14 +298,16 @@ export function registerDraftCommand(program: Command): void {
 
       // Determine current draft from lockfile ref
       const projectRoot = process.cwd()
-      const lockEntry = readLockfile(projectRoot).packages[identity.name]
+      const currentLockfile = readLockfile(projectRoot)
+      const lockEntryLookup = resolvePackageQuery(currentLockfile.packages, identity.name)
+      const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-      if (!lockEntry || lockEntry.source.type !== 'git') {
+      if (!lockEntry || !isPlatformManagedSource(lockEntry.source)) {
         process.stderr.write(chalk.red('Skill not found in lockfile.\n'))
         process.exit(1)
       }
 
-      const currentRef = lockEntry.source.ref
+      const currentRef = getTrackedSourceRef(lockEntry.source) ?? ''
 
       if (!currentRef.startsWith('draft/')) {
         process.stderr.write(chalk.red(`Not on a draft branch. Current ref: ${currentRef}\n`))
@@ -313,14 +326,16 @@ export function registerDraftCommand(program: Command): void {
         )
 
         updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
-          const manifestEntry = manifest.packages[identity.name]
-          const lockEntry = lockfile.packages[identity.name]
+          const manifestEntryLookup = resolvePackageQuery(manifest.packages, identity.name)
+          const lockEntryLookup = resolvePackageQuery(lockfile.packages, identity.name)
+          const manifestEntry = manifestEntryLookup.ok ? manifestEntryLookup.pkg : undefined
+          const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-          if (!lockEntry || lockEntry.source.type !== 'git') {
+          if (!lockEntry || !isPlatformManagedSource(lockEntry.source)) {
             throw new Error('Skill not found in lockfile.')
           }
 
-          if (manifestEntry?.source.type === 'git') {
+          if (manifestEntry && isPlatformManagedSource(manifestEntry.source)) {
             manifestEntry.source.ref = 'main'
             if (result.commitSha) {
               manifestEntry.source.commit = result.commitSha
@@ -370,14 +385,16 @@ export function registerDraftCommand(program: Command): void {
       }
 
       const projectRoot = process.cwd()
-      const lockEntry = readLockfile(projectRoot).packages[identity.name]
+      const currentLockfile = readLockfile(projectRoot)
+      const lockEntryLookup = resolvePackageQuery(currentLockfile.packages, identity.name)
+      const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-      if (!lockEntry || lockEntry.source.type !== 'git') {
+      if (!lockEntry || !isPlatformManagedSource(lockEntry.source)) {
         process.stderr.write(chalk.red('Skill not found in lockfile.\n'))
         process.exit(1)
       }
 
-      const currentRef = lockEntry.source.ref
+      const currentRef = getTrackedSourceRef(lockEntry.source) ?? ''
 
       if (!currentRef.startsWith('draft/')) {
         process.stderr.write(chalk.red(`Not on a draft branch. Current ref: ${currentRef}\n`))
@@ -396,14 +413,16 @@ export function registerDraftCommand(program: Command): void {
         )
 
         updateManifestAndLockfile(projectRoot, 'project', (manifest, lockfile) => {
-          const manifestEntry = manifest.packages[identity.name]
-          const lockEntry = lockfile.packages[identity.name]
+          const manifestEntryLookup = resolvePackageQuery(manifest.packages, identity.name)
+          const lockEntryLookup = resolvePackageQuery(lockfile.packages, identity.name)
+          const manifestEntry = manifestEntryLookup.ok ? manifestEntryLookup.pkg : undefined
+          const lockEntry = lockEntryLookup.ok ? lockEntryLookup.pkg : undefined
 
-          if (!lockEntry || lockEntry.source.type !== 'git') {
+          if (!lockEntry || !isPlatformManagedSource(lockEntry.source)) {
             throw new Error('Skill not found in lockfile.')
           }
 
-          if (manifestEntry?.source.type === 'git') {
+          if (manifestEntry && isPlatformManagedSource(manifestEntry.source)) {
             manifestEntry.source.ref = 'main'
           }
 

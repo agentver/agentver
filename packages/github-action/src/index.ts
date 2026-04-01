@@ -17,15 +17,11 @@ async function run(): Promise<void> {
     const apiKey = core.getInput('api-key', { required: true })
     core.setSecret(apiKey)
     const registryUrl = core.getInput('registry-url')
-    const manifestPath = core.getInput('manifest-path')
-    const lockfilePath = core.getInput('lockfile-path')
     const agentsInput = core.getInput('agents')
     const workingDirectory = core.getInput('working-directory')
     const verifyIntegrity = core.getBooleanInput('verify-integrity')
 
     const resolvedWorkDir = resolve(workingDirectory)
-    const resolvedManifestPath = resolve(resolvedWorkDir, manifestPath)
-    const resolvedLockfilePath = resolve(resolvedWorkDir, lockfilePath)
 
     const agents = agentsInput
       ? agentsInput
@@ -35,7 +31,6 @@ async function run(): Promise<void> {
       : []
 
     core.info(`Working directory: ${resolvedWorkDir}`)
-    core.info(`Manifest path: ${resolvedManifestPath}`)
     core.info(`Registry URL: ${registryUrl}`)
     core.info(`Integrity verification: ${verifyIntegrity ? 'enabled' : 'disabled'}`)
 
@@ -45,10 +40,10 @@ async function run(): Promise<void> {
       core.info('Target agents: auto-detect')
     }
 
-    // Read manifest
+    // Read manifest (uses projectRoot + 'project' scope via @agentver/storage)
     let manifest: ManifestV2
     try {
-      manifest = readManifestFile(resolvedManifestPath)
+      manifest = readManifestFile(resolvedWorkDir)
     } catch (error) {
       if (error instanceof ManifestNotFoundError) {
         core.warning(error.message)
@@ -72,8 +67,8 @@ async function run(): Promise<void> {
 
     core.info(`Found ${packageCount} package(s) in manifest.`)
 
-    // Read existing lockfile
-    const existingLockfile: LockfileV2 = readLockfileFile(resolvedLockfilePath) ?? {
+    // Read existing lockfile (uses projectRoot + 'project' scope via @agentver/storage)
+    const existingLockfile: LockfileV2 = readLockfileFile(resolvedWorkDir) ?? {
       version: 2,
       packages: {},
     }
@@ -91,10 +86,10 @@ async function run(): Promise<void> {
       existingLockfile
     )
 
-    // Update lockfile
+    // Update lockfile (uses projectRoot + 'project' scope via @agentver/storage)
     const updatedLockfile = updateLockfile(existingLockfile, results, resolvedData)
-    writeLockfileFile(resolvedLockfilePath, updatedLockfile)
-    core.info(`Lockfile updated at ${resolvedLockfilePath}`)
+    writeLockfileFile(resolvedWorkDir, updatedLockfile)
+    core.info(`Lockfile updated at ${resolvedWorkDir}/.agentver/lockfile.json`)
 
     // Build summary and set outputs
     const summary = buildSummary(results)

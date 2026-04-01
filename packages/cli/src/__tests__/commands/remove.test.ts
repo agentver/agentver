@@ -450,12 +450,12 @@ describe('commands/remove', () => {
       expect(updatedManifest.packages).not.toHaveProperty('my-skill')
     })
 
-    it('reports removal with the original user-supplied name', async () => {
+    it('reports removal with the resolved installed display name', async () => {
       setupInstalledPackage('my-skill')
 
       await removeAction('org/my-skill', {})
 
-      expect(reporterModule.reportRemoval).toHaveBeenCalledWith('org/my-skill')
+      expect(reporterModule.reportRemoval).toHaveBeenCalledWith('my-skill')
     })
   })
 
@@ -1039,6 +1039,63 @@ describe('commands/remove', () => {
         expect.objectContaining({ name: 'base-skill', removed: true }),
         expect.arrayContaining([expect.stringContaining('dependent-skill')])
       )
+    })
+
+    it('uses display names in JSON output and reverse dependency warnings for stable-key entries', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const source = createSharedGitSource()
+      const baseKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fbase-skill'
+      const dependentKey = 'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fdependent-skill'
+
+      const manifest = createManifest({
+        packages: {
+          [baseKey]: createManifestPackage({
+            name: 'org/base-skill',
+            source,
+            agents: ['claude-code'],
+          }),
+          [dependentKey]: createManifestPackage({
+            name: 'org/dependent-skill',
+            source,
+            agents: ['claude-code'],
+            dependsOn: ['org/base-skill'],
+          }),
+        },
+      })
+
+      const lockfile = createLockfile({
+        packages: {
+          [baseKey]: createLockfilePackage({
+            name: 'org/base-skill',
+            source,
+            agents: ['claude-code'],
+          }),
+          [dependentKey]: createLockfilePackage({
+            name: 'org/dependent-skill',
+            source,
+            agents: ['claude-code'],
+          }),
+        },
+      })
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(manifest)
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(lockfile)
+      vi.mocked(canonicalModule.isSymlinkedInstall).mockReturnValue(true)
+      vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+        '/project/.agents/skills/base-skill'
+      )
+      vi.mocked(agentDefs.getSkillPlacementPath).mockImplementation(
+        (_id: string, skillName: string) => `.claude-code/skills/${skillName}`
+      )
+
+      await removeAction('org/base-skill', { yes: true })
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'org/base-skill', removed: true }),
+        expect.arrayContaining([expect.stringContaining('org/dependent-skill')])
+      )
+      expect(reporterModule.reportRemoval).toHaveBeenCalledWith('org/base-skill')
     })
 
     it('does not warn when no packages depend on the removed one', async () => {

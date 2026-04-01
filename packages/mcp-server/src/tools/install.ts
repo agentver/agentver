@@ -1,18 +1,18 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { detectInstalledAgents } from '@agentver/agent-definitions'
+import { executeInstall, type InstallRequest, planInstall } from '@agentver/installer'
 import {
-  type AgentId,
-  detectInstalledAgents,
-  getSkillPlacementPath,
-} from '@agentver/agent-definitions'
-import type { GitSource } from '@agentver/shared'
-import { AgentverError, createLogger } from '@agentver/shared'
+  AgentverError,
+  createLogger,
+  createPackageKey,
+  extractFilesFromManifest,
+  type GitSource,
+  SEMVER_REGEX,
+} from '@agentver/shared'
+import { computeIntegrity } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
 import { isAuthenticated, registryFetch } from '../shared/registry'
-import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
 
 type DownloadResponse = {
   version: string
@@ -36,38 +36,6 @@ type VersionListResponse = {
 
 const SAFE_PACKAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 const logger = createLogger('mcp-server:install')
-
-function assertPathWithin(filePath: string, baseDir: string): void {
-  const resolved = resolve(filePath)
-  const resolvedBase = resolve(baseDir)
-  const rel = relative(resolvedBase, resolved)
-  if (rel.startsWith('..') || isAbsolute(rel)) {
-    throw new AgentverError(
-      'VALIDATION_ERROR',
-      `Path traversal detected: "${filePath}" escapes base directory`
-    )
-  }
-}
-
-function expandTilde(path: string): string {
-  return path.replace(/^~/, homedir())
-}
-
-function extractFilesFromManifest(
-  fileManifest: Record<string, unknown> | unknown[]
-): Array<{ path: string; content: string }> {
-  if (Array.isArray(fileManifest)) {
-    return fileManifest.filter((entry): entry is { path: string; content: string } => {
-      if (typeof entry !== 'object' || entry === null) return false
-      const record = entry as Record<string, unknown>
-      return typeof record.path === 'string' && typeof record.content === 'string'
-    })
-  }
-
-  return Object.entries(fileManifest)
-    .filter(([, value]) => typeof value === 'string')
-    .map(([path, content]) => ({ path, content: content as string }))
-}
 
 async function resolveLatestVersion(org: string, name: string): Promise<string> {
   const data = await registryFetch<VersionListResponse>(
@@ -97,6 +65,7 @@ export function registerInstallTool(server: McpServer): void {
           .describe('Package name in org/name format (e.g. "my-org/typescript-rules")'),
         version: z
           .string()
+          .regex(SEMVER_REGEX, 'Must be valid semver')
           .optional()
           .describe('Semver version to install (e.g. "1.2.0"). Defaults to latest if omitted'),
         agents: z
@@ -158,9 +127,9 @@ export function registerInstallTool(server: McpServer): void {
         }
       }
 
-      const detectedAgents = targetAgents ?? detectInstalledAgents(projectRoot).map((a) => a.id)
+      const resolvedAgents = targetAgents ?? detectInstalledAgents(projectRoot).map((a) => a.id)
 
-      if (detectedAgents.length === 0) {
+      if (resolvedAgents.length === 0) {
         return {
           content: [
             {
@@ -171,49 +140,6 @@ export function registerInstallTool(server: McpServer): void {
         }
       }
 
-      const shortName = name
-      const installedTo: string[] = []
-
-      for (const agentId of detectedAgents) {
-        const placementPath = getSkillPlacementPath(
-          agentId as AgentId,
-          shortName,
-          isGlobal ? 'global' : 'project'
-        )
-        if (!placementPath) continue
-
-        const fullPath = isGlobal ? expandTilde(placementPath) : join(projectRoot, placementPath)
-
-        const baseDir = isGlobal ? homedir() : projectRoot
-        assertPathWithin(fullPath, baseDir)
-
-        if (!existsSync(fullPath)) {
-          mkdirSync(fullPath, { recursive: true })
-        }
-
-        const resolvedBase = resolve(fullPath)
-
-        for (const file of files) {
-          const filePath = resolve(fullPath, file.path)
-          const rel = relative(resolvedBase, filePath)
-          if (rel.startsWith('..') || isAbsolute(rel)) {
-            logger.warn(
-              `Skipping file outside target directory: ${file.path} -> ${filePath} (base: ${resolvedBase})`
-            )
-            continue
-          }
-
-          const dir = dirname(filePath)
-          if (!existsSync(dir)) {
-            mkdirSync(dir, { recursive: true })
-          }
-          writeFileSync(filePath, file.content, 'utf-8')
-        }
-
-        installedTo.push(agentId)
-      }
-
-      // Shared source for both manifest and lockfile v2 entries
       const source: GitSource = {
         type: 'git',
         uri: data.gitUri,
@@ -222,30 +148,60 @@ export function registerInstallTool(server: McpServer): void {
         commit: data.gitCommitSha,
       }
 
-      // Update manifest
-      const root = isGlobal ? homedir() : projectRoot
-      const manifest = readManifest(root)
-      manifest.packages[packageName] = {
+      const request: InstallRequest = {
+        packageKey: createPackageKey(packageName, source),
+        displayName: packageName,
+        packageType: 'SKILL',
         source,
-        agents: installedTo,
-        installedAt: new Date().toISOString(),
-        modified: false,
+        files,
+        integrity: computeIntegrity(files),
+        target: {
+          scope: isGlobal ? 'global' : 'project',
+          projectRoot,
+          agents: resolvedAgents,
+        },
+        policy: {
+          conflictStrategy: 'error',
+          preferredLinkMode: 'copy',
+          allowFallback: true,
+          dryRun: false,
+          persist: true,
+          securityScanPolicy: 'skip',
+        },
       }
-      writeManifest(root, manifest)
 
-      // Update lockfile
-      const lockfile = readLockfile(root)
-      lockfile.packages[packageName] = {
-        source,
-        integrity: `sha256-${data.sha256}`,
-        agents: installedTo,
+      const plan = planInstall(request)
+
+      if (!plan.executable) {
+        throw new AgentverError(
+          'CONFLICT',
+          plan.blockedReason ?? 'Installation blocked due to conflicts'
+        )
       }
-      writeLockfile(root, lockfile)
+
+      if (plan.skippedAgents.length > 0) {
+        for (const skipped of plan.skippedAgents) {
+          logger.debug(`Skipped agent ${skipped.agentId}: ${skipped.reason}`)
+        }
+      }
+
+      const result = executeInstall(plan)
+
+      if (!result.success) {
+        throw new AgentverError('INTERNAL_ERROR', result.error?.message ?? 'Installation failed')
+      }
+
+      // Clean up any backup handles from a successful install
+      for (const backup of result.backups) {
+        backup.cleanup()
+      }
+
+      const installedAgents = result.placements.filter((p) => p.success).map((p) => p.agentId)
 
       const summary = [
         `Installed ${packageName}@${data.version}`,
-        `Target agents: ${installedTo.join(', ')}`,
-        `Files: ${files.length} file(s) placed`,
+        `Target agents: ${installedAgents.join(', ')}`,
+        `Files: ${result.filesPlacedCount} file(s) placed`,
         `Scope: ${isGlobal ? 'global' : 'project'}`,
       ]
 

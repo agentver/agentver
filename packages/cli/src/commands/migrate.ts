@@ -173,22 +173,14 @@ export async function migrateSkills(
           const manifestEntry = currentManifest.packages[packageName]
           const lockfileEntry = currentLockfile.packages[packageName]
 
-          if (
-            manifestEntry?.source.type === 'git' &&
-            manifestEntry.source.uri === 'local' &&
-            manifestEntry.source.path === readPath
-          ) {
+          if (manifestEntry?.source.type === 'local' && manifestEntry.source.path === readPath) {
             manifestEntry.source = {
               ...manifestEntry.source,
               path: canonicalPath,
             }
           }
 
-          if (
-            lockfileEntry?.source.type === 'git' &&
-            lockfileEntry.source.uri === 'local' &&
-            lockfileEntry.source.path === readPath
-          ) {
+          if (lockfileEntry?.source.type === 'local' && lockfileEntry.source.path === readPath) {
             lockfileEntry.source = {
               ...lockfileEntry.source,
               path: canonicalPath,

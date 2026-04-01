@@ -1,6 +1,7 @@
 import * as core from '@actions/core'
 
 export type InstallResult = {
+  packageKey?: string
   name: string
   version: string
   agents: string[]

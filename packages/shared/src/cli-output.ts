@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { manifestV2PackageSchema } from './schemas'
+import { manifestV2PackageSchema, packageSourceSchema } from './schemas'
 
 // --- CLI output envelope ---
 
@@ -464,3 +464,113 @@ export const doctorResultSchema = z.object({
 })
 
 export type DoctorResult = z.infer<typeof doctorResultSchema>
+
+// --- Backup ---
+
+export const backupReasonSchema = z.enum([
+  'conflict-replace',
+  'config-overwrite',
+  'update-replace',
+  'manual',
+])
+
+export type BackupReason = z.infer<typeof backupReasonSchema>
+
+export const backupItemSchema = z.object({
+  originalPath: z.string(),
+  backupRelativePath: z.string(),
+  kind: z.enum(['file', 'directory']),
+  size: z.number(),
+})
+
+export type BackupItem = z.infer<typeof backupItemSchema>
+
+export const backupIndexEntrySchema = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  packageKey: z.string(),
+  displayName: z.string(),
+  reason: backupReasonSchema,
+  items: z.array(backupItemSchema),
+  manifestEntry: z.unknown().optional(),
+  lockfileEntry: z.unknown().optional(),
+})
+
+export type BackupIndexEntry = z.infer<typeof backupIndexEntrySchema>
+
+export const backupIndexSchema = z.object({
+  version: z.literal(1),
+  entries: z.array(backupIndexEntrySchema),
+})
+
+export type BackupIndex = z.infer<typeof backupIndexSchema>
+
+export const backupListResultSchema = z.object({
+  backups: z.array(backupIndexEntrySchema),
+})
+
+export type BackupListResult = z.infer<typeof backupListResultSchema>
+
+export const backupRestoreResultSchema = z.object({
+  restored: z.boolean(),
+  backupId: z.string(),
+  paths: z.array(z.string()),
+})
+
+export type BackupRestoreResult = z.infer<typeof backupRestoreResultSchema>
+
+export const backupDeleteResultSchema = z.object({
+  deleted: z.boolean(),
+  backupId: z.string(),
+})
+
+export type BackupDeleteResult = z.infer<typeof backupDeleteResultSchema>
+
+// --- Restore ---
+
+export const restorePackageResultSchema = z.object({
+  packageKey: z.string(),
+  displayName: z.string(),
+  status: z.enum(['installed', 'up-to-date', 'skipped', 'failed', 'integrity-mismatch']),
+  agents: z.array(z.string()).optional(),
+  filesPlacedCount: z.number().optional(),
+  reason: z.string().optional(),
+  error: z.string().optional(),
+})
+
+export type RestorePackageResultOutput = z.infer<typeof restorePackageResultSchema>
+
+export const restoreResultSchema = z.object({
+  type: z.literal('RESTORE_COMPLETE'),
+  packages: z.array(restorePackageResultSchema),
+  installedCount: z.number(),
+  upToDateCount: z.number(),
+  skippedCount: z.number(),
+  failedCount: z.number(),
+  success: z.boolean(),
+})
+
+export type RestoreResultOutput = z.infer<typeof restoreResultSchema>
+
+// --- Promote ---
+
+export const promoteResultSchema = z.object({
+  type: z.literal('PROMOTE_SUCCESS'),
+  packageKey: z.string(),
+  displayName: z.string(),
+  previousSource: packageSourceSchema,
+  newSource: packageSourceSchema,
+  dirty: z.boolean().optional(),
+  canonicalised: z.boolean().optional(),
+})
+
+export type PromoteResult = z.infer<typeof promoteResultSchema>
+
+// --- CI ---
+
+export const ciResultSchema = z.object({
+  restore: restoreResultSchema,
+  success: z.boolean(),
+})
+
+export type CiResult = z.infer<typeof ciResultSchema>

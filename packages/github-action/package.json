@@ -27,7 +27,9 @@
   },
   "devDependencies": {
     "@agentver/agent-definitions": "workspace:*",
+    "@agentver/installer": "workspace:*",
     "@agentver/shared": "workspace:*",
+    "@agentver/storage": "workspace:*",
     "@agentver/typescript-config": "workspace:*",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",

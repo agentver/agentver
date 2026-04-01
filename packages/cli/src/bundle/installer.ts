@@ -12,6 +12,11 @@ import type { InstallOptions, InstallResult } from '../commands/install.js'
 import type { FetchedFile } from '../git/types.js'
 import type { SpinnerLike } from '../output.js'
 import { computeSha256FromFiles } from '../storage/integrity'
+import {
+  createPackageKey,
+  setLockfilePackage,
+  setManifestPackage,
+} from '../storage/package-identity'
 import { updateManifestAndLockfile } from '../storage/pair'
 import type { ResolvedPackageRef } from './resolver.js'
 import { resolveBundle, validateBundleManifest } from './resolver.js'
@@ -50,7 +55,7 @@ type BundleSkippedPackage = {
 }
 
 type PendingStorageUpdate = {
-  name: string
+  displayName: string
   manifestEntry: NonNullable<InstallResult['manifestEntry']>
   lockfileEntry: NonNullable<InstallResult['lockfileEntry']>
 }
@@ -158,6 +163,7 @@ export async function installBundleFromFiles(
   const pendingStorageUpdates: PendingStorageUpdate[] = []
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
+  const bundleKey = createPackageKey(bundleName, source)
 
   // Install each constituent package
   for (const pkgRef of resolved.packages) {
@@ -175,13 +181,13 @@ export async function installBundleFromFiles(
           if (options.persist !== false) {
             const integrity = computeSha256FromFiles(localFiles)
             pendingStorageUpdates.push({
-              name: pkgRef.name,
+              displayName: pkgRef.name,
               manifestEntry: {
                 source,
                 agents,
                 installedAt: new Date().toISOString(),
                 modified: false,
-                bundle: bundleName,
+                bundle: bundleKey,
                 packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
               },
               lockfileEntry: {
@@ -230,10 +236,10 @@ export async function installBundleFromFiles(
           result.lockfileEntry
         ) {
           pendingStorageUpdates.push({
-            name: result.name,
+            displayName: result.name,
             manifestEntry: {
               ...result.manifestEntry,
-              bundle: bundleName,
+              bundle: bundleKey,
               packageType: TYPE_PACKAGE_TYPE_MAP[pkgRef.type],
             },
             lockfileEntry: result.lockfileEntry,
@@ -262,8 +268,8 @@ export async function installBundleFromFiles(
   if (!options.dryRun && options.persist !== false && pendingStorageUpdates.length > 0) {
     updateManifestAndLockfile(projectRoot, scope, (manifest, lockfile) => {
       for (const update of pendingStorageUpdates) {
-        manifest.packages[update.name] = update.manifestEntry
-        lockfile.packages[update.name] = update.lockfileEntry
+        setManifestPackage(manifest, update.displayName, update.manifestEntry)
+        setLockfilePackage(lockfile, update.displayName, update.lockfileEntry)
       }
       return { manifest, lockfile }
     })

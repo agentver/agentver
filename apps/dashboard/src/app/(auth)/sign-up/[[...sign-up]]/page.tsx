@@ -5,12 +5,15 @@ import { Input } from '@agentver/ui/components/input'
 import { Label } from '@agentver/ui/components/label'
 import { LogoIcon } from '@agentver/ui/components/logo'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, useState } from 'react'
 import { signIn, signUp } from '@/lib/auth/client'
+import { sanitiseRedirectUrl } from '@/lib/auth/redirect'
 
-export default function SignUpPage() {
+function SignUpContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectUrl = sanitiseRedirectUrl(searchParams.get('redirect_url'))
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -30,11 +33,11 @@ export default function SignUpPage() {
       return
     }
 
-    router.push('/')
+    router.push(redirectUrl)
   }
 
   async function handleSocial(provider: 'github' | 'google') {
-    await signIn.social({ provider, callbackURL: '/' })
+    await signIn.social({ provider, callbackURL: redirectUrl })
   }
 
   return (
@@ -121,5 +124,13 @@ export default function SignUpPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense>
+      <SignUpContent />
+    </Suspense>
   )
 }

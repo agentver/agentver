@@ -7,11 +7,17 @@ import {
   scanGlobalSkillFiles,
 } from '@agentver/agent-definitions'
 import type { ScanResult } from '@agentver/shared'
-import { validateSkillMd } from '@agentver/shared'
+import {
+  getPackageSourceCommit,
+  getPackageSourceLocation,
+  getPackageSourceReference,
+  validateSkillMd,
+} from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputSuccess } from '../output'
 import { readManifest } from '../storage/manifest.js'
+import { getPackageDisplayName } from '../storage/package-identity.js'
 
 export function registerScanCommand(program: Command): void {
   program
@@ -125,21 +131,37 @@ export function registerScanCommand(program: Command): void {
       if (manifestEntries.length > 0) {
         console.log(chalk.bold(`\nInstalled skills (${manifestEntries.length}):\n`))
 
-        for (const [name, pkg] of manifestEntries) {
+        for (const [packageKey, pkg] of manifestEntries) {
+          const displayName = getPackageDisplayName(packageKey, pkg)
           const source = pkg.source
           const agentList = `[${pkg.agents.join(', ')}]`
 
           if (source.type === 'git') {
-            const sourcePath = source.path ? `${source.uri}/${source.path}` : source.uri
-            const ref = `@${source.ref}`
-            const commit = `(${source.commit.slice(0, 7)})`
+            const sourcePath = getPackageSourceLocation(source)
+            const ref = `@${getPackageSourceReference(source)}`
+            const commit = `(${getPackageSourceCommit(source).slice(0, 7)})`
             console.log(
-              `  ${chalk.green(name.padEnd(18))} ${chalk.dim(sourcePath.padEnd(40))} ${chalk.cyan(ref.padEnd(10))} ${chalk.dim(commit)}  ${chalk.dim(agentList)}`
+              `  ${chalk.green(displayName.padEnd(18))} ${chalk.dim(sourcePath.padEnd(40))} ${chalk.cyan(ref.padEnd(10))} ${chalk.dim(commit)}  ${chalk.dim(agentList)}`
+            )
+          } else if (source.type === 'platform') {
+            const sourcePath = getPackageSourceLocation(source)
+            const ref = `@${getPackageSourceReference(source)}`
+            const commit = `(${getPackageSourceCommit(source).slice(0, 7)})`
+            console.log(
+              `  ${chalk.green(displayName.padEnd(18))} ${chalk.dim(sourcePath.padEnd(40))} ${chalk.cyan(ref.padEnd(10))} ${chalk.dim(commit)}  ${chalk.dim(agentList)}`
+            )
+          } else if (source.type === 'well-known') {
+            const sourceLabel = `${getPackageSourceLocation(source)} (well-known)`
+            console.log(
+              `  ${chalk.green(displayName.padEnd(18))} ${chalk.dim(sourceLabel.padEnd(40))} ${chalk.dim('[well-known]').padEnd(10)}  ${chalk.dim(agentList)}`
+            )
+          } else if (source.type === 'local') {
+            console.log(
+              `  ${chalk.green(displayName.padEnd(18))} ${chalk.dim(getPackageSourceLocation(source).padEnd(40))} ${chalk.dim('[local]').padEnd(10)}  ${chalk.dim(agentList)}`
             )
           } else {
-            const sourceLabel = `${source.hostname} (well-known)`
             console.log(
-              `  ${chalk.green(name.padEnd(18))} ${chalk.dim(sourceLabel.padEnd(40))} ${chalk.dim('[well-known]').padEnd(10)}  ${chalk.dim(agentList)}`
+              `  ${chalk.green(displayName.padEnd(18))} ${chalk.dim(getPackageSourceLocation(source).padEnd(40))} ${chalk.dim('[unknown]').padEnd(10)}  ${chalk.dim(agentList)}`
             )
           }
         }

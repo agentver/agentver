@@ -1,3 +1,4 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createCLIOutputSchema, updateResultSchema } from '@agentver/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExitError } from '../helpers/exit-error'
@@ -8,6 +9,7 @@ import {
   createLockfilePackage,
   createManifest,
   createManifestPackage,
+  createPlatformSource,
   createSharedGitSource,
   createWellKnownSource,
 } from '../helpers/fixtures'
@@ -281,6 +283,7 @@ describe('commands/update', () => {
       projectRoot: '/project',
       tempDir: '/tmp/agentver-backup-test',
       skillDir: '/project/.agents/skills/test-skill',
+      skillDirs: ['/project/.agents/skills/test-skill'],
       manifestEntry: null,
       lockfileEntry: null,
       scope: 'project',
@@ -732,6 +735,7 @@ describe('commands/update', () => {
           projectRoot: '/project',
           tempDir: '/tmp/agentver-backup-test',
           skillDir: null,
+          skillDirs: [],
           manifestEntry: null,
           lockfileEntry: null,
           scope: 'project',
@@ -1030,7 +1034,7 @@ describe('commands/update', () => {
     })
 
     it('updates a platform-hosted package via agentver:// source', async () => {
-      const source = createSharedGitSource({
+      const source = createPlatformSource({
         uri: 'agentver://test-org',
         path: 'skills/test-skill',
         ref: 'main',
@@ -1330,6 +1334,72 @@ describe('commands/update', () => {
         expect.objectContaining({ path: '/custom/skill/path' })
       )
     })
+
+    it('reapplies patches to the placed single-file agent path', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      const source = createSharedGitSource({
+        uri: 'github.com/test-org/test-repo',
+        path: '',
+        ref: 'main',
+        commit: OLD_SHA,
+      })
+      const testRoot = '/tmp/agentver-update-single-file'
+      process.cwd = vi.fn().mockReturnValue(testRoot)
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            reviewer: createManifestPackage({
+              source,
+              agents: ['claude-code'],
+              packageType: 'AGENT',
+              entryFile: 'reviewer.md',
+            }),
+          },
+        })
+      )
+      vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+        createLockfile({
+          packages: {
+            reviewer: createLockfilePackage({
+              source,
+              agents: ['claude-code'],
+              integrity: INTEGRITY_HASH,
+            }),
+          },
+        })
+      )
+      setupResolveToNewSha()
+      setupInstallPackageSuccess()
+
+      vi.mocked(agentDefs.getAgentPlacementPath).mockReturnValue('.claude/agents/reviewer.md')
+      rmSync(testRoot, { recursive: true, force: true })
+      mkdirSync(`${testRoot}/.claude/agents`, { recursive: true })
+      writeFileSync(`${testRoot}/.claude/agents/reviewer.md`, 'modified locally')
+      vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-different')
+      vi.mocked(gitIndex.fetchFiles).mockResolvedValue({
+        files: [{ path: 'reviewer.md', content: 'original', size: 8 }],
+        commitSha: OLD_SHA,
+        source: createGitSource(),
+      })
+      vi.mocked(patchesModule.generatePatch).mockReturnValue('patch content')
+      vi.mocked(patchesModule.savePatch).mockReturnValue(
+        '/project/.agentver/patches/reviewer.patch'
+      )
+      vi.mocked(patchesModule.applyPatch).mockReturnValue({ applied: true, conflicts: [] })
+
+      vi.mocked(prompts)
+        .mockResolvedValueOnce({ confirmed: true })
+        .mockResolvedValueOnce({ action: 'patch' })
+
+      await updateAction('reviewer', {})
+      rmSync(testRoot, { recursive: true, force: true })
+
+      expect(patchesModule.applyPatch).toHaveBeenCalledWith(
+        `${testRoot}/.claude/agents/reviewer.md`,
+        'patch content'
+      )
+    })
   })
 
   describe('manifest path validation', () => {
@@ -1339,6 +1409,8 @@ describe('commands/update', () => {
       })
       setupResolveToNewSha()
       setupInstallPackageSuccess()
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(null)
+      vi.mocked(prompts).mockResolvedValueOnce({ confirmed: true })
 
       await updateAction('test-skill', {})
 
@@ -1478,6 +1550,7 @@ describe('commands/update', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup',
         skillDir: null,
+        skillDirs: [],
         manifestEntry: null,
         lockfileEntry: null,
         scope: 'project',
@@ -1557,6 +1630,7 @@ describe('commands/update', () => {
         projectRoot: '/project',
         tempDir: '/tmp/backup',
         skillDir: null,
+        skillDirs: [],
         manifestEntry: null,
         lockfileEntry: null,
         scope: 'project',

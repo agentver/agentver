@@ -51,6 +51,25 @@ export default defineConfig({
           include: ['src/**/*.test.ts'],
         },
       },
+      {
+        test: {
+          name: 'storage',
+          root: './packages/storage',
+          environment: 'node',
+          globals: true,
+          include: ['src/**/*.test.ts'],
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
+          name: 'installer',
+          root: './packages/installer',
+          environment: 'node',
+          globals: true,
+          include: ['src/**/*.test.ts'],
+        },
+      },
     ],
   },
 })

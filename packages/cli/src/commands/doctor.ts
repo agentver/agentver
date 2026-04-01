@@ -6,8 +6,8 @@ import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions
 import {
   type DoctorCheck,
   type DoctorResult,
-  lockfileAnySchema,
-  manifestAnySchema,
+  lockfileV2Schema,
+  manifestV2Schema,
 } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -17,6 +17,7 @@ import { getPlatformUrl } from '../registry/config.js'
 import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { getPackageDisplayName } from '../storage/package-identity.js'
 import { resolvePlacementPath, type Scope } from '../utils/paths.js'
 
 type CheckStatus = DoctorCheck['status']
@@ -61,7 +62,7 @@ function checkManifestIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
     return check(name, 'fail', `Manifest contains invalid JSON${label}`)
   }
 
-  const result = manifestAnySchema.safeParse(parsed)
+  const result = manifestV2Schema.safeParse(parsed)
   if (!result.success) {
     return check(name, 'fail', `Manifest does not match expected schema${label}`)
   }
@@ -95,7 +96,7 @@ function checkLockfileIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
     return check(name, 'fail', `Lockfile contains invalid JSON${label}`)
   }
 
-  const result = lockfileAnySchema.safeParse(parsed)
+  const result = lockfileV2Schema.safeParse(parsed)
   if (!result.success) {
     return check(name, 'fail', `Lockfile does not match expected schema${label}`)
   }
@@ -153,7 +154,7 @@ function checkSkillFilesExist(projectRoot: string, scope: Scope): DoctorCheck {
   const label = scopeLabel(scope)
 
   const manifest = readManifest(projectRoot, scope)
-  const entries = Object.keys(manifest.packages)
+  const entries = Object.entries(manifest.packages)
 
   if (entries.length === 0) {
     return check(checkName, 'pass', `No packages installed${label}`)
@@ -161,10 +162,12 @@ function checkSkillFilesExist(projectRoot: string, scope: Scope): DoctorCheck {
 
   const missing: string[] = []
 
-  for (const name of entries) {
-    const canonicalPath = getCanonicalSkillPath(projectRoot, name, scope)
+  for (const [packageKey, pkg] of entries) {
+    const displayName = getPackageDisplayName(packageKey, pkg)
+    const shortName = displayName.split('/').pop() ?? displayName
+    const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
     if (!existsSync(canonicalPath) || !lstatSync(canonicalPath).isDirectory()) {
-      missing.push(name)
+      missing.push(displayName)
     }
   }
 
@@ -189,19 +192,21 @@ function checkSymlinksValid(projectRoot: string, scope: Scope): DoctorCheck {
 
   const broken: string[] = []
 
-  for (const [name, pkg] of entries) {
+  for (const [packageKey, pkg] of entries) {
+    const displayName = getPackageDisplayName(packageKey, pkg)
+    const shortName = displayName.split('/').pop() ?? displayName
     for (const agentId of pkg.agents) {
-      const placementPath = getSkillPlacementPath(agentId as AgentId, name, scope)
+      const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
       if (!placementPath) continue
 
       const agentSkillPath = resolvePlacementPath(placementPath, projectRoot, scope)
       if (!agentSkillPath) {
-        broken.push(`${name}/${agentId} (invalid placement path)`)
+        broken.push(`${displayName}/${agentId} (invalid placement path)`)
         continue
       }
 
       if (!existsSync(agentSkillPath)) {
-        broken.push(`${name}/${agentId}`)
+        broken.push(`${displayName}/${agentId}`)
         continue
       }
 
@@ -211,11 +216,11 @@ function checkSymlinksValid(projectRoot: string, scope: Scope): DoctorCheck {
           const target = readlinkSync(agentSkillPath)
           const resolvedTarget = join(dirname(agentSkillPath), target)
           if (!existsSync(resolvedTarget)) {
-            broken.push(`${name}/${agentId} (broken symlink)`)
+            broken.push(`${displayName}/${agentId} (broken symlink)`)
           }
         }
       } catch {
-        broken.push(`${name}/${agentId} (unreadable)`)
+        broken.push(`${displayName}/${agentId} (unreadable)`)
       }
     }
   }

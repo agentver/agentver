@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createManifest } from '../helpers/fixtures'
+import { createManifest, createManifestPackage, createSharedGitSource } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
 // Module-level mocks — must be declared before any import of the SUT
@@ -12,9 +12,21 @@ vi.mock('@agentver/agent-definitions', () => ({
   scanGlobalSkillFiles: vi.fn(),
 }))
 
-vi.mock('@agentver/shared', () => ({
-  validateSkillMd: vi.fn(),
-}))
+vi.mock('@agentver/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agentver/shared')>()
+  return {
+    ...actual,
+    validateSkillMd: vi.fn(),
+    getPackageSourceCommit: vi.fn((source: { commit?: string }) => source.commit ?? ''),
+    getPackageSourceLocation: vi.fn(
+      (source: { uri?: string; path?: string; hostname?: string }) => {
+        if (source.uri) return source.path ? `${source.uri}/${source.path}` : source.uri
+        return source.hostname ?? 'unknown'
+      }
+    ),
+    getPackageSourceReference: vi.fn((source: { ref?: string }) => source.ref ?? 'unknown'),
+  }
+})
 
 vi.mock('../../storage/manifest.js', () => ({
   readManifest: vi.fn(),
@@ -129,6 +141,37 @@ describe('scan command', () => {
       expect(output).toContain('Claude Code')
       expect(output).toContain('Cursor')
       expect(output).toContain('my-skill')
+    })
+
+    it('renders installed package display names when manifest keys are stable ids', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+
+      vi.mocked(agentDefs.detectInstalledAgents).mockReturnValue([])
+      vi.mocked(agentDefs.detectGlobalAgents).mockReturnValue([])
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([])
+      vi.mocked(agentDefs.scanGlobalSkillFiles).mockReturnValue([])
+
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fmy-skill': createManifestPackage({
+              name: 'org/my-skill',
+              source: createSharedGitSource({
+                uri: 'https://github.com/org/repo',
+                path: 'skills/my-skill',
+                ref: 'main',
+                commit: 'abc1234567',
+              }),
+            }),
+          },
+        })
+      )
+
+      await runScan()
+
+      const output = consoleSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')
+      expect(output).toContain('org/my-skill')
+      expect(output).not.toContain('git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fmy-skill')
     })
   })
 

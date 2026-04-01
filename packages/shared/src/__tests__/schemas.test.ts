@@ -4,14 +4,14 @@ import { describe, expect, it } from 'vitest'
 import {
   agentConfigSchema,
   agentIdEnum,
+  createPackageKey,
   fileManifestEntrySchema,
   fileManifestSchema,
+  getPackageSourceCommit,
+  getPackageSourceLocation,
+  getPackageSourceReference,
   gitSourceSchema,
-  lockfileAnySchema,
-  lockfileSchema,
   lockfileV2Schema,
-  manifestAnySchema,
-  manifestSchema,
   manifestV2Schema,
   PACKAGE_STRUCTURES,
   packageSourceSchema,
@@ -41,6 +41,26 @@ const validWellKnownSource = {
   baseUrl: 'https://example.com/.well-known/skills',
   hostname: 'example.com',
   skillName: 'my-skill',
+}
+
+const validPlatformSource = {
+  type: 'platform' as const,
+  uri: 'agentver://acme',
+  path: 'skills/my-skill',
+  ref: 'main',
+  commit: 'def5678',
+}
+
+const validLocalSource = {
+  type: 'local' as const,
+  path: '/tmp/my-skill',
+}
+
+const validUnknownSource = {
+  type: 'unknown' as const,
+  path: '/tmp/unresolved',
+  ref: 'main',
+  commit: 'unknown',
 }
 
 const now = new Date().toISOString()
@@ -205,119 +225,34 @@ describe('skillMetadataSchema', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// manifestSchema (v1)
-// ---------------------------------------------------------------------------
-
-describe('manifestSchema (v1)', () => {
-  it('should accept valid v1 manifest with packages', () => {
-    manifestSchema.parse({
-      version: 1,
-      packages: {
-        'my-skill': {
-          name: 'my-skill',
-          version: '1.0.0',
-          agents: ['claude-code'],
-          installedAt: now,
-        },
-      },
-    })
+describe('package source helpers', () => {
+  it('returns a location for each supported source type', () => {
+    expect(getPackageSourceLocation(validGitSource)).toBe(
+      'https://github.com/org/repo/skills/my-skill'
+    )
+    expect(getPackageSourceLocation(validPlatformSource)).toBe('agentver://acme/skills/my-skill')
+    expect(getPackageSourceLocation(validWellKnownSource)).toBe('example.com/my-skill')
+    expect(getPackageSourceLocation(validLocalSource)).toBe('/tmp/my-skill')
+    expect(getPackageSourceLocation(validUnknownSource)).toBe('/tmp/unresolved')
+    expect(getPackageSourceLocation({ type: 'unknown' })).toBe('unknown')
   })
 
-  it('should accept v1 manifest with empty packages', () => {
-    manifestSchema.parse({ version: 1, packages: {} })
+  it('returns a reference for each supported source type', () => {
+    expect(getPackageSourceReference(validGitSource)).toBe('main')
+    expect(getPackageSourceReference(validPlatformSource)).toBe('main')
+    expect(getPackageSourceReference(validWellKnownSource)).toBe('well-known')
+    expect(getPackageSourceReference(validLocalSource)).toBe('local')
+    expect(getPackageSourceReference(validUnknownSource)).toBe('main')
+    expect(getPackageSourceReference({ type: 'unknown' })).toBe('unknown')
   })
 
-  it('should reject manifest with wrong version (not 1)', () => {
-    const result = manifestSchema.safeParse({ version: 2, packages: {} })
-    expect(result.success).toBe(false)
-  })
-
-  it('should reject manifest with missing version', () => {
-    const result = manifestSchema.safeParse({ packages: {} })
-    expect(result.success).toBe(false)
-  })
-
-  it('should reject package with invalid installedAt datetime', () => {
-    const result = manifestSchema.safeParse({
-      version: 1,
-      packages: {
-        'my-skill': {
-          name: 'my-skill',
-          version: '1.0.0',
-          installedAt: 'not-a-date',
-        },
-      },
-    })
-    expect(result.success).toBe(false)
-  })
-
-  it('should default agents to empty array in v1 packages', () => {
-    const result = manifestSchema.parse({
-      version: 1,
-      packages: {
-        'my-skill': {
-          name: 'my-skill',
-          version: '1.0.0',
-          installedAt: now,
-        },
-      },
-    })
-    expect(result.packages['my-skill']!.agents).toEqual([])
-  })
-})
-
-// ---------------------------------------------------------------------------
-// lockfileSchema (v1)
-// ---------------------------------------------------------------------------
-
-describe('lockfileSchema (v1)', () => {
-  it('should accept valid v1 lockfile with integrity hash', () => {
-    lockfileSchema.parse({
-      version: 1,
-      packages: {
-        'my-skill': {
-          version: '1.0.0',
-          resolved: 'https://example.com/skill.tar.gz',
-          integrity: 'sha256-abc123',
-          agents: ['cursor'],
-        },
-      },
-    })
-  })
-
-  it('should reject integrity without sha256- prefix', () => {
-    const result = lockfileSchema.safeParse({
-      version: 1,
-      packages: {
-        'my-skill': {
-          version: '1.0.0',
-          resolved: 'https://example.com/skill.tar.gz',
-          integrity: 'md5-abc123',
-          agents: [],
-        },
-      },
-    })
-    expect(result.success).toBe(false)
-  })
-
-  it('should reject resolved as non-URL string', () => {
-    const result = lockfileSchema.safeParse({
-      version: 1,
-      packages: {
-        'my-skill': {
-          version: '1.0.0',
-          resolved: 'not-a-url',
-          integrity: 'sha256-abc123',
-          agents: [],
-        },
-      },
-    })
-    expect(result.success).toBe(false)
-  })
-
-  it('should accept lockfile with empty packages', () => {
-    lockfileSchema.parse({ version: 1, packages: {} })
+  it('returns a commit for each supported source type', () => {
+    expect(getPackageSourceCommit(validGitSource)).toBe('abc1234')
+    expect(getPackageSourceCommit(validPlatformSource)).toBe('def5678')
+    expect(getPackageSourceCommit(validWellKnownSource)).toBe('')
+    expect(getPackageSourceCommit(validLocalSource)).toBe('')
+    expect(getPackageSourceCommit(validUnknownSource)).toBe('unknown')
+    expect(getPackageSourceCommit({ type: 'unknown' })).toBe('unknown')
   })
 })
 
@@ -424,9 +359,25 @@ describe('packageSourceSchema (discriminated union)', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// manifestV2Schema
-// ---------------------------------------------------------------------------
+describe('stable package identity helpers', () => {
+  it('creates a stable key from a display name and source', () => {
+    expect(createPackageKey('acme/my-skill', validGitSource)).toBe(
+      `git:${encodeURIComponent('https://github.com/org/repo#skills/my-skill#main')}`
+    )
+  })
+
+  it('creates a stable key for each source type', () => {
+    expect(createPackageKey('local-skill', validLocalSource)).toBe(
+      `local:${encodeURIComponent('/tmp/my-skill')}`
+    )
+    expect(createPackageKey('platform-skill', validPlatformSource)).toBe(
+      `platform:${encodeURIComponent('agentver://acme#skills/my-skill#main')}`
+    )
+    expect(createPackageKey('my-wk-skill', validWellKnownSource)).toBe(
+      `well-known:${encodeURIComponent('https://example.com/.well-known/skills#my-skill')}`
+    )
+  })
+})
 
 describe('manifestV2Schema', () => {
   const validV2Package = {
@@ -537,53 +488,6 @@ describe('lockfileV2Schema', () => {
         },
       },
     })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// manifestAnySchema (discriminated union)
-// ---------------------------------------------------------------------------
-
-describe('manifestAnySchema (discriminated union)', () => {
-  it('should accept valid v1 manifest', () => {
-    const result = manifestAnySchema.parse({ version: 1, packages: {} })
-    expect(result.version).toBe(1)
-  })
-
-  it('should accept valid v2 manifest', () => {
-    const result = manifestAnySchema.parse({ version: 2, packages: {} })
-    expect(result.version).toBe(2)
-  })
-
-  it('should reject manifest without version', () => {
-    const result = manifestAnySchema.safeParse({ packages: {} })
-    expect(result.success).toBe(false)
-  })
-
-  it('should reject manifest with unsupported version (3)', () => {
-    const result = manifestAnySchema.safeParse({ version: 3, packages: {} })
-    expect(result.success).toBe(false)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// lockfileAnySchema (discriminated union)
-// ---------------------------------------------------------------------------
-
-describe('lockfileAnySchema (discriminated union)', () => {
-  it('should accept valid v1 lockfile', () => {
-    const result = lockfileAnySchema.parse({ version: 1, packages: {} })
-    expect(result.version).toBe(1)
-  })
-
-  it('should accept valid v2 lockfile', () => {
-    const result = lockfileAnySchema.parse({ version: 2, packages: {} })
-    expect(result.version).toBe(2)
-  })
-
-  it('should reject lockfile without version', () => {
-    const result = lockfileAnySchema.safeParse({ packages: {} })
-    expect(result.success).toBe(false)
   })
 })
 

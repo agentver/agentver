@@ -33,8 +33,33 @@ type SyncWellKnownSource = {
   skillName: string
 }
 
+type SyncLocalSource = {
+  type: 'local'
+  path: string
+}
+
+type SyncPlatformSource = {
+  type: 'platform'
+  uri: string
+  path: string
+  ref: string
+  commit: string
+}
+
+type SyncUnknownSource = {
+  type: 'unknown'
+  path?: string
+  ref?: string
+  commit?: string
+}
+
 type SyncPackageEntry = {
-  source: SyncGitSource | SyncWellKnownSource
+  source:
+    | SyncGitSource
+    | SyncWellKnownSource
+    | SyncLocalSource
+    | SyncPlatformSource
+    | SyncUnknownSource
   agents: string[]
   modified: boolean
 }
@@ -96,7 +121,7 @@ async function isLocallyModified(
 
 function toSyncSource(
   pkg: ReturnType<typeof readManifest>['packages'][string]
-): SyncGitSource | SyncWellKnownSource {
+): SyncPackageEntry['source'] {
   if (pkg.source.type === 'git') {
     return {
       type: 'git',
@@ -104,6 +129,32 @@ function toSyncSource(
       path: pkg.source.path,
       ref: pkg.source.ref,
       commit: pkg.source.commit,
+    }
+  }
+
+  if (pkg.source.type === 'platform') {
+    return {
+      type: 'platform',
+      uri: pkg.source.uri,
+      path: pkg.source.path,
+      ref: pkg.source.ref,
+      commit: pkg.source.commit,
+    }
+  }
+
+  if (pkg.source.type === 'local') {
+    return {
+      type: 'local',
+      path: pkg.source.path,
+    }
+  }
+
+  if (pkg.source.type === 'unknown') {
+    return {
+      type: 'unknown',
+      ...(pkg.source.path ? { path: pkg.source.path } : {}),
+      ...(pkg.source.ref ? { ref: pkg.source.ref } : {}),
+      ...(pkg.source.commit ? { commit: pkg.source.commit } : {}),
     }
   }
 

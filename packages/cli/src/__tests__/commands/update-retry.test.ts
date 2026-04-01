@@ -4,7 +4,7 @@ import {
   createLockfilePackage,
   createManifest,
   createManifestPackage,
-  createSharedGitSource,
+  createPlatformSource,
 } from '../helpers/fixtures'
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
@@ -149,7 +149,7 @@ describe('commands/update retry flow', () => {
     vi.mocked(authModule.getCredentials).mockResolvedValue({ token: 'test-token' })
     vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue('sha256-updated')
 
-    const source = createSharedGitSource({
+    const source = createPlatformSource({
       uri: 'agentver://test-org',
       path: 'skills/test-skill',
       ref: 'main',

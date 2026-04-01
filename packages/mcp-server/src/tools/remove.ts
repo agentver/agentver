@@ -1,29 +1,20 @@
 import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
+import type { PackageType } from '@agentver/installer'
+import {
+  getCanonicalFilePath,
+  getCanonicalSkillPath,
+  removeAgentPlacements,
+  resolveCanonicalCategory,
+} from '@agentver/installer'
 import { AgentverError } from '@agentver/shared'
+import { resolvePackageQuery, updateManifestAndLockfile } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
-import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
-
-/** Expand a leading ~ to the user's home directory */
-function expandTilde(path: string): string {
-  return path.replace(/^~/, homedir())
-}
-
-/** Validate that a resolved path stays within the expected base directory */
-function assertPathWithin(filePath: string, baseDir: string): void {
-  const resolved = resolve(filePath)
-  const resolvedBase = resolve(baseDir)
-  if (!resolved.startsWith(`${resolvedBase}/`) && resolved !== resolvedBase) {
-    throw new AgentverError(
-      'VALIDATION_ERROR',
-      `Path traversal detected: "${filePath}" escapes base directory`
-    )
-  }
-}
+import { readManifest } from '../storage'
 
 export function registerRemoveTool(server: McpServer): void {
   server.registerTool(
@@ -46,25 +37,45 @@ export function registerRemoveTool(server: McpServer): void {
     async ({ package: packageName, global: isGlobal }) => {
       const root = isGlobal ? homedir() : getWorkingDirectory()
       const manifest = readManifest(root)
+      const lookup = resolvePackageQuery(manifest.packages, packageName)
 
-      const pkg = manifest.packages[packageName]
-      if (!pkg) {
+      if (!lookup.ok) {
+        if (lookup.reason === 'ambiguous') {
+          throw new AgentverError(
+            'AMBIGUOUS_SKILL',
+            `Multiple packages match "${packageName}": ${lookup.matches.join(', ')}. Use the full package key to disambiguate.`
+          )
+        }
         throw new AgentverError('NOT_FOUND', `Package "${packageName}" is not installed.`)
       }
 
-      const shortName = packageName.split('/').pop()!
-      const removedFrom: string[] = []
+      const { key: packageKey, displayName, pkg } = lookup
       const scope = isGlobal ? 'global' : 'project'
-      const baseDir = isGlobal ? homedir() : getWorkingDirectory()
+      const packageType = (pkg.packageType ?? 'SKILL') as PackageType
+      const category = resolveCanonicalCategory(packageType)
 
+      // Remove canonical storage directory
+      const canonicalPath =
+        category === 'skills'
+          ? getCanonicalSkillPath(root, displayName, scope)
+          : getCanonicalFilePath(root, displayName, category, scope)
+      if (existsSync(canonicalPath)) {
+        rmSync(canonicalPath, { recursive: true, force: true })
+      }
+
+      // Remove agent placements (symlinks or copies) via installer
+      removeAgentPlacements(root, displayName, pkg.agents, scope, category)
+
+      // Fall back to legacy direct placement removal for packages installed
+      // before the canonical storage migration
+      const removedFrom: string[] = []
       for (const agentId of pkg.agents) {
-        const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)
+        const placementPath = getSkillPlacementPath(agentId as AgentId, displayName, scope)
         if (!placementPath) continue
 
-        const fullPath = isGlobal ? expandTilde(placementPath) : join(root, placementPath)
-
-        // Validate path stays within expected boundaries before deletion
-        assertPathWithin(fullPath, baseDir)
+        const fullPath = isGlobal
+          ? placementPath.replace(/^~/, homedir())
+          : join(root, placementPath)
 
         if (existsSync(fullPath)) {
           rmSync(fullPath, { recursive: true, force: true })
@@ -72,17 +83,15 @@ export function registerRemoveTool(server: McpServer): void {
         }
       }
 
-      // Update manifest
-      delete manifest.packages[packageName]
-      writeManifest(root, manifest)
-
-      // Update lockfile
-      const lockfile = readLockfile(root)
-      delete lockfile.packages[packageName]
-      writeLockfile(root, lockfile)
+      // Atomically update manifest and lockfile under a single lock
+      updateManifestAndLockfile(root, scope, (currentManifest, currentLockfile) => {
+        delete currentManifest.packages[packageKey]
+        delete currentLockfile.packages[packageKey]
+        return { manifest: currentManifest, lockfile: currentLockfile }
+      })
 
       const summary = [
-        `Removed ${packageName}`,
+        `Removed ${displayName}`,
         removedFrom.length > 0
           ? `Cleaned up from: ${removedFrom.join(', ')}`
           : 'No agent directories required cleanup',

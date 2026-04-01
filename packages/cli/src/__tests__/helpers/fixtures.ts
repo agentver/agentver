@@ -8,6 +8,7 @@ import type {
   LockfileV2Package,
   ManifestV2,
   ManifestV2Package,
+  PlatformSource,
   GitSource as SharedGitSource,
   WellKnownSource,
 } from '@agentver/shared'
@@ -38,6 +39,17 @@ export function createSharedGitSource(overrides?: Partial<SharedGitSource>): Sha
   return {
     type: 'git',
     uri: 'https://github.com/test-org/test-repo',
+    path: 'skills/test-skill',
+    ref: 'main',
+    commit: 'abc1234567',
+    ...overrides,
+  }
+}
+
+export function createPlatformSource(overrides?: Partial<PlatformSource>): PlatformSource {
+  return {
+    type: 'platform',
+    uri: 'agentver://test-org',
     path: 'skills/test-skill',
     ref: 'main',
     commit: 'abc1234567',

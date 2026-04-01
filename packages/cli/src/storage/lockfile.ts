@@ -1,72 +1,40 @@
-import { existsSync, readFileSync } from 'node:fs'
 import type { LockfileV2 } from '@agentver/shared'
-import { lockfileAnySchema, lockfileV2PackageSchema, migrateLockfileV1ToV2 } from '@agentver/shared'
-import type { Scope } from '../utils/paths'
+import { STORAGE_SCHEMA_VERSION } from '@agentver/shared'
+import type { Scope } from '@agentver/storage'
+import {
+  ensureStorageDir,
+  getLockfilePath,
+  readLockfile as readLockfileRaw,
+  StorageCorruptionError,
+  writeJsonFileAtomic,
+} from '@agentver/storage'
 import { createCliLogger } from '../utils.js'
 import { type FileLockOptions, withStorageLock } from './file-lock'
-import { ensureStorageDir, getLockfilePath, writeJsonFileAtomic } from './files'
 
 const logger = createCliLogger('lockfile')
 
+/**
+ * Reads the lockfile, returning the raw LockfileV2 (unwrapping ReadResult).
+ * Falls back to an empty lockfile on corruption, matching the CLI's original behaviour.
+ */
 export function readLockfile(projectRoot: string, scope: Scope = 'project'): LockfileV2 {
-  const lockfilePath = getLockfilePath(projectRoot, scope)
-
-  if (!existsSync(lockfilePath)) {
-    return { version: 2, packages: {} }
-  }
-
-  const raw = readFileSync(lockfilePath, 'utf-8')
-
-  let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
-  } catch {
-    logger.warn(`Corrupt lockfile at ${lockfilePath} — could not parse JSON. Using empty lockfile.`)
-    return { version: 2, packages: {} }
-  }
-
-  const result = lockfileAnySchema.safeParse(parsed)
-  if (!result.success) {
-    // Full-schema parse failed — attempt per-entry recovery so one bad entry
-    // does not wipe the entire lockfile.
-    const raw2 = parsed as Record<string, unknown>
-    if (raw2?.version === 2 && typeof raw2?.packages === 'object' && raw2.packages !== null) {
-      const recovered: LockfileV2['packages'] = {}
-      let dropped = 0
-      for (const [name, entry] of Object.entries(raw2.packages as Record<string, unknown>)) {
-        const entryResult = lockfileV2PackageSchema.safeParse(entry)
-        if (entryResult.success) {
-          recovered[name] = entryResult.data
-        } else {
-          dropped++
-          logger.warn(`Dropping invalid lockfile entry "${name}" — ${entryResult.error.message}`)
-        }
-      }
-      if (Object.keys(recovered).length > 0) {
-        logger.warn(
-          `Recovered ${Object.keys(recovered).length} entry/entries from lockfile (${dropped} dropped)`
-        )
-        return { version: 2, packages: recovered }
-      }
+    const result = readLockfileRaw(projectRoot, scope, {
+      onWarning: (msg) => logger.warn(msg),
+    })
+    return result.data
+  } catch (error) {
+    if (error instanceof StorageCorruptionError) {
+      logger.warn(error.message)
+      return { version: STORAGE_SCHEMA_VERSION, packages: {} }
     }
-    logger.warn(
-      `Invalid lockfile at ${lockfilePath} — schema validation failed. Using empty lockfile.`
-    )
-    return { version: 2, packages: {} }
+    throw error
   }
-
-  if (result.data.version === 1) {
-    const migrated = migrateLockfileV1ToV2(result.data)
-    writeLockfileUnsafe(projectRoot, migrated, scope)
-    return migrated
-  }
-
-  return result.data
 }
 
 /**
  * Writes the lockfile while holding the storage lock.
- * Safe for concurrent CLI processes operating on the same project.
+ * Uses the CLI's own lock so test mocks on file-lock still work.
  */
 export function writeLockfile(
   projectRoot: string,
@@ -77,28 +45,17 @@ export function writeLockfile(
   withStorageLock(
     projectRoot,
     scope,
-    () => writeLockfileUnsafe(projectRoot, lockfile, scope),
+    () => {
+      ensureStorageDir(projectRoot, scope)
+      writeJsonFileAtomic(getLockfilePath(projectRoot, scope), lockfile)
+    },
     lockOptions
   )
 }
 
 /**
- * Internal unlocked write — used by migration (already inside readLockfile)
- * and by writeLockfile (which acquires the lock itself).
- */
-export function writeLockfileUnsafe(
-  projectRoot: string,
-  lockfile: LockfileV2,
-  scope: Scope = 'project'
-): void {
-  ensureStorageDir(projectRoot, scope)
-  writeJsonFileAtomic(getLockfilePath(projectRoot, scope), lockfile)
-}
-
-/**
  * Reads the lockfile, applies a transform, and writes it back — all under
- * a single storage lock. Prevents lost-update races between concurrent
- * CLI processes.
+ * a single storage lock. Prevents lost-update races.
  */
 export function updateLockfile(
   projectRoot: string,
@@ -112,7 +69,8 @@ export function updateLockfile(
     () => {
       const current = readLockfile(projectRoot, scope)
       const updated = updater(current)
-      writeLockfileUnsafe(projectRoot, updated, scope)
+      ensureStorageDir(projectRoot, scope)
+      writeJsonFileAtomic(getLockfilePath(projectRoot, scope), updated)
       return updated
     },
     lockOptions

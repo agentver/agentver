@@ -31,7 +31,7 @@ describe('storage', () => {
       expect(manifest).toEqual({ version: 2, packages: {} })
     })
 
-    it('returns an empty v2 manifest when the file contains invalid JSON', () => {
+    it('returns empty fallback when the file contains invalid JSON', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'manifest.json'), '{not valid json}', 'utf-8')
@@ -40,7 +40,7 @@ describe('storage', () => {
       expect(manifest).toEqual({ version: 2, packages: {} })
     })
 
-    it('returns an empty v2 manifest when schema validation fails', () => {
+    it('returns empty fallback when schema validation fails', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ foo: 'bar' }), 'utf-8')
@@ -53,10 +53,12 @@ describe('storage', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const expected = {
         version: 2 as const,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git' as const,
               uri: 'https://github.com/org/repo',
@@ -75,15 +77,15 @@ describe('storage', () => {
 
       const manifest = readManifest(tempDir)
       expect(manifest.version).toBe(2)
-      expect(manifest.packages['org/skill']).toBeDefined()
-      expect(manifest.packages['org/skill']!.source.type).toBe('git')
+      expect(manifest.packages[stableKey]).toBeDefined()
+      expect(manifest.packages[stableKey]!.source.type).toBe('git')
     })
 
-    it('migrates a v1 manifest to v2 and persists the migration', () => {
+    it('returns empty fallback for a legacy manifest schema', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
-      const v1Manifest = {
+      const legacyManifest = {
         version: 1 as const,
         packages: {
           'org/skill': {
@@ -95,13 +97,14 @@ describe('storage', () => {
         },
       }
 
-      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(v1Manifest), 'utf-8')
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(legacyManifest), 'utf-8')
 
       const manifest = readManifest(tempDir)
-      expect(manifest.version).toBe(2)
+      expect(manifest).toEqual({ version: 2, packages: {} })
 
+      // Original file is not overwritten
       const persisted = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf-8'))
-      expect(persisted.version).toBe(2)
+      expect(persisted).toEqual(legacyManifest)
     })
   })
 
@@ -136,7 +139,7 @@ describe('storage', () => {
       expect(lockfile).toEqual({ version: 2, packages: {} })
     })
 
-    it('returns an empty v2 lockfile when the file contains invalid JSON', () => {
+    it('returns empty fallback when the file contains invalid JSON', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'lockfile.json'), 'broken', 'utf-8')
@@ -145,7 +148,7 @@ describe('storage', () => {
       expect(lockfile).toEqual({ version: 2, packages: {} })
     })
 
-    it('returns an empty v2 lockfile when schema validation fails', () => {
+    it('returns empty fallback when schema validation fails', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'lockfile.json'), JSON.stringify({ invalid: true }), 'utf-8')
@@ -158,10 +161,12 @@ describe('storage', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const expected = {
         version: 2 as const,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git' as const,
               uri: 'https://github.com/org/repo',
@@ -179,14 +184,14 @@ describe('storage', () => {
 
       const lockfile = readLockfile(tempDir)
       expect(lockfile.version).toBe(2)
-      expect(lockfile.packages['org/skill']).toBeDefined()
+      expect(lockfile.packages[stableKey]).toBeDefined()
     })
 
-    it('migrates a v1 lockfile to v2 and persists the migration', () => {
+    it('returns empty fallback for a legacy lockfile schema', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
-      const v1Lockfile = {
+      const legacyLockfile = {
         version: 1 as const,
         packages: {
           'org/skill': {
@@ -198,13 +203,14 @@ describe('storage', () => {
         },
       }
 
-      writeFileSync(join(dir, 'lockfile.json'), JSON.stringify(v1Lockfile), 'utf-8')
+      writeFileSync(join(dir, 'lockfile.json'), JSON.stringify(legacyLockfile), 'utf-8')
 
       const lockfile = readLockfile(tempDir)
-      expect(lockfile.version).toBe(2)
+      expect(lockfile).toEqual({ version: 2, packages: {} })
 
+      // Original file is not overwritten
       const persisted = JSON.parse(readFileSync(join(dir, 'lockfile.json'), 'utf-8'))
-      expect(persisted.version).toBe(2)
+      expect(persisted).toEqual(legacyLockfile)
     })
   })
 

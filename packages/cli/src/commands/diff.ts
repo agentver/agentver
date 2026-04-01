@@ -5,9 +5,12 @@ import { readFilesFromDirectory } from '../git/fetcher.js'
 import { fetchFiles } from '../git/index.js'
 import type { GitSource as CliGitSource, ResolvedRef } from '../git/types.js'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output'
+import type { PlatformResolveResponse } from '../registry/platform.js'
+import { platformFetch } from '../registry/platform.js'
 import { resolveReadPath } from '../storage/canonical.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
+import { resolvePackageQuery } from '../storage/package-identity.js'
 import type { Scope } from '../utils/paths.js'
 import { fetchWellKnownIndex, fetchWellKnownSkill } from '../wellknown/index.js'
 
@@ -38,6 +41,51 @@ function parseManifestUri(uri: string): CliGitSource | null {
     path: parts.slice(3).join('/'),
     ref: 'HEAD',
   }
+}
+
+async function fetchPlatformFiles(source: {
+  uri: string
+  path: string
+  ref: string
+  commit: string
+  expectedIntegrity?: string
+}) {
+  const org = source.uri.slice('agentver://'.length).trim()
+  if (!org) {
+    throw new Error(`Could not parse platform source URI: ${source.uri}`)
+  }
+
+  const resolveName = source.path ? `${org}/${source.path}` : org
+  const resolved = await platformFetch<PlatformResolveResponse>(
+    `/resolve?name=${encodeURIComponent(resolveName)}`
+  )
+
+  if (resolved.source === 'platform') {
+    if (!resolved.files?.length) {
+      throw new Error(`No files returned for platform source: ${resolveName}`)
+    }
+
+    return {
+      files: resolved.files.map((file) => ({ path: file.path, content: file.content })),
+    }
+  }
+
+  const cliSource = parseManifestUri(resolved.gitUri)
+  if (!cliSource) {
+    throw new Error(`Could not parse resolved Git URI: ${resolved.gitUri}`)
+  }
+
+  cliSource.path = resolved.gitPath ?? source.path
+  cliSource.ref = resolved.gitRef ?? source.ref
+  cliSource.commit = source.commit
+
+  return fetchFiles(
+    {
+      source: cliSource,
+      commitSha: source.commit,
+    },
+    { expectedIntegrity: source.expectedIntegrity }
+  )
 }
 
 async function readLocalFiles(
@@ -307,12 +355,12 @@ export function registerDiffCommand(program: Command): void {
       const projectRoot = process.cwd()
       const manifest = readManifest(projectRoot, scope)
       const lockfile = readLockfile(projectRoot, scope)
+      const packageLookup = resolvePackageQuery(manifest.packages, name)
 
-      const manifestEntry = manifest.packages[name]
-      if (!manifestEntry) {
+      if (!packageLookup.ok) {
         const otherScope: Scope = scope === 'project' ? 'global' : 'project'
         const otherManifest = readManifest(projectRoot, otherScope)
-        const foundInOther = name in otherManifest.packages
+        const foundInOther = resolvePackageQuery(otherManifest.packages, name).ok
 
         const hint = foundInOther
           ? otherScope === 'global'
@@ -334,6 +382,7 @@ export function registerDiffCommand(program: Command): void {
         process.exit(1)
       }
 
+      const { key: packageKey, displayName, pkg: manifestEntry } = packageLookup
       const { source, agents } = manifestEntry
 
       if (source.type === 'well-known') {
@@ -357,7 +406,7 @@ export function registerDiffCommand(program: Command): void {
           const fetchResult = await fetchWellKnownSkill(source.baseUrl, entry)
           spinner.text = 'Comparing files...'
 
-          const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
+          const localFiles = await readLocalFiles(projectRoot, displayName, agents, scope)
 
           const upstreamMap = new Map<string, string>()
           for (const file of fetchResult.files) {
@@ -374,7 +423,7 @@ export function registerDiffCommand(program: Command): void {
 
           if (jsonMode) {
             const diffResult: DiffResult = {
-              name,
+              name: displayName,
               hunks: diffs.flatMap((d) =>
                 d.hunks.map((h) => ({
                   file: d.path,
@@ -389,7 +438,7 @@ export function registerDiffCommand(program: Command): void {
           }
 
           if (diffs.length === 0) {
-            console.log(chalk.green('No differences found.'))
+            console.log(chalk.green(`No differences found for ${displayName}.`))
             return
           }
 
@@ -408,57 +457,74 @@ export function registerDiffCommand(program: Command): void {
         return
       }
 
-      if (source.uri === 'unknown') {
+      if (source.type === 'unknown') {
         if (jsonMode) {
           outputError(
             'UNKNOWN_SOURCE',
-            `Package "${name}" was migrated from v1 and has no known Git source.`
+            `Package "${displayName}" was migrated from v1 and has no known Git source.`
           )
           process.exit(1)
         }
         console.error(
-          chalk.red(`Package "${name}" was migrated from v1 and has no known Git source.`)
+          chalk.red(`Package "${displayName}" was migrated from v1 and has no known Git source.`)
         )
         console.error(
           chalk.dim('Reinstall it using a Git source URL to enable diff:\n') +
-            chalk.dim(`  agentver remove ${name}\n`) +
+            chalk.dim(`  agentver remove ${displayName}\n`) +
             chalk.dim(`  agentver install <git-source>`)
         )
+        process.exit(1)
+      }
+
+      if (source.type === 'local') {
+        const message = `Package "${displayName}" is a local source and has no upstream diff target.`
+        if (jsonMode) {
+          outputError('LOCAL_SOURCE', message)
+          process.exit(1)
+        }
+        console.error(chalk.red(message))
         process.exit(1)
       }
 
       const spinner = createSpinner('Fetching upstream files...').start()
 
       try {
-        const cliSource = parseManifestUri(source.uri)
-        if (!cliSource) {
-          const message = `Could not parse source URI: ${source.uri}`
-          if (jsonMode) {
-            outputError('INVALID_SOURCE_URI', message)
-            process.exit(1)
-          }
-          spinner.fail(message)
-          process.exit(1)
-        }
-
-        cliSource.ref = source.ref
-        cliSource.commit = source.commit
-        const lockfileEntry = lockfile.packages[name]
+        const lockfileEntry = lockfile.packages[packageKey]
         const lockfileSource = lockfileEntry?.source
         const commitSha =
-          (lockfileSource?.type === 'git' ? lockfileSource.commit : undefined) ?? source.commit
+          lockfileSource?.type === 'git' || lockfileSource?.type === 'platform'
+            ? lockfileSource.commit
+            : source.commit
 
-        const resolved: ResolvedRef = {
-          source: { ...cliSource, path: source.path },
-          commitSha,
-        }
+        const fetchResult =
+          source.type === 'platform'
+            ? await fetchPlatformFiles({
+                uri: source.uri,
+                path: source.path,
+                ref: source.ref,
+                commit: commitSha,
+                expectedIntegrity: lockfileEntry?.integrity,
+              })
+            : await (() => {
+                const cliSource = parseManifestUri(source.uri)
+                if (!cliSource) {
+                  throw new Error(`Could not parse source URI: ${source.uri}`)
+                }
 
-        const fetchResult = await fetchFiles(resolved, {
-          expectedIntegrity: lockfileEntry?.integrity,
-        })
+                cliSource.ref = source.ref
+                cliSource.commit = source.commit
+                const resolved: ResolvedRef = {
+                  source: { ...cliSource, path: source.path },
+                  commitSha,
+                }
+
+                return fetchFiles(resolved, {
+                  expectedIntegrity: lockfileEntry?.integrity,
+                })
+              })()
         spinner.text = 'Comparing files...'
 
-        const localFiles = await readLocalFiles(projectRoot, name, agents, scope)
+        const localFiles = await readLocalFiles(projectRoot, displayName, agents, scope)
 
         const upstreamMap = new Map<string, string>()
         for (const file of fetchResult.files) {
@@ -475,7 +541,7 @@ export function registerDiffCommand(program: Command): void {
 
         if (jsonMode) {
           const diffResult: DiffResult = {
-            name,
+            name: displayName,
             hunks: diffs.flatMap((d) =>
               d.hunks.map((h) => ({
                 file: d.path,
@@ -490,7 +556,7 @@ export function registerDiffCommand(program: Command): void {
         }
 
         if (diffs.length === 0) {
-          console.log(chalk.green('No differences found.'))
+          console.log(chalk.green(`No differences found for ${displayName}.`))
           return
         }
 

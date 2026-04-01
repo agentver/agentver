@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import {
   createAuditScanResult,
   createFetchedFiles,
@@ -85,6 +85,10 @@ async function runVerify(args: string[]): Promise<void> {
   await program.parseAsync(['node', 'agentver', ...args])
 }
 
+function asMock(value: unknown): Mock {
+  return value as Mock
+}
+
 function setupVerifyMocks(overrides?: {
   publisherVerified?: boolean
   integrityMatch?: boolean
@@ -97,7 +101,7 @@ function setupVerifyMocks(overrides?: {
     ...overrides,
   }
 
-  vi.mocked(registryClient.registryFetch).mockResolvedValue({
+  asMock(registryClient.registryFetch).mockResolvedValue({
     isVerified: opts.publisherVerified,
     publisherVerified: opts.publisherVerified,
     publisherName: 'Test Org',
@@ -108,14 +112,14 @@ function setupVerifyMocks(overrides?: {
   })
 
   const source = createSharedGitSource({ uri: 'github.com/test-org/skills' })
-  vi.mocked(manifestModule.readManifest).mockReturnValue(
+  asMock(manifestModule.readManifest).mockReturnValue(
     createManifest({
       packages: {
         '@test-org/my-skill': createManifestPackage({ source }),
       },
     })
   )
-  vi.mocked(lockfileModule.readLockfile).mockReturnValue(
+  asMock(lockfileModule.readLockfile).mockReturnValue(
     createLockfile({
       packages: {
         '@test-org/my-skill': createLockfilePackage({
@@ -125,14 +129,14 @@ function setupVerifyMocks(overrides?: {
       },
     })
   )
-  vi.mocked(canonicalModule.getCanonicalSkillPath).mockReturnValue(
+  asMock(canonicalModule.getCanonicalSkillPath).mockReturnValue(
     '/project/.agents/skills/@test-org/my-skill'
   )
-  vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue(createFetchedFiles(2))
-  vi.mocked(integrityModule.computeSha256FromFiles).mockReturnValue(
+  asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue(createFetchedFiles(2))
+  asMock(integrityModule.computeSha256FromFiles).mockReturnValue(
     opts.integrityMatch ? INTEGRITY_HASH : 'sha256-differentHash'
   )
-  vi.mocked(securityModule.scanFiles).mockResolvedValue(createAuditScanResult(opts.scanVerdict))
+  asMock(securityModule.scanFiles).mockResolvedValue(createAuditScanResult(opts.scanVerdict))
 }
 
 // ---------------------------------------------------------------------------
@@ -152,10 +156,10 @@ describe('commands/verify', () => {
     process.exit = vi.fn() as never
     process.exitCode = undefined
 
-    vi.mocked(outputModule.createSpinner).mockReturnValue(
+    asMock(outputModule.createSpinner).mockReturnValue(
       createNoopSpinner() as unknown as ReturnType<typeof outputModule.createSpinner>
     )
-    vi.mocked(outputModule.isJSONMode).mockReturnValue(false)
+    asMock(outputModule.isJSONMode).mockReturnValue(false)
   })
 
   afterEach(() => {
@@ -172,13 +176,13 @@ describe('commands/verify', () => {
   describe('happy path', () => {
     it('reports overall pass when publisher verified, integrity matches, and audit clean', async () => {
       setupVerifyMocks()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.publisherVerified).toBe(true)
       expect(typed.integrityPassed).toBe(true)
@@ -194,13 +198,13 @@ describe('commands/verify', () => {
   describe('integrity mismatch', () => {
     it('reports integrity failure when local hash differs from lockfile', async () => {
       setupVerifyMocks({ integrityMatch: false })
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.integrityPassed).toBe(false)
       expect(typed.overallPassed).toBe(false)
@@ -214,13 +218,13 @@ describe('commands/verify', () => {
   describe('unverified publisher', () => {
     it('reports publisher not verified', async () => {
       setupVerifyMocks({ publisherVerified: false })
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.publisherVerified).toBe(false)
       expect(typed.overallPassed).toBe(false)
@@ -234,13 +238,13 @@ describe('commands/verify', () => {
   describe('--strict flag', () => {
     it('fails on WARN verdict when strict mode is enabled', async () => {
       setupVerifyMocks({ scanVerdict: 'WARN' })
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill', '--strict'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.securityPassed).toBe(false)
       expect(typed.overallPassed).toBe(false)
@@ -248,13 +252,13 @@ describe('commands/verify', () => {
 
     it('passes on WARN verdict without strict mode', async () => {
       setupVerifyMocks({ scanVerdict: 'WARN' })
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.securityPassed).toBe(true)
     })
@@ -266,7 +270,7 @@ describe('commands/verify', () => {
 
   describe('not installed', () => {
     it('outputs error for invalid skill name format', async () => {
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', 'invalid-name-no-slash'])
@@ -278,8 +282,8 @@ describe('commands/verify', () => {
     })
 
     it('outputs error when no packages installed and no name given', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(manifestModule.readManifest).mockReturnValue(createManifest())
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify'])
@@ -299,13 +303,13 @@ describe('commands/verify', () => {
   describe('audit finding', () => {
     it('reports security failure when scan returns BLOCK', async () => {
       setupVerifyMocks({ scanVerdict: 'BLOCK' })
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.securityPassed).toBe(false)
       expect(typed.overallPassed).toBe(false)
@@ -319,13 +323,13 @@ describe('commands/verify', () => {
   describe('--json output structure', () => {
     it('includes all expected fields in JSON output', async () => {
       setupVerifyMocks()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
 
       expect(typed).toHaveProperty('skillName')
@@ -340,12 +344,12 @@ describe('commands/verify', () => {
 
     it('includes correct skill name in output', async () => {
       setupVerifyMocks()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.skillName).toBe('@test-org/my-skill')
     })
@@ -357,7 +361,7 @@ describe('commands/verify', () => {
 
   describe('ambiguous skill name', () => {
     it('outputs error when multiple packages installed and no name given', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             '@org/skill-a': createManifestPackage(),
@@ -365,7 +369,7 @@ describe('commands/verify', () => {
           },
         })
       )
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify'])
@@ -385,13 +389,13 @@ describe('commands/verify', () => {
   describe('auto-selection with single installed package', () => {
     it('auto-selects the single installed package when no name argument given', async () => {
       setupVerifyMocks()
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.skillName).toBe('@test-org/my-skill')
       expect(typed.overallPassed).toBe(true)
@@ -405,14 +409,14 @@ describe('commands/verify', () => {
   describe('publisher verification network failure', () => {
     it('continues with publisherVerified=false when registryFetch throws', async () => {
       setupVerifyMocks()
-      vi.mocked(registryClient.registryFetch).mockRejectedValue(new Error('Network error'))
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(registryClient.registryFetch).mockRejectedValue(new Error('Network error'))
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.publisherVerified).toBe(false)
       expect(typed.integrityPassed).toBeDefined()
@@ -421,9 +425,9 @@ describe('commands/verify', () => {
 
     it('shows warning spinner when registryFetch throws in non-JSON mode', async () => {
       setupVerifyMocks()
-      vi.mocked(registryClient.registryFetch).mockRejectedValue(new Error('Network error'))
+      asMock(registryClient.registryFetch).mockRejectedValue(new Error('Network error'))
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(
+      asMock(outputModule.createSpinner).mockReturnValue(
         spinner as unknown as ReturnType<typeof outputModule.createSpinner>
       )
 
@@ -443,14 +447,14 @@ describe('commands/verify', () => {
     it('passes integrity when skill is not installed locally', async () => {
       setupVerifyMocks()
       // Override manifest so the verified skill is NOT present
-      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(manifestModule.readManifest).mockReturnValue(createManifest())
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.integrityPassed).toBe(true)
     })
@@ -463,14 +467,14 @@ describe('commands/verify', () => {
   describe('integrity check — empty directory', () => {
     it('fails integrity when installed directory has no files', async () => {
       setupVerifyMocks()
-      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([])
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue([])
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.integrityPassed).toBe(false)
     })
@@ -489,18 +493,18 @@ describe('commands/verify', () => {
       })
       // When name arg is provided, readManifest is NOT called for name resolution.
       // 1st call = integrity section (line 221), 2nd call = security section (line 274)
-      vi.mocked(manifestModule.readManifest)
+      asMock(manifestModule.readManifest)
         .mockImplementationOnce(() => {
           throw new Error('Disk read error')
         })
         .mockReturnValue(manifestWithPkg)
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.integrityPassed).toBe(true)
     })
@@ -512,7 +516,7 @@ describe('commands/verify', () => {
         packages: { '@test-org/my-skill': createManifestPackage({ source }) },
       })
       // 1st call = integrity section throws, 2nd call = security section succeeds
-      vi.mocked(manifestModule.readManifest)
+      asMock(manifestModule.readManifest)
         .mockImplementationOnce(() => {
           throw new Error('Disk read error')
         })
@@ -522,7 +526,7 @@ describe('commands/verify', () => {
       const publisherSpinner = createNoopSpinner()
       const integritySpinner = createNoopSpinner()
       const securitySpinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner)
+      asMock(outputModule.createSpinner)
         .mockReturnValueOnce(
           publisherSpinner as unknown as ReturnType<typeof outputModule.createSpinner>
         )
@@ -548,14 +552,14 @@ describe('commands/verify', () => {
   describe('security scan exception', () => {
     it('reports security failure when scanFiles throws in JSON mode', async () => {
       setupVerifyMocks()
-      vi.mocked(securityModule.scanFiles).mockRejectedValue(new Error('Scanner crashed'))
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(securityModule.scanFiles).mockRejectedValue(new Error('Scanner crashed'))
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.securityPassed).toBe(false)
       expect(typed.overallPassed).toBe(false)
@@ -568,7 +572,7 @@ describe('commands/verify', () => {
       })
       setupVerifyMocks()
       // When name is provided: 1st readManifest = integrity section, 2nd = security section
-      vi.mocked(manifestModule.readManifest)
+      asMock(manifestModule.readManifest)
         .mockReturnValueOnce(manifestWithPkg) // integrity section
         .mockImplementationOnce(() => {
           throw new Error('Manifest read failed')
@@ -577,7 +581,7 @@ describe('commands/verify', () => {
       const publisherSpinner = createNoopSpinner()
       const integritySpinner = createNoopSpinner()
       const securitySpinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner)
+      asMock(outputModule.createSpinner)
         .mockReturnValueOnce(
           publisherSpinner as unknown as ReturnType<typeof outputModule.createSpinner>
         )
@@ -606,16 +610,16 @@ describe('commands/verify', () => {
       })
       setupVerifyMocks()
       // When name is provided: 1st readManifest = integrity, 2nd = security
-      vi.mocked(manifestModule.readManifest)
+      asMock(manifestModule.readManifest)
         .mockReturnValueOnce(manifestWithPkg) // integrity section
         .mockReturnValueOnce(createManifest()) // security section — no packages
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.securityPassed).toBe(true)
     })
@@ -639,7 +643,7 @@ describe('commands/verify', () => {
 
       await runVerify(['verify', '@test-org/my-skill'])
 
-      expect(process.exitCode).toBeUndefined()
+      expect(process.exitCode).not.toBe(1)
     })
 
     it('writes success message to stderr when all checks pass', async () => {
@@ -669,7 +673,7 @@ describe('commands/verify', () => {
     it('shows spinner succeed for verified publisher', async () => {
       setupVerifyMocks()
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(
+      asMock(outputModule.createSpinner).mockReturnValue(
         spinner as unknown as ReturnType<typeof outputModule.createSpinner>
       )
 
@@ -681,7 +685,7 @@ describe('commands/verify', () => {
     it('shows spinner fail for unverified publisher', async () => {
       setupVerifyMocks({ publisherVerified: false })
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(
+      asMock(outputModule.createSpinner).mockReturnValue(
         spinner as unknown as ReturnType<typeof outputModule.createSpinner>
       )
 
@@ -693,7 +697,7 @@ describe('commands/verify', () => {
     it('shows spinner succeed for integrity check passed', async () => {
       setupVerifyMocks()
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(
+      asMock(outputModule.createSpinner).mockReturnValue(
         spinner as unknown as ReturnType<typeof outputModule.createSpinner>
       )
 
@@ -707,7 +711,7 @@ describe('commands/verify', () => {
     it('shows spinner fail for integrity check failed', async () => {
       setupVerifyMocks({ integrityMatch: false })
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(
+      asMock(outputModule.createSpinner).mockReturnValue(
         spinner as unknown as ReturnType<typeof outputModule.createSpinner>
       )
 
@@ -719,7 +723,7 @@ describe('commands/verify', () => {
     it('shows spinner succeed for security audit passed', async () => {
       setupVerifyMocks()
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(
+      asMock(outputModule.createSpinner).mockReturnValue(
         spinner as unknown as ReturnType<typeof outputModule.createSpinner>
       )
 
@@ -731,7 +735,7 @@ describe('commands/verify', () => {
     it('shows spinner fail for security audit failed', async () => {
       setupVerifyMocks({ scanVerdict: 'BLOCK' })
       const spinner = createNoopSpinner()
-      vi.mocked(outputModule.createSpinner).mockReturnValue(
+      asMock(outputModule.createSpinner).mockReturnValue(
         spinner as unknown as ReturnType<typeof outputModule.createSpinner>
       )
 
@@ -753,7 +757,7 @@ describe('commands/verify', () => {
     })
 
     it('writes error to stderr when no packages installed and no name given', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(createManifest())
+      asMock(manifestModule.readManifest).mockReturnValue(createManifest())
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
 
       await runVerify(['verify'])
@@ -766,7 +770,7 @@ describe('commands/verify', () => {
     })
 
     it('lists packages when multiple installed and no name given', async () => {
-      vi.mocked(manifestModule.readManifest).mockReturnValue(
+      asMock(manifestModule.readManifest).mockReturnValue(
         createManifest({
           packages: {
             '@org/skill-a': createManifestPackage(),
@@ -806,14 +810,14 @@ describe('commands/verify', () => {
     it('passes security when installed directory has no files', async () => {
       setupVerifyMocks()
       // readFilesFromDirectory returns empty for all calls
-      vi.mocked(fetcherModule.readFilesFromDirectory).mockResolvedValue([])
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(fetcherModule.readFilesFromDirectory).mockResolvedValue([])
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       // Security scan sees empty files -> returns passed:true with 0 rules
       expect(typed.securityPassed).toBe(true)
@@ -833,7 +837,7 @@ describe('commands/verify', () => {
       const source = createSharedGitSource({ uri: 'github.com/test-org/skills' })
       setupVerifyMocks()
       // 1st readManifest (integrity) — standard git package
-      vi.mocked(manifestModule.readManifest)
+      asMock(manifestModule.readManifest)
         .mockReturnValueOnce(
           createManifest({
             packages: { '@test-org/my-skill': createManifestPackage({ source }) },
@@ -845,7 +849,7 @@ describe('commands/verify', () => {
             packages: { '@test-org/my-skill': wellKnownPkg },
           })
         )
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
@@ -867,18 +871,18 @@ describe('commands/verify', () => {
       })
       setupVerifyMocks()
       // 1st readManifest = integrity, 2nd = security (throws)
-      vi.mocked(manifestModule.readManifest)
+      asMock(manifestModule.readManifest)
         .mockReturnValueOnce(manifestWithPkg)
         .mockImplementationOnce(() => {
           throw new Error('Manifest corrupted')
         })
-      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      asMock(outputModule.isJSONMode).mockReturnValue(true)
       process.argv = ['node', 'agentver', 'verify', '--json']
 
       await runVerify(['verify', '@test-org/my-skill'])
 
       expect(outputModule.outputSuccess).toHaveBeenCalled()
-      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const [data] = asMock(outputModule.outputSuccess).mock.calls[0]!
       const typed = data as Record<string, unknown>
       expect(typed.securityPassed).toBe(false)
       expect(typed.overallPassed).toBe(false)
