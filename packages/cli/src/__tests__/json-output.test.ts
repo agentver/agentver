@@ -437,16 +437,14 @@ describe('CLI --json output integration', () => {
       expect(typeof error.message).toBe('string')
     })
 
-    it('should return VALIDATION_ERROR for install with no source argument', () => {
+    it('should run restore mode when install is called with no source argument', () => {
       const { parsed } = runCLI('install --json', {
         cwd: tempDir,
-        expectFailure: true,
       })
 
-      expect(parsed.success).toBe(false)
-
-      const error = parsed.error as Record<string, unknown>
-      expect(error.code).toBe('VALIDATION_ERROR')
+      expect(parsed.success).toBe(true)
+      const data = parsed.data as Record<string, unknown>
+      expect(data.type).toBe('RESTORE_COMPLETE')
     })
 
     it('should return VALIDATION_ERROR for remove with no package name', () => {
