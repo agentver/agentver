@@ -193,13 +193,15 @@ describe('E2E: backup lifecycle', () => {
 
   it('backup restore fails for non-existent backup ID', async () => {
     await withTempDir(async (dir) => {
-      const { success, exitCode } = await runCliJson<unknown>(
+      const { success, exitCode, error } = await runCliJson<unknown>(
         ['backup', 'restore', 'nonexistent', '--yes', '--json'],
         { cwd: dir }
       )
 
       expect(success).toBe(false)
       expect(exitCode).not.toBe(0)
+      expect(error).toBeDefined()
+      expect(error!.code).toBe('NOT_FOUND')
     })
   })
 
@@ -243,13 +245,15 @@ describe('E2E: backup lifecycle', () => {
 
   it('backup delete fails for non-existent backup ID', async () => {
     await withTempDir(async (dir) => {
-      const { success, exitCode } = await runCliJson<unknown>(
+      const { success, exitCode, error } = await runCliJson<unknown>(
         ['backup', 'delete', 'nonexistent', '--yes', '--json'],
         { cwd: dir }
       )
 
       expect(success).toBe(false)
       expect(exitCode).not.toBe(0)
+      expect(error).toBeDefined()
+      expect(error!.code).toBe('NOT_FOUND')
     })
   })
 })

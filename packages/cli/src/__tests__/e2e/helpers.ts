@@ -136,7 +136,14 @@ export function runCli(
 export async function runCliJson<T = unknown>(
   args: string[],
   options: { cwd: string; homeDir?: string; env?: Record<string, string> }
-): Promise<{ data: T; success: boolean; exitCode: number; stderr: string; raw: string }> {
+): Promise<{
+  data: T
+  success: boolean
+  exitCode: number
+  stderr: string
+  raw: string
+  error?: { code: string; message: string }
+}> {
   const result = await runCli(args, options)
 
   // The CLI outputs JSON as a single line to stdout
@@ -161,6 +168,7 @@ export async function runCliJson<T = unknown>(
     exitCode: result.exitCode,
     stderr: result.stderr,
     raw: result.stdout,
+    error: parsed.error,
   }
 }
 

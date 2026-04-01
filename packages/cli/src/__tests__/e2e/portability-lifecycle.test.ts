@@ -565,7 +565,12 @@ describe('E2E: manifest portability edge cases', () => {
 
       // Second ci run — should detect the mismatch
       const result2 = await runCli(['ci', '--json'], { cwd: dir })
-      const { data: ciData2 } = parseCiJson(result2.stdout)
+      const { data: ciData2, success: ciSuccess2 } = parseCiJson(result2.stdout)
+
+      expect(result2.exitCode).not.toBe(0)
+      expect(ciSuccess2).toBe(false)
+      expect(ciData2.success).toBe(false)
+      expect(ciData2.restore.success).toBe(false)
 
       // The skill is no longer up-to-date because its integrity hash no longer matches
       const upToDate2 = ciData2.restore.packages.filter((p) => p.status === 'up-to-date')
