@@ -1933,7 +1933,12 @@ export async function restoreFromManifest(
         reason: 'Requires network access (--offline)',
       })
     }
-    plan.toInstall.length = 0
+    plan.toInstall = plan.toInstall.filter(
+      (e) =>
+        e.fetchStrategy !== 'platform' &&
+        e.fetchStrategy !== 'well-known' &&
+        e.fetchStrategy !== 'git'
+    )
   }
 
   if (!jsonMode) {

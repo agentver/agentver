@@ -19,7 +19,7 @@ export type ReadOptions = {
 
 export type ReadResult<T> = {
   data: T
-  /** True if the on-disc state was normalised or recovered. Caller should persist if appropriate. */
+  /** True if the on-disk state was normalised or recovered. Caller should persist if appropriate. */
   dirty: boolean
   /** Entries that were dropped during per-entry recovery. Empty array if no recovery was needed. */
   droppedEntries: Array<{ key: string; reason: string }>

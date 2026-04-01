@@ -139,6 +139,36 @@ describe('placement', () => {
       expect(readFileSync(join(destPath, 'SKILL.md'), 'utf-8')).toBe('# Test')
     })
 
+    it('returns failure when allowFallback is false and primary link mode fails', () => {
+      const canonicalPath = join(tmpDir, '.agents', 'skills', 'test-skill')
+      mkdirSync(canonicalPath, { recursive: true })
+      writeFileSync(join(canonicalPath, 'SKILL.md'), '# Test', 'utf-8')
+
+      // Create a conflicting non-symlink directory at the destination so
+      // symlink creation fails (symlinkSync throws on existing non-symlink)
+      const destPath = join(tmpDir, '.claude', 'skills', 'test-skill')
+      mkdirSync(destPath, { recursive: true })
+      writeFileSync(join(destPath, 'existing.md'), 'conflict', 'utf-8')
+
+      const placements: PlacementOperation[] = [
+        {
+          agentId: 'claude-code',
+          destinationPath: destPath,
+          linkMode: { mode: 'symlink', isFallback: false },
+        },
+      ]
+
+      const results = createAgentPlacements(canonicalPath, placements, tmpDir, 'project', {
+        allowFallback: false,
+      })
+
+      expect(results).toHaveLength(1)
+      expect(results[0]?.success).toBe(false)
+      expect(results[0]?.fallbackUsed).toBe(false)
+      expect(results[0]?.actualLinkMode).toBe('symlink')
+      expect(results[0]?.error).toBeTruthy()
+    })
+
     it('handles empty placements list', () => {
       const canonicalPath = join(tmpDir, '.agents', 'skills', 'test-skill')
 

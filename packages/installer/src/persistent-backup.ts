@@ -7,7 +7,8 @@ import {
   readFileSync,
   rmSync,
 } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join, resolve, sep } from 'node:path'
 import type { BackupIndex, BackupIndexEntry, BackupItem, BackupReason } from '@agentver/shared'
 import type { Scope } from '@agentver/storage'
 import { getStorageRoot, writeJsonFileAtomic } from '@agentver/storage'
@@ -137,6 +138,7 @@ export function createPersistentBackup(
   manifestEntry?: unknown,
   lockfileEntry?: unknown
 ): PersistentBackupHandle {
+  // Callers must hold the storage lock — backup index reads/writes are not independently locked.
   const backupsRoot = getBackupsRoot(projectRoot, scope)
   mkdirSync(backupsRoot, { recursive: true })
 
@@ -154,6 +156,8 @@ export function createPersistentBackup(
     const backupRelativePath = `target-${String(i)}`
     const backupPath = join(itemsDir, backupRelativePath)
 
+    // Dereference symlinks on backup so we capture file contents, not link targets.
+    // Restore uses dereference: false to preserve the original filesystem structure.
     cpSync(originalPath, backupPath, { recursive: true, dereference: true })
 
     items.push({
@@ -223,8 +227,13 @@ export function restorePersistentBackup(
 
     if (!existsSync(backupPath)) continue
 
-    // Validate originalPath does not contain path traversal
-    if (item.originalPath.includes('..') || !resolve(item.originalPath).startsWith('/')) {
+    // Validate originalPath resolves within the expected scope root
+    const scopeRoot = scope === 'global' ? homedir() : projectRoot
+    const resolvedOriginal = resolve(item.originalPath)
+    if (
+      !resolvedOriginal.startsWith(`${resolve(scopeRoot)}${sep}`) &&
+      resolvedOriginal !== resolve(scopeRoot)
+    ) {
       continue
     }
 
@@ -287,6 +296,7 @@ export function cleanupExpiredBackups(
   scope: Scope,
   options?: { maxCount?: number; retentionDays?: number }
 ): number {
+  // Callers must hold the storage lock — backup index reads/writes are not independently locked.
   const maxCount = options?.maxCount ?? MAX_BACKUPS_PER_SCOPE
   const retentionDays = options?.retentionDays ?? RETENTION_DAYS
 

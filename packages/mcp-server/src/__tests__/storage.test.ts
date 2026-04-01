@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { StorageCorruptionError } from '@agentver/storage'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
 
@@ -32,20 +31,22 @@ describe('storage', () => {
       expect(manifest).toEqual({ version: 2, packages: {} })
     })
 
-    it('throws when the file contains invalid JSON', () => {
+    it('returns empty fallback when the file contains invalid JSON', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'manifest.json'), '{not valid json}', 'utf-8')
 
-      expect(() => readManifest(tempDir)).toThrow(StorageCorruptionError)
+      const manifest = readManifest(tempDir)
+      expect(manifest).toEqual({ version: 2, packages: {} })
     })
 
-    it('throws when schema validation fails', () => {
+    it('returns empty fallback when schema validation fails', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ foo: 'bar' }), 'utf-8')
 
-      expect(() => readManifest(tempDir)).toThrow(StorageCorruptionError)
+      const manifest = readManifest(tempDir)
+      expect(manifest).toEqual({ version: 2, packages: {} })
     })
 
     it('reads a valid v2 manifest', () => {
@@ -82,7 +83,7 @@ describe('storage', () => {
       ).toBe('git')
     })
 
-    it('throws for a legacy manifest schema', () => {
+    it('returns empty fallback for a legacy manifest schema', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
@@ -100,8 +101,10 @@ describe('storage', () => {
 
       writeFileSync(join(dir, 'manifest.json'), JSON.stringify(legacyManifest), 'utf-8')
 
-      expect(() => readManifest(tempDir)).toThrow(StorageCorruptionError)
+      const manifest = readManifest(tempDir)
+      expect(manifest).toEqual({ version: 2, packages: {} })
 
+      // Original file is not overwritten
       const persisted = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf-8'))
       expect(persisted).toEqual(legacyManifest)
     })
@@ -138,20 +141,22 @@ describe('storage', () => {
       expect(lockfile).toEqual({ version: 2, packages: {} })
     })
 
-    it('throws when the file contains invalid JSON', () => {
+    it('returns empty fallback when the file contains invalid JSON', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'lockfile.json'), 'broken', 'utf-8')
 
-      expect(() => readLockfile(tempDir)).toThrow(StorageCorruptionError)
+      const lockfile = readLockfile(tempDir)
+      expect(lockfile).toEqual({ version: 2, packages: {} })
     })
 
-    it('throws when schema validation fails', () => {
+    it('returns empty fallback when schema validation fails', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'lockfile.json'), JSON.stringify({ invalid: true }), 'utf-8')
 
-      expect(() => readLockfile(tempDir)).toThrow(StorageCorruptionError)
+      const lockfile = readLockfile(tempDir)
+      expect(lockfile).toEqual({ version: 2, packages: {} })
     })
 
     it('reads a valid v2 lockfile', () => {
@@ -184,7 +189,7 @@ describe('storage', () => {
       ).toBeDefined()
     })
 
-    it('throws for a legacy lockfile schema', () => {
+    it('returns empty fallback for a legacy lockfile schema', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
@@ -202,8 +207,10 @@ describe('storage', () => {
 
       writeFileSync(join(dir, 'lockfile.json'), JSON.stringify(legacyLockfile), 'utf-8')
 
-      expect(() => readLockfile(tempDir)).toThrow(StorageCorruptionError)
+      const lockfile = readLockfile(tempDir)
+      expect(lockfile).toEqual({ version: 2, packages: {} })
 
+      // Original file is not overwritten
       const persisted = JSON.parse(readFileSync(join(dir, 'lockfile.json'), 'utf-8'))
       expect(persisted).toEqual(legacyLockfile)
     })

@@ -183,6 +183,34 @@ describe('updateManifestAndLockfile', () => {
     expect(Object.keys(lockfileOnDisc.data.packages).length).toBe(2)
   })
 
+  it('propagates updater errors without corrupting existing files', () => {
+    seedFiles()
+    const lockPath = join(agentverDir, '.lock')
+    const transactionPath = join(agentverDir, 'storage-transaction.json')
+
+    // Snapshot normalised state before the failing call
+    const manifestBefore = readManifest(tmpDir, 'project')
+    const lockfileBefore = readLockfile(tmpDir, 'project')
+
+    expect(() =>
+      updateManifestAndLockfile(tmpDir, 'project', () => {
+        throw new Error('updater kaboom')
+      })
+    ).toThrowError('updater kaboom')
+
+    // Lock must be released
+    expect(existsSync(lockPath)).toBe(false)
+
+    // No transaction journal left behind
+    expect(existsSync(transactionPath)).toBe(false)
+
+    // Original files must be intact
+    const manifestAfter = readManifest(tmpDir, 'project')
+    const lockfileAfter = readLockfile(tmpDir, 'project')
+    expect(manifestAfter.data).toEqual(manifestBefore.data)
+    expect(lockfileAfter.data).toEqual(lockfileBefore.data)
+  })
+
   it('works on a fresh project with no existing files', () => {
     const result = updateManifestAndLockfile(tmpDir, 'project', (manifest, lockfile) => ({
       manifest: {

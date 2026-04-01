@@ -16,7 +16,6 @@ export {
   IntegrityError,
   StorageCorruptionError,
   StorageLockError,
-  TransactionRecoveryError,
 } from './errors'
 // --- Locking ---
 export { acquireLock, withStorageLock } from './file-lock'

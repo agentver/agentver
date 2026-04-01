@@ -23,12 +23,14 @@ vi.mock('@actions/core', () => ({
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
 
+import type { ManifestV2 } from '@agentver/shared'
 import { extractFilesFromManifest } from '@agentver/shared'
-import type { DownloadResponse } from '../installer'
+import type { DownloadResponse, InstallerConfig } from '../installer'
 import {
   computeIntegrity,
   detectAgents,
   IntegrityError,
+  installAllPackages,
   ManifestNotFoundError,
   RegistryAuthError,
   RegistryNetworkError,
@@ -667,6 +669,215 @@ describe('installer', () => {
       expect(updated.packages[releaseKey]).toBeDefined()
       expect(updated.packages[mainKey]?.agents).toEqual(['claude-code'])
       expect(updated.packages[releaseKey]?.agents).toEqual(['cursor'])
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // installAllPackages
+  // ---------------------------------------------------------------------------
+
+  describe('installAllPackages', () => {
+    /** Helper: build an InstallerConfig pointing at the temp directory. */
+    function makeConfig(overrides: Partial<InstallerConfig> = {}): InstallerConfig {
+      return {
+        registryUrl: 'https://registry.example.com',
+        apiKey: 'test-api-key',
+        workingDirectory: tempDir,
+        verifyIntegrity: false,
+        agents: ['claude-code'],
+        ...overrides,
+      }
+    }
+
+    /** Helper: build a valid DownloadResponse. */
+    function makeDownloadResponse(overrides: Partial<DownloadResponse> = {}): DownloadResponse {
+      return {
+        version: '1.0.0',
+        content: null,
+        fileManifest: [{ path: 'SKILL.md', content: '# Test skill' }],
+        sha256: 'abc123',
+        size: 42,
+        gitRef: 'v1.0.0',
+        gitCommitSha: 'deadbeef1234',
+        gitUri: 'https://git.example.com/org/repo',
+        gitPath: 'skills/test',
+        createdAt: '2025-06-01T00:00:00Z',
+        ...overrides,
+      }
+    }
+
+    /** Helper: build a ManifestV2 with the given packages. */
+    function makeManifest(packages: ManifestV2['packages'] = {}): ManifestV2 {
+      return { version: 2, packages }
+    }
+
+    /**
+     * Mock fetch so that calls to the download endpoint return the given response.
+     * Accepts an optional handler map keyed by URL substring for multi-package scenarios.
+     */
+    function mockFetchWith(handlers: Record<string, { status: number; body: unknown }>): void {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: string | URL | Request) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+
+        for (const [pattern, handler] of Object.entries(handlers)) {
+          if (url.includes(pattern)) {
+            return new Response(JSON.stringify(handler.body), {
+              status: handler.status,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
+        }
+
+        return new Response('Not found', { status: 404 })
+      })
+    }
+
+    it('installs a single package successfully', async () => {
+      const downloadResponse = makeDownloadResponse()
+
+      mockFetchWith({
+        '/skills/testorg/testskill/1.0.0/download': {
+          status: 200,
+          body: downloadResponse,
+        },
+      })
+
+      const manifest = makeManifest({
+        'git:https%3A%2F%2Fgit.example.com%2Forg%2Frepo%23skills%2Ftest': {
+          name: 'testorg/testskill',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/org/repo',
+            path: 'skills/test',
+            ref: 'v1.0.0',
+            commit: 'deadbeef1234',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+      })
+
+      const config = makeConfig()
+      const { results, resolvedData } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.success).toBe(true)
+      expect(results[0]!.name).toBe('testorg/testskill')
+      expect(results[0]!.version).toBe('1.0.0')
+      expect(results[0]!.agents).toContain('claude-code')
+      expect(results[0]!.fileCount).toBeGreaterThan(0)
+      expect(resolvedData.size).toBe(1)
+    })
+
+    it('returns empty results for a manifest with no packages', async () => {
+      const manifest = makeManifest({})
+      const config = makeConfig()
+      const { results, resolvedData } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(0)
+      expect(resolvedData.size).toBe(0)
+    })
+
+    it('collects per-package errors without aborting subsequent packages', async () => {
+      const downloadResponse = makeDownloadResponse({
+        version: '2.0.0',
+        gitRef: 'v2.0.0',
+      })
+
+      mockFetchWith({
+        '/skills/failing/pkg/1.0.0/download': {
+          status: 401,
+          body: 'Unauthorised',
+        },
+        '/skills/passing/pkg/2.0.0/download': {
+          status: 200,
+          body: downloadResponse,
+        },
+      })
+
+      const manifest = makeManifest({
+        'git:failing-key': {
+          name: 'failing/pkg',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/failing/repo',
+            path: 'skills/pkg',
+            ref: 'v1.0.0',
+            commit: 'aaa111',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+        'git:passing-key': {
+          name: 'passing/pkg',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/passing/repo',
+            path: 'skills/pkg',
+            ref: 'v2.0.0',
+            commit: 'bbb222',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+      })
+
+      const config = makeConfig()
+      const { results } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(2)
+
+      const failedResult = results.find((r) => r.name === 'failing/pkg')
+      expect(failedResult).toBeDefined()
+      expect(failedResult!.success).toBe(false)
+      expect(failedResult!.error).toContain('Authentication failed')
+
+      const passedResult = results.find((r) => r.name === 'passing/pkg')
+      expect(passedResult).toBeDefined()
+      expect(passedResult!.success).toBe(true)
+      expect(passedResult!.version).toBe('2.0.0')
+    })
+
+    it('records a failure when a package has no files in its manifest', async () => {
+      const downloadResponse = makeDownloadResponse({
+        fileManifest: [],
+      })
+
+      mockFetchWith({
+        '/skills/emptyorg/emptyskill/1.0.0/download': {
+          status: 200,
+          body: downloadResponse,
+        },
+      })
+
+      const manifest = makeManifest({
+        'git:empty-key': {
+          name: 'emptyorg/emptyskill',
+          source: {
+            type: 'git',
+            uri: 'https://git.example.com/emptyorg/repo',
+            path: 'skills/emptyskill',
+            ref: 'v1.0.0',
+            commit: 'ccc333',
+          },
+          agents: ['claude-code'],
+          installedAt: '2025-06-01T00:00:00Z',
+          modified: false,
+        },
+      })
+
+      const config = makeConfig()
+      const { results, resolvedData } = await installAllPackages(manifest, config, null)
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.success).toBe(false)
+      expect(results[0]!.error).toContain('no files')
+      expect(results[0]!.fileCount).toBe(0)
+      expect(resolvedData.size).toBe(0)
     })
   })
 })

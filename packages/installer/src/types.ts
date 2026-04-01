@@ -109,6 +109,8 @@ export type PlannedLockfileEntry = {
   source: PackageSource
   integrity: string
   agents: string[]
+  linkMode?: LinkMode
+  degraded?: boolean
 }
 
 export type InstallPlan = {
@@ -158,6 +160,7 @@ export type InstallResult = {
   }
   packageKey: string
   displayName: string
+  canonicalPath?: string
   placements: PlacementResult[]
   conflictsResolved: Array<{
     agentId: string

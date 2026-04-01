@@ -6,7 +6,6 @@ import {
   updateManifestAndLockfile,
 } from '@agentver/storage'
 import { createFilesystemBackup, restoreFilesystemBackup } from './backup'
-import { resolveCanonicalCategory } from './canonical'
 import { cleanupExpiredBackups, createPersistentBackup } from './persistent-backup'
 import { createAgentPlacements } from './placement'
 import { planInstall } from './planner'
@@ -51,6 +50,7 @@ export function executeInstall(plan: InstallPlan): InstallResult {
       },
       packageKey: request.packageKey,
       displayName: request.displayName,
+      canonicalPath: canonical.path,
       placements: [],
       conflictsResolved: [],
       backups: [],
@@ -135,6 +135,13 @@ export function executeInstall(plan: InstallPlan): InstallResult {
 
     const agentsInstalledCount = placementResults.filter((p) => p.success).length
 
+    // Record actual link mode and degraded status from placement results
+    const firstPlacement = placementResults[0]
+    if (firstPlacement) {
+      lockfileEntry.linkMode = firstPlacement.actualLinkMode
+      lockfileEntry.degraded = placementResults.some((p) => p.fallbackUsed === true)
+    }
+
     // 5. Persist manifest/lockfile entries
     let manifestWritten = false
     let lockfileWritten = false
@@ -164,6 +171,8 @@ export function executeInstall(plan: InstallPlan): InstallResult {
             source: lockfileEntry.source,
             integrity: lockfileEntry.integrity,
             agents: lockfileEntry.agents,
+            linkMode: lockfileEntry.linkMode,
+            degraded: lockfileEntry.degraded,
           })
 
           return { manifest, lockfile }
@@ -178,6 +187,7 @@ export function executeInstall(plan: InstallPlan): InstallResult {
       success: true,
       packageKey: request.packageKey,
       displayName: request.displayName,
+      canonicalPath: canonical.path,
       placements: placementResults,
       conflictsResolved,
       backups,
@@ -225,6 +235,7 @@ export function executeInstall(plan: InstallPlan): InstallResult {
       },
       packageKey: request.packageKey,
       displayName: request.displayName,
+      canonicalPath: canonical.path,
       placements: [],
       conflictsResolved,
       backups,
@@ -353,8 +364,9 @@ export async function executeRestore(
  * removing files placed by the executor.
  *
  * Note: canonical skill directories (.agents/skills/<name>/) are not
- * removed — the scope needed to resolve the path is not stored on the
- * result. Agent placements are removed, which is the primary rollback target.
+ * removed during rollback because the original scope is not preserved
+ * on the install result. Use `canonicalPath` on the result when available.
+ * Agent placements are removed, which is the primary rollback target.
  *
  * Idempotent — safe to call multiple times.
  */
@@ -370,21 +382,19 @@ export function rollbackInstall(result: InstallResult): void {
 
   // Remove canonical directory/file
   if (result.success && result.filesPlacedCount > 0) {
-    // Determine canonical path from the plan context
-    // We need to reconstruct it from the manifest entry
-    const category = resolveCanonicalCategory(
-      (result.manifestEntry.packageType ?? 'SKILL') as PackageType
-    )
-
     if (result.manifestEntry.path) {
       // Custom path install — remove the custom path
       if (existsSync(result.manifestEntry.path)) {
         rmSync(result.manifestEntry.path, { recursive: true, force: true })
       }
-    } else if (category === 'skills') {
-      // We cannot precisely reconstruct the scope here, so we remove placements
-      // which is the safest approach. The canonical path is not stored on the result
-      // but placements give us enough information.
+    }
+
+    if (result.canonicalPath) {
+      try {
+        rmSync(result.canonicalPath, { recursive: true, force: true })
+      } catch {
+        /* best-effort */
+      }
     }
   }
 

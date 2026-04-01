@@ -1,5 +1,5 @@
 /**
- * Manifest or lockfile on disc is corrupt.
+ * Manifest or lockfile on disk is corrupt.
  * Not thrown for missing files (that is expected on first run).
  * Thrown when the file exists but contains invalid JSON or fails
  * schema validation with zero recoverable entries.
@@ -58,23 +58,5 @@ export class IntegrityError extends Error {
     this.packageName = packageName
     this.expected = expected
     this.actual = actual
-  }
-}
-
-/**
- * Transaction journal exists but is itself corrupt.
- * The journal is deleted and a warning emitted; this error
- * is only thrown if the caller needs to know recovery failed.
- */
-export class TransactionRecoveryError extends Error {
-  override readonly name = 'TransactionRecoveryError'
-  readonly journalPath: string
-  readonly reason: 'invalid-json' | 'schema-validation-failed'
-
-  constructor(journalPath: string, reason: 'invalid-json' | 'schema-validation-failed') {
-    const detail = reason === 'invalid-json' ? 'could not parse JSON' : 'schema validation failed'
-    super(`Corrupt transaction journal at ${journalPath} — ${detail}`)
-    this.journalPath = journalPath
-    this.reason = reason
   }
 }

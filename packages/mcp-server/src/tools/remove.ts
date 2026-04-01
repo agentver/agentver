@@ -10,11 +10,11 @@ import {
   resolveCanonicalCategory,
 } from '@agentver/installer'
 import { AgentverError } from '@agentver/shared'
-import { resolvePackageQuery } from '@agentver/storage'
+import { resolvePackageQuery, updateManifestAndLockfile } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'
-import { readLockfile, readManifest, writeLockfile, writeManifest } from '../storage'
+import { readManifest } from '../storage'
 
 export function registerRemoveTool(server: McpServer): void {
   server.registerTool(
@@ -83,14 +83,12 @@ export function registerRemoveTool(server: McpServer): void {
         }
       }
 
-      // Update manifest
-      delete manifest.packages[packageKey]
-      writeManifest(root, manifest)
-
-      // Update lockfile
-      const lockfile = readLockfile(root)
-      delete lockfile.packages[packageKey]
-      writeLockfile(root, lockfile)
+      // Atomically update manifest and lockfile under a single lock
+      updateManifestAndLockfile(root, scope, (currentManifest, currentLockfile) => {
+        delete currentManifest.packages[packageKey]
+        delete currentLockfile.packages[packageKey]
+        return { manifest: currentManifest, lockfile: currentLockfile }
+      })
 
       const summary = [
         `Removed ${displayName}`,

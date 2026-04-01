@@ -627,6 +627,80 @@ describe('executor', () => {
       expect(fetchFn).not.toHaveBeenCalled()
     })
 
+    it('records failed status when executeInstall returns success=false', async () => {
+      // When executeInstall returns { success: false } (rather than throwing),
+      // executeRestore should record the package as 'failed' and increment
+      // failedCount. We trigger the INSTALL_FAILED code path by making the
+      // canonical directory unwriteable, causing writeCanonicalFiles to throw
+      // inside executeInstall's try block. The catch block returns
+      // { success: false } without re-throwing.
+      const canonicalParent = join(tmpDir, '.agents', 'skills')
+      mkdirSync(canonicalParent, { recursive: true })
+      // Create a file where a directory is expected, preventing mkdirSync
+      writeFileSync(join(canonicalParent, 'blocked-skill'), 'not-a-directory', 'utf-8')
+
+      const fetchFn = vi.fn().mockResolvedValue({
+        files: [{ path: 'SKILL.md', content: '# Restored' }],
+        integrity: 'sha256-restored',
+      })
+
+      const plan: RestorePlan = {
+        toInstall: [
+          {
+            packageKey: 'git:blocked-skill',
+            displayName: 'blocked-skill',
+            manifestEntry: {
+              source: {
+                type: 'git' as const,
+                uri: 'https://github.com/org/repo',
+                path: 'skills/blocked',
+                ref: 'main',
+                commit: 'abc',
+              },
+              agents: ['claude-code'],
+              installedAt: new Date().toISOString(),
+              modified: false,
+            },
+            lockfileEntry: {
+              source: {
+                type: 'git' as const,
+                uri: 'https://github.com/org/repo',
+                path: 'skills/blocked',
+                ref: 'main',
+                commit: 'abc',
+              },
+              integrity: 'sha256-abc',
+            },
+            fetchStrategy: 'git',
+            alreadyInstalled: false,
+          },
+        ],
+        upToDate: [],
+        toSkip: [],
+        agents: ['claude-code'],
+        policy: {
+          projectRoot: tmpDir,
+          scope: 'project',
+          agents: ['claude-code'],
+          preferredLinkMode: 'symlink',
+          allowFallback: true,
+          force: false,
+          concurrency: 4,
+          offline: false,
+          securityScanPolicy: 'skip',
+        },
+      }
+
+      const result = await executeRestore(plan, fetchFn)
+
+      expect(fetchFn).toHaveBeenCalledTimes(1)
+      expect(result.failedCount).toBe(1)
+      expect(result.success).toBe(false)
+      const failedPkg = result.packages.find((p) => p.packageKey === 'git:blocked-skill')
+      expect(failedPkg?.status).toBe('failed')
+      expect(failedPkg?.error).toBeTruthy()
+    })
+
     it('returns correct summary counts', async () => {
       const fetchFn = vi
         .fn()

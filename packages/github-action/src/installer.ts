@@ -9,6 +9,7 @@ import {
   extractFilesFromManifest,
   getPackageDisplayName,
   getPackageSourceReference,
+  STORAGE_SCHEMA_VERSION,
 } from '@agentver/shared'
 import {
   computeIntegrity,
@@ -202,7 +203,7 @@ function tryReadLegacyManifest(manifestPath: string): ManifestV2 | null {
       }
     }
 
-    return { version: 2, packages }
+    return { version: STORAGE_SCHEMA_VERSION, packages }
   } catch {
     return null
   }

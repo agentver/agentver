@@ -671,6 +671,23 @@ describe('planner', () => {
       expect(keys).toContain('git:skill-b')
     })
 
+    it('places package in toInstall when lockfile entry is missing', () => {
+      const manifest = createManifest({
+        'git:orphaned-skill': {
+          name: 'orphaned-skill',
+          source: gitSource,
+        },
+      })
+      // Lockfile has no matching entry for 'git:orphaned-skill'
+      const lockfile = createLockfile({})
+
+      const plan = planRestore(manifest, lockfile, createPolicy())
+
+      expect(plan.toInstall).toHaveLength(1)
+      expect(plan.toInstall[0]?.packageKey).toBe('git:orphaned-skill')
+      expect(plan.upToDate).toHaveLength(0)
+    })
+
     it('auto-detects agents when policy.agents is empty', () => {
       const manifest = createManifest({
         'git:skill-a': { name: 'skill-a', source: gitSource },

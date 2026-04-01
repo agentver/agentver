@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { serialiseDeterministic } from './serialise'
@@ -42,6 +42,15 @@ export function ensureStorageDir(projectRoot: string, scope: Scope = 'project'):
 
 export function writeJsonFileAtomic(filePath: string, value: unknown): void {
   const tmpPath = `${filePath}.tmp`
-  writeFileSync(tmpPath, serialiseDeterministic(value))
-  renameSync(tmpPath, filePath)
+  try {
+    writeFileSync(tmpPath, serialiseDeterministic(value))
+    renameSync(tmpPath, filePath)
+  } catch (error) {
+    try {
+      rmSync(tmpPath, { force: true })
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw error
+  }
 }

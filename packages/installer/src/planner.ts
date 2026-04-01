@@ -71,7 +71,6 @@ export function planInstall(request: InstallRequest): InstallPlan {
     category,
     target.scope,
     target.projectRoot,
-    canonicalPath,
     policy.preferredLinkMode,
     metadata?.customPath
   )
@@ -301,7 +300,6 @@ function resolvePlacements(
   category: CanonicalCategory,
   scope: InstallScope,
   projectRoot: string,
-  _canonicalPath: string,
   preferredLinkMode: LinkMode,
   customPath?: string
 ): {
@@ -492,6 +490,9 @@ function isUpToDate(entry: RestoreEntry, policy: RestorePolicy): boolean {
 
 /**
  * Reads all files from a directory, returning relative paths and content.
+ *
+ * Canonical skill directories contain real files only — symlinks are placements
+ * that live outside the canonical directory. Skip symlink entries intentionally.
  */
 function readDirectoryFiles(
   dirPath: string,
