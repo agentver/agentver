@@ -11,7 +11,6 @@ import {
   updateLockfile,
   writeLockfile,
 } from '../index'
-import { serialiseDeterministic } from '../serialise'
 
 let tmpDir: string
 let agentverDir: string
@@ -41,10 +40,11 @@ function makeValidLockfile(overrides?: Partial<LockfileV2>): LockfileV2 {
 }
 
 function makeLockfileWithPackage(): LockfileV2 {
+  const stableKey = `git:${encodeURIComponent('https://github.com/org/repo.git#skills/test#main')}`
   return {
     version: STORAGE_SCHEMA_VERSION,
     packages: {
-      'git:test-key': {
+      [stableKey]: {
         name: 'test-skill',
         source: {
           type: 'git',
@@ -69,8 +69,6 @@ describe('readLockfile', () => {
       version: STORAGE_SCHEMA_VERSION,
       packages: {},
     })
-    expect(result.dirty).toBe(false)
-    expect(result.droppedEntries).toEqual([])
   })
 
   it('returns valid lockfile from well-formed file', () => {
@@ -79,94 +77,6 @@ describe('readLockfile', () => {
 
     const result = readLockfile(tmpDir, 'project')
     expect(result.data.version).toBe(STORAGE_SCHEMA_VERSION)
-    expect(Object.keys(result.data.packages).length).toBe(1)
-  })
-
-  it('returns dirty: false when file is already normalised', () => {
-    const stableKey = `git:${encodeURIComponent('https://github.com/org/repo.git#skills/test')}`
-    const lockfile: LockfileV2 = {
-      version: STORAGE_SCHEMA_VERSION,
-      packages: {
-        [stableKey]: {
-          name: 'test-skill',
-          source: {
-            type: 'git',
-            uri: 'https://github.com/org/repo.git',
-            path: 'skills/test',
-            ref: 'main',
-            commit: 'abc1234',
-          },
-          integrity: 'sha256-dGVzdA==',
-          agents: ['claude-code'],
-        },
-      },
-    }
-    mkdirSync(agentverDir, { recursive: true })
-    writeFileSync(lockfilePath, serialiseDeterministic(lockfile))
-
-    const result = readLockfile(tmpDir, 'project')
-    expect(result.dirty).toBe(false)
-  })
-
-  it('returns dirty: true when normalisation changes data', () => {
-    const lockfile = {
-      version: STORAGE_SCHEMA_VERSION,
-      packages: {
-        'old-style-key': {
-          name: 'test-skill',
-          source: {
-            type: 'git' as const,
-            uri: 'https://github.com/org/repo.git',
-            path: 'skills/test',
-            ref: 'main',
-            commit: 'abc1234',
-          },
-          integrity: 'sha256-dGVzdA==',
-          agents: ['claude-code'],
-        },
-      },
-    }
-    writeLockfileFile(lockfile)
-
-    const result = readLockfile(tmpDir, 'project')
-    expect(result.dirty).toBe(true)
-  })
-
-  it('reports droppedEntries when per-entry recovery kicks in', () => {
-    const lockfile = {
-      version: STORAGE_SCHEMA_VERSION,
-      packages: {
-        'good-entry': {
-          name: 'good-skill',
-          source: {
-            type: 'git',
-            uri: 'https://github.com/org/repo.git',
-            path: 'skills/good',
-            ref: 'main',
-            commit: 'abc1234',
-          },
-          integrity: 'sha256-dGVzdA==',
-          agents: ['claude-code'],
-        },
-        'bad-entry': {
-          name: 'bad-skill',
-          source: { type: 'invalid-type' },
-          integrity: 'not-valid',
-        },
-      },
-    }
-    mkdirSync(agentverDir, { recursive: true })
-    writeFileSync(lockfilePath, JSON.stringify(lockfile, null, 2))
-
-    const warnings: string[] = []
-    const result = readLockfile(tmpDir, 'project', {
-      onWarning: (msg) => warnings.push(msg),
-    })
-
-    expect(result.dirty).toBe(true)
-    expect(result.droppedEntries.length).toBeGreaterThan(0)
-    expect(result.droppedEntries.some((e) => e.key === 'bad-entry')).toBe(true)
-    expect(warnings.length).toBeGreaterThan(0)
     expect(Object.keys(result.data.packages).length).toBe(1)
   })
 
@@ -185,7 +95,7 @@ describe('readLockfile', () => {
     }
   })
 
-  it('throws StorageCorruptionError when schema validation fails completely', () => {
+  it('returns empty lockfile when schema validation fails', () => {
     writeLockfileFile({
       version: STORAGE_SCHEMA_VERSION,
       packages: {
@@ -195,14 +105,11 @@ describe('readLockfile', () => {
       },
     })
 
-    expect(() => readLockfile(tmpDir, 'project')).toThrow(StorageCorruptionError)
-
-    try {
-      readLockfile(tmpDir, 'project')
-    } catch (error) {
-      const corruptionError = error as StorageCorruptionError
-      expect(corruptionError.reason).toBe('schema-validation-failed')
-    }
+    const result = readLockfile(tmpDir, 'project')
+    expect(result.data).toEqual({
+      version: STORAGE_SCHEMA_VERSION,
+      packages: {},
+    })
   })
 
   it('does NOT write back to disc (no side-effect writes)', () => {

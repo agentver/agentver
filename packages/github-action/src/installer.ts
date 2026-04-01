@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as core from '@actions/core'
 import { detectInstalledAgents } from '@agentver/agent-definitions'
@@ -7,13 +7,12 @@ import type { LockfileV2, ManifestV2, PackageSource } from '@agentver/shared'
 import {
   createPackageKey,
   extractFilesFromManifest,
-  getPackageDisplayName,
   getPackageSourceReference,
-  STORAGE_SCHEMA_VERSION,
 } from '@agentver/shared'
 import {
   computeIntegrity,
   getManifestPath,
+  getPackageDisplayName,
   IntegrityError,
   readLockfile,
   readManifest,
@@ -66,20 +65,6 @@ type InstallerConfig = {
 export type { DownloadResponse, InstallerConfig }
 export { IntegrityError }
 
-type LegacyManifest = {
-  version: 1
-  packages: Record<
-    string,
-    {
-      name?: string
-      agents?: string[]
-      installedAt?: string
-      modified?: boolean
-      path?: string
-    }
-  >
-}
-
 // -- Errors ------------------------------------------------------------------
 
 export class ManifestNotFoundError extends Error {
@@ -123,24 +108,14 @@ export function readManifestFile(projectRoot: string): ManifestV2 {
   }
 
   try {
-    const { data, droppedEntries } = readManifest(projectRoot, 'project', {
+    const { data } = readManifest(projectRoot, 'project', {
       onWarning: (msg) => core.warning(msg),
     })
-
-    for (const entry of droppedEntries) {
-      core.warning(`Dropped manifest entry "${entry.key}": ${entry.reason}`)
-    }
-
     return data
   } catch (error) {
     if (error instanceof StorageCorruptionError) {
       if (error.reason === 'invalid-json') {
         throw new Error(`Failed to parse manifest at ${manifestPath}: invalid JSON`)
-      }
-      const migrated = tryReadLegacyManifest(manifestPath)
-      if (migrated) {
-        core.warning(`Migrated legacy manifest at ${manifestPath} in memory`)
-        return migrated
       }
       throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`)
     }
@@ -156,14 +131,9 @@ export function readLockfileFile(projectRoot: string): LockfileV2 | null {
   }
 
   try {
-    const { data, droppedEntries } = readLockfile(projectRoot, 'project', {
+    const { data } = readLockfile(projectRoot, 'project', {
       onWarning: (msg) => core.warning(msg),
     })
-
-    for (const entry of droppedEntries) {
-      core.warning(`Dropped lockfile entry "${entry.key}": ${entry.reason}`)
-    }
-
     return data
   } catch {
     return null
@@ -172,41 +142,6 @@ export function readLockfileFile(projectRoot: string): LockfileV2 | null {
 
 export function writeLockfileFile(projectRoot: string, lockfile: LockfileV2): void {
   writeLockfile(projectRoot, lockfile, 'project', { mode: 'none' })
-}
-
-function tryReadLegacyManifest(manifestPath: string): ManifestV2 | null {
-  try {
-    const raw = JSON.parse(readFileSync(manifestPath, 'utf-8')) as LegacyManifest
-    if (raw.version !== 1 || typeof raw.packages !== 'object' || raw.packages === null) {
-      return null
-    }
-
-    const packages: ManifestV2['packages'] = {}
-    for (const [legacyKey, legacyPkg] of Object.entries(raw.packages)) {
-      const displayName = legacyPkg.name?.trim() || legacyKey
-      const source: PackageSource = legacyPkg.path
-        ? { type: 'local', path: legacyPkg.path }
-        : {
-            type: 'unknown',
-            path: legacyPkg.name ?? legacyKey,
-            reason: 'Migrated from legacy manifest',
-          }
-
-      const packageKey = createPackageKey(displayName, source)
-      packages[packageKey] = {
-        name: displayName,
-        source,
-        agents: legacyPkg.agents ?? [],
-        installedAt: legacyPkg.installedAt ?? new Date(0).toISOString(),
-        modified: legacyPkg.modified ?? false,
-        ...(legacyPkg.path ? { path: legacyPkg.path } : {}),
-      }
-    }
-
-    return { version: STORAGE_SCHEMA_VERSION, packages }
-  } catch {
-    return null
-  }
 }
 
 // -- Registry ----------------------------------------------------------------

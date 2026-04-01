@@ -53,10 +53,12 @@ describe('storage', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const expected = {
         version: 2 as const,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git' as const,
               uri: 'https://github.com/org/repo',
@@ -75,12 +77,8 @@ describe('storage', () => {
 
       const manifest = readManifest(tempDir)
       expect(manifest.version).toBe(2)
-      expect(
-        manifest.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
-      ).toBeDefined()
-      expect(
-        manifest.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']!.source.type
-      ).toBe('git')
+      expect(manifest.packages[stableKey]).toBeDefined()
+      expect(manifest.packages[stableKey]!.source.type).toBe('git')
     })
 
     it('returns empty fallback for a legacy manifest schema', () => {
@@ -163,10 +161,12 @@ describe('storage', () => {
       const dir = join(tempDir, '.agentver')
       mkdirSync(dir, { recursive: true })
 
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const expected = {
         version: 2 as const,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git' as const,
               uri: 'https://github.com/org/repo',
@@ -184,9 +184,7 @@ describe('storage', () => {
 
       const lockfile = readLockfile(tempDir)
       expect(lockfile.version).toBe(2)
-      expect(
-        lockfile.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
-      ).toBeDefined()
+      expect(lockfile.packages[stableKey]).toBeDefined()
     })
 
     it('returns empty fallback for a legacy lockfile schema', () => {

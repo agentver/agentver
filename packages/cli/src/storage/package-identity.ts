@@ -1,11 +1,11 @@
+export { createPackageKey } from '@agentver/shared'
 export type {
   PackageLookupFailure,
   PackageLookupResult,
   PackageLookupSuccess,
 } from '@agentver/storage'
 export {
-  createStablePackageKey,
-  getDisplayName,
+  getPackageDisplayName,
   getTrackedSourceCommit,
   getTrackedSourceRef,
   isPlatformManagedSource,

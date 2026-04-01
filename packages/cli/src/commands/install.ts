@@ -65,7 +65,7 @@ import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/in
 import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
 import {
-  createStablePackageKey,
+  createPackageKey,
   setLockfilePackage,
   setManifestPackage,
 } from '../storage/package-identity'
@@ -1421,7 +1421,7 @@ async function installStandardPackage(
 
   // Build an InstallRequest for the installer planner
   const request: InstallRequest = {
-    packageKey: createStablePackageKey(name, source),
+    packageKey: createPackageKey(name, source),
     displayName: name,
     packageType: 'SKILL',
     source,
@@ -1525,7 +1525,7 @@ async function installSingleFilePackage(
   const entryFile = mdFile.path
   const singleFileIntegrity = computeIntegrity([{ path: fileName, content: mdFile.content }])
   const request: InstallRequest = {
-    packageKey: createStablePackageKey(name, source),
+    packageKey: createPackageKey(name, source),
     displayName: name,
     packageType,
     source,

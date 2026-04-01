@@ -6,8 +6,8 @@ import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions
 import {
   type DoctorCheck,
   type DoctorResult,
-  lockfileAnySchema,
-  manifestAnySchema,
+  lockfileV2Schema,
+  manifestV2Schema,
 } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
@@ -17,7 +17,7 @@ import { getPlatformUrl } from '../registry/config.js'
 import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
-import { getDisplayName } from '../storage/package-identity.js'
+import { getPackageDisplayName } from '../storage/package-identity.js'
 import { resolvePlacementPath, type Scope } from '../utils/paths.js'
 
 type CheckStatus = DoctorCheck['status']
@@ -62,7 +62,7 @@ function checkManifestIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
     return check(name, 'fail', `Manifest contains invalid JSON${label}`)
   }
 
-  const result = manifestAnySchema.safeParse(parsed)
+  const result = manifestV2Schema.safeParse(parsed)
   if (!result.success) {
     return check(name, 'fail', `Manifest does not match expected schema${label}`)
   }
@@ -96,7 +96,7 @@ function checkLockfileIntegrity(projectRoot: string, scope: Scope): DoctorCheck 
     return check(name, 'fail', `Lockfile contains invalid JSON${label}`)
   }
 
-  const result = lockfileAnySchema.safeParse(parsed)
+  const result = lockfileV2Schema.safeParse(parsed)
   if (!result.success) {
     return check(name, 'fail', `Lockfile does not match expected schema${label}`)
   }
@@ -163,7 +163,7 @@ function checkSkillFilesExist(projectRoot: string, scope: Scope): DoctorCheck {
   const missing: string[] = []
 
   for (const [packageKey, pkg] of entries) {
-    const displayName = getDisplayName(packageKey, pkg)
+    const displayName = getPackageDisplayName(packageKey, pkg)
     const shortName = displayName.split('/').pop() ?? displayName
     const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
     if (!existsSync(canonicalPath) || !lstatSync(canonicalPath).isDirectory()) {
@@ -193,7 +193,7 @@ function checkSymlinksValid(projectRoot: string, scope: Scope): DoctorCheck {
   const broken: string[] = []
 
   for (const [packageKey, pkg] of entries) {
-    const displayName = getDisplayName(packageKey, pkg)
+    const displayName = getPackageDisplayName(packageKey, pkg)
     const shortName = displayName.split('/').pop() ?? displayName
     for (const agentId of pkg.agents) {
       const placementPath = getSkillPlacementPath(agentId as AgentId, shortName, scope)

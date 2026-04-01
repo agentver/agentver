@@ -130,40 +130,6 @@ export const packageSourceSchema = z.discriminatedUnion('type', [
 
 export type PackageSource = z.infer<typeof packageSourceSchema>
 
-export function normalisePackageSource(source: PackageSource): PackageSource {
-  if (source.type !== 'git') {
-    return source
-  }
-
-  if (source.uri === 'local') {
-    return {
-      type: 'local',
-      path: source.path,
-    }
-  }
-
-  if (source.uri === 'unknown') {
-    return {
-      type: 'unknown',
-      path: source.path,
-      ref: source.ref,
-      commit: source.commit,
-    }
-  }
-
-  if (source.uri.startsWith('agentver://')) {
-    return {
-      type: 'platform',
-      uri: source.uri,
-      path: source.path,
-      ref: source.ref,
-      commit: source.commit,
-    }
-  }
-
-  return source
-}
-
 export function getPackageSourceLocation(source: PackageSource): string {
   switch (source.type) {
     case 'git':
@@ -248,10 +214,6 @@ export function extractFilesFromManifest(
     .map(([path, content]) => ({ path, content: content as string }))
 }
 
-export function getPackageDisplayName(manifestKey: string, pkg: { name?: string }): string {
-  return pkg.name?.trim() || manifestKey
-}
-
 export const manifestV2PackageSchema = z.object({
   name: z.string().min(1).optional(),
   source: packageSourceSchema,
@@ -278,30 +240,6 @@ export const manifestV2Schema = z.object({
 
 export type ManifestV2 = z.infer<typeof manifestV2Schema>
 
-export function normaliseManifestV2(manifest: ManifestV2): ManifestV2 {
-  const packages = Object.fromEntries(
-    Object.entries(manifest.packages).map(([name, pkg]) => {
-      const source = normalisePackageSource(pkg.source)
-      const displayName = getPackageDisplayName(name, pkg)
-      const stableKey = createPackageKey(displayName, source)
-
-      return [
-        stableKey,
-        {
-          name: displayName,
-          ...pkg,
-          source,
-        },
-      ]
-    })
-  )
-
-  return {
-    version: STORAGE_SCHEMA_VERSION,
-    packages,
-  }
-}
-
 export const linkModeSchema = z.enum(['symlink', 'copy', 'junction'])
 export type LinkMode = z.infer<typeof linkModeSchema>
 
@@ -324,39 +262,6 @@ export const lockfileV2Schema = z.object({
 })
 
 export type LockfileV2 = z.infer<typeof lockfileV2Schema>
-
-export function normaliseLockfileV2(lockfile: LockfileV2): LockfileV2 {
-  const packages = Object.fromEntries(
-    Object.entries(lockfile.packages).map(([name, pkg]) => {
-      const source = normalisePackageSource(pkg.source)
-      const displayName = getPackageDisplayName(name, pkg)
-      const stableKey = createPackageKey(displayName, source)
-
-      return [
-        stableKey,
-        {
-          name: displayName,
-          ...pkg,
-          source,
-        },
-      ]
-    })
-  )
-
-  return {
-    version: STORAGE_SCHEMA_VERSION,
-    packages,
-  }
-}
-
-export const manifestSchema = manifestV2Schema
-export type Manifest = ManifestV2
-export const lockfileSchema = lockfileV2Schema
-export type Lockfile = LockfileV2
-export const manifestAnySchema = manifestV2Schema
-export type ManifestAny = ManifestV2
-export const lockfileAnySchema = lockfileV2Schema
-export type LockfileAny = LockfileV2
 
 // --- Package structure ---
 

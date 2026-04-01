@@ -9,7 +9,7 @@ import { readInstalledPackageFiles } from '../storage/installed-package-files.js
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
-import { getDisplayName, resolvePackageQuery } from '../storage/package-identity.js'
+import { getPackageDisplayName, resolvePackageQuery } from '../storage/package-identity.js'
 import { extractError } from '../utils.js'
 
 type SuggestionFile = {
@@ -106,7 +106,7 @@ export function registerSuggestCommand(program: Command): void {
           const lockfileEntry = lockfile.packages[packageKey]
           if (!lockfileEntry) continue
 
-          const displayName = getDisplayName(packageKey, manifestEntry)
+          const displayName = getPackageDisplayName(packageKey, manifestEntry)
           const { agents } = manifestEntry
           const localFiles = await readInstalledPackageFiles(projectRoot, displayName, agents)
           if (localFiles.length === 0) continue
@@ -137,7 +137,7 @@ export function registerSuggestCommand(program: Command): void {
 
         if (targets.length === 0 && options.name) {
           const modifiedList = modifiedPackages
-            .map((packageKey) => getDisplayName(packageKey, manifest.packages[packageKey]!))
+            .map((packageKey) => getPackageDisplayName(packageKey, manifest.packages[packageKey]!))
             .join(', ')
           const message = `Package "${options.name}" is not in the modified list. Modified: ${modifiedList}`
           if (json) {
@@ -159,7 +159,7 @@ export function registerSuggestCommand(program: Command): void {
               continue
             }
 
-            const displayName = getDisplayName(packageKey, manifestEntry)
+            const displayName = getPackageDisplayName(packageKey, manifestEntry)
             const source = manifestEntry.source
             if (json) {
               outputError(
@@ -191,7 +191,7 @@ export function registerSuggestCommand(program: Command): void {
 
           for (const targetName of validTargets) {
             const manifestEntry = manifest.packages[targetName]!
-            const displayName = getDisplayName(targetName, manifestEntry)
+            const displayName = getPackageDisplayName(targetName, manifestEntry)
             const localFiles = await readInstalledPackageFiles(
               projectRoot,
               displayName,
@@ -241,7 +241,7 @@ export function registerSuggestCommand(program: Command): void {
 
         for (const targetName of validTargets) {
           const manifestEntry = manifest.packages[targetName]!
-          const displayName = getDisplayName(targetName, manifestEntry)
+          const displayName = getPackageDisplayName(targetName, manifestEntry)
           const spinner = createSpinner(`Creating suggestion for ${displayName}...`).start()
 
           try {

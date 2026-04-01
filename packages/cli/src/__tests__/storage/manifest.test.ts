@@ -60,10 +60,12 @@ describe('storage/manifest', () => {
     })
 
     it('reads a valid v2 manifest', () => {
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/my-skill#main')}`
       const validManifest = {
         version: 2,
         packages: {
-          'my-skill': {
+          [stableKey]: {
+            name: 'my-skill',
             source: {
               type: 'git',
               uri: 'https://github.com/org/repo',
@@ -83,9 +85,7 @@ describe('storage/manifest', () => {
 
       const result = manifestModule.readManifest('/project')
       expect(result.version).toBe(CURRENT_VERSION)
-      expect(
-        result.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fmy-skill']
-      ).toBeDefined()
+      expect(result.packages[stableKey]).toBeDefined()
     })
 
     it('returns empty manifest when schema validation fails', () => {
@@ -96,52 +96,14 @@ describe('storage/manifest', () => {
       expect(result).toEqual({ version: CURRENT_VERSION, packages: {} })
     })
 
-    it('recovers valid entries when one entry has invalid commit (empty string)', () => {
+    it('reads a manifest with multiple source types', () => {
+      const gitKey = `git:${encodeURIComponent('github.com/a/b##main')}`
+      const wkKey = `well-known:${encodeURIComponent('https://example.com#skill-b')}`
       const manifest = {
         version: 2,
         packages: {
-          'valid-skill': {
-            source: {
-              type: 'git',
-              uri: 'github.com/org/repo',
-              path: 'skills/valid',
-              ref: 'main',
-              commit: 'abc1234567890abcdef1234567890abcdef123456',
-            },
-            agents: ['claude-code'],
-            installedAt: '2025-01-01T00:00:00.000Z',
-            modified: false,
-          },
-          'broken-skill': {
-            source: {
-              type: 'git',
-              uri: 'agentver://org',
-              path: '',
-              ref: 'main',
-              commit: '',
-            },
-            agents: ['claude-code'],
-            installedAt: '2025-01-01T00:00:00.000Z',
-            modified: false,
-          },
-        },
-      }
-
-      vi.mocked(fs.existsSync).mockReturnValue(true)
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(manifest))
-
-      const result = manifestModule.readManifest('/project')
-
-      expect(result.version).toBe(CURRENT_VERSION)
-      expect(result.packages['git:github.com%2Forg%2Frepo%23skills%2Fvalid']).toBeDefined()
-      expect(result.packages['broken-skill']).toBeUndefined()
-    })
-
-    it('recovers all entries when all are valid but z.record() fails for other reasons', () => {
-      const manifest = {
-        version: 2,
-        packages: {
-          'skill-a': {
+          [gitKey]: {
+            name: 'skill-a',
             source: {
               type: 'git',
               uri: 'github.com/a/b',
@@ -153,7 +115,8 @@ describe('storage/manifest', () => {
             installedAt: '2025-06-01T00:00:00.000Z',
             modified: false,
           },
-          'skill-b': {
+          [wkKey]: {
+            name: 'skill-b',
             source: {
               type: 'well-known',
               baseUrl: 'https://example.com',
@@ -174,8 +137,8 @@ describe('storage/manifest', () => {
 
       expect(result.version).toBe(CURRENT_VERSION)
       expect(Object.keys(result.packages)).toHaveLength(2)
-      expect(result.packages['git:github.com%2Fa%2Fb%23']).toBeDefined()
-      expect(result.packages['well-known:https%3A%2F%2Fexample.com%23skill-b']).toBeDefined()
+      expect(result.packages[gitKey]).toBeDefined()
+      expect(result.packages[wkKey]).toBeDefined()
     })
   })
 
@@ -279,10 +242,12 @@ describe('storage/manifest', () => {
 
   describe('updateManifest', () => {
     it('updates the current manifest and returns the written value', () => {
+      const existingKey = `git:${encodeURIComponent('github.com/org/repo##main')}`
       const existingManifest = {
         version: 2 as const,
         packages: {
-          existing: {
+          [existingKey]: {
+            name: 'existing',
             source: {
               type: 'git' as const,
               uri: 'github.com/org/repo',
@@ -300,11 +265,13 @@ describe('storage/manifest', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true)
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existingManifest))
 
+      const addedKey = `git:${encodeURIComponent('github.com/org/repo#skills/added#main')}`
       const result = manifestModule.updateManifest('/project', 'project', (manifest) => ({
         ...manifest,
         packages: {
           ...manifest.packages,
-          added: {
+          [addedKey]: {
+            name: 'added',
             source: {
               type: 'git',
               uri: 'github.com/org/repo',
@@ -319,7 +286,7 @@ describe('storage/manifest', () => {
         },
       }))
 
-      expect(result.packages.added).toBeDefined()
+      expect(result.packages[addedKey]).toBeDefined()
 
       const written = vi.mocked(fs.writeFileSync).mock.calls.at(-1)![1] as string
       expect(JSON.parse(written)).toEqual(result)

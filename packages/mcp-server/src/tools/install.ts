@@ -6,6 +6,7 @@ import {
   createPackageKey,
   extractFilesFromManifest,
   type GitSource,
+  SEMVER_REGEX,
 } from '@agentver/shared'
 import { computeIntegrity } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -64,6 +65,7 @@ export function registerInstallTool(server: McpServer): void {
           .describe('Package name in org/name format (e.g. "my-org/typescript-rules")'),
         version: z
           .string()
+          .regex(SEMVER_REGEX, 'Must be valid semver')
           .optional()
           .describe('Semver version to install (e.g. "1.2.0"). Defaults to latest if omitted'),
         agents: z

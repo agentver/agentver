@@ -10,7 +10,7 @@ import type { ScanResult as SecurityScanResult } from '../security/index.js'
 import { renderScanResult, scanFiles } from '../security/index.js'
 import { getCanonicalSkillPath } from '../storage/canonical.js'
 import { readManifest } from '../storage/manifest.js'
-import { getDisplayName, resolvePackageQuery } from '../storage/package-identity.js'
+import { getPackageDisplayName, resolvePackageQuery } from '../storage/package-identity.js'
 import type { Scope } from '../utils/paths.js'
 
 type AuditOptions = {
@@ -185,7 +185,7 @@ export function registerAuditCommand(program: Command): void {
           continue
         }
 
-        const displayName = getDisplayName(pkgName, pkg)
+        const displayName = getPackageDisplayName(pkgName, pkg)
         const shortName = displayName.split('/').pop() ?? displayName
         const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
         const source = buildSourceFromManifest(pkg)

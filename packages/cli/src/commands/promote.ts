@@ -23,7 +23,7 @@ import { platformFetch } from '../registry/platform.js'
 import { scanFiles } from '../security/index.js'
 import { computeSha256FromFiles } from '../storage/integrity.js'
 import { readManifest } from '../storage/manifest.js'
-import { createStablePackageKey, resolvePackageQuery } from '../storage/package-identity.js'
+import { createPackageKey, resolvePackageQuery } from '../storage/package-identity.js'
 import { updateManifestAndLockfile } from '../storage/pair.js'
 import { extractError } from '../utils.js'
 
@@ -315,7 +315,7 @@ async function canonicalisePackage(
 
   const fileEntries = files.map((f) => ({ path: f.path, content: f.content }))
   const integrity = computeSha256FromFiles(fileEntries)
-  const packageKey = createStablePackageKey(entry.displayName, entry.newSource)
+  const packageKey = createPackageKey(entry.displayName, entry.newSource)
 
   const request: InstallRequest = {
     packageKey,
@@ -369,7 +369,7 @@ function applyPromoteEntry(
   if (!manifestPkg) return
 
   const oldKey = entry.packageKey
-  const newKey = createStablePackageKey(entry.displayName, entry.newSource)
+  const newKey = createPackageKey(entry.displayName, entry.newSource)
 
   const updatedManifestPkg: (typeof currentManifest.packages)[string] = {
     ...manifestPkg,

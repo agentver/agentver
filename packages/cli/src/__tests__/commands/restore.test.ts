@@ -146,7 +146,6 @@ vi.mock('@agentver/agent-definitions', () => ({
 
 vi.mock('@agentver/storage', () => ({
   computeIntegrity: vi.fn().mockReturnValue('sha256-test'),
-  createStablePackageKey: vi.fn().mockImplementation((name: string) => name),
 }))
 
 // Must come after vi.mock declarations

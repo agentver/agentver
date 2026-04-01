@@ -4024,8 +4024,8 @@ var require_util2 = __commonJS({
     function createDeferredPromise() {
       let res;
       let rej;
-      const promise2 = new Promise((resolve3, reject) => {
-        res = resolve3;
+      const promise2 = new Promise((resolve8, reject) => {
+        res = resolve8;
         rej = reject;
       });
       return { promise: promise2, resolve: res, reject: rej };
@@ -5530,8 +5530,8 @@ Content-Type: ${value.type || "application/octet-stream"}\r
                 });
               }
             });
-            const busboyResolve = new Promise((resolve3, reject) => {
-              busboy.on("finish", resolve3);
+            const busboyResolve = new Promise((resolve8, reject) => {
+              busboy.on("finish", resolve8);
               busboy.on("error", (err) => reject(new TypeError(err)));
             });
             if (this.body !== null) for await (const chunk of consumeBody(this[kState].body)) busboy.write(chunk);
@@ -6065,9 +6065,9 @@ var require_dispatcher_base = __commonJS({
       }
       close(callback) {
         if (callback === void 0) {
-          return new Promise((resolve3, reject) => {
+          return new Promise((resolve8, reject) => {
             this.close((err, data) => {
-              return err ? reject(err) : resolve3(data);
+              return err ? reject(err) : resolve8(data);
             });
           });
         }
@@ -6105,12 +6105,12 @@ var require_dispatcher_base = __commonJS({
           err = null;
         }
         if (callback === void 0) {
-          return new Promise((resolve3, reject) => {
+          return new Promise((resolve8, reject) => {
             this.destroy(err, (err2, data) => {
               return err2 ? (
                 /* istanbul ignore next: should never error */
                 reject(err2)
-              ) : resolve3(data);
+              ) : resolve8(data);
             });
           });
         }
@@ -7172,16 +7172,16 @@ var require_client = __commonJS({
         return this[kNeedDrain] < 2;
       }
       async [kClose]() {
-        return new Promise((resolve3) => {
+        return new Promise((resolve8) => {
           if (!this[kSize]) {
-            resolve3(null);
+            resolve8(null);
           } else {
-            this[kClosedResolve] = resolve3;
+            this[kClosedResolve] = resolve8;
           }
         });
       }
       async [kDestroy](err) {
-        return new Promise((resolve3) => {
+        return new Promise((resolve8) => {
           const requests = this[kQueue].splice(this[kPendingIdx]);
           for (let i = 0; i < requests.length; i++) {
             const request = requests[i];
@@ -7192,7 +7192,7 @@ var require_client = __commonJS({
               this[kClosedResolve]();
               this[kClosedResolve] = null;
             }
-            resolve3();
+            resolve8();
           };
           if (this[kHTTP2Session] != null) {
             util.destroy(this[kHTTP2Session], err);
@@ -7772,7 +7772,7 @@ var require_client = __commonJS({
         });
       }
       try {
-        const socket = await new Promise((resolve3, reject) => {
+        const socket = await new Promise((resolve8, reject) => {
           client[kConnector]({
             host,
             hostname: hostname3,
@@ -7784,7 +7784,7 @@ var require_client = __commonJS({
             if (err) {
               reject(err);
             } else {
-              resolve3(socket2);
+              resolve8(socket2);
             }
           });
         });
@@ -8408,12 +8408,12 @@ upgrade: ${upgrade}\r
           cb();
         }
       }
-      const waitForDrain = () => new Promise((resolve3, reject) => {
+      const waitForDrain = () => new Promise((resolve8, reject) => {
         assert2(callback === null);
         if (socket[kError]) {
           reject(socket[kError]);
         } else {
-          callback = resolve3;
+          callback = resolve8;
         }
       });
       if (client[kHTTPConnVersion] === "h2") {
@@ -8759,8 +8759,8 @@ var require_pool_base = __commonJS({
         if (this[kQueue].isEmpty()) {
           return Promise.all(this[kClients].map((c) => c.close()));
         } else {
-          return new Promise((resolve3) => {
-            this[kClosedResolve] = resolve3;
+          return new Promise((resolve8) => {
+            this[kClosedResolve] = resolve8;
           });
         }
       }
@@ -9338,7 +9338,7 @@ var require_readable = __commonJS({
         if (this.closed) {
           return Promise.resolve(null);
         }
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve8, reject) => {
           const signalListenerCleanup = signal ? util.addAbortListener(signal, () => {
             this.destroy();
           }) : noop;
@@ -9347,7 +9347,7 @@ var require_readable = __commonJS({
             if (signal && signal.aborted) {
               reject(signal.reason || Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
             } else {
-              resolve3(null);
+              resolve8(null);
             }
           }).on("error", noop).on("data", function(chunk) {
             limit -= chunk.length;
@@ -9369,11 +9369,11 @@ var require_readable = __commonJS({
         throw new TypeError("unusable");
       }
       assert2(!stream[kConsume]);
-      return new Promise((resolve3, reject) => {
+      return new Promise((resolve8, reject) => {
         stream[kConsume] = {
           type,
           stream,
-          resolve: resolve3,
+          resolve: resolve8,
           reject,
           length: 0,
           body: []
@@ -9408,12 +9408,12 @@ var require_readable = __commonJS({
       }
     }
     function consumeEnd(consume2) {
-      const { type, body, resolve: resolve3, stream, length } = consume2;
+      const { type, body, resolve: resolve8, stream, length } = consume2;
       try {
         if (type === "text") {
-          resolve3(toUSVString(Buffer.concat(body)));
+          resolve8(toUSVString(Buffer.concat(body)));
         } else if (type === "json") {
-          resolve3(JSON.parse(Buffer.concat(body)));
+          resolve8(JSON.parse(Buffer.concat(body)));
         } else if (type === "arrayBuffer") {
           const dst = new Uint8Array(length);
           let pos = 0;
@@ -9421,12 +9421,12 @@ var require_readable = __commonJS({
             dst.set(buf, pos);
             pos += buf.byteLength;
           }
-          resolve3(dst.buffer);
+          resolve8(dst.buffer);
         } else if (type === "blob") {
           if (!Blob2) {
             Blob2 = require("buffer").Blob;
           }
-          resolve3(new Blob2(body, { type: stream[kContentType] }));
+          resolve8(new Blob2(body, { type: stream[kContentType] }));
         }
         consumeFinish(consume2);
       } catch (err) {
@@ -9683,9 +9683,9 @@ var require_api_request = __commonJS({
     };
     function request(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve8, reject) => {
           request.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve3(data);
+            return err ? reject(err) : resolve8(data);
           });
         });
       }
@@ -9858,9 +9858,9 @@ var require_api_stream = __commonJS({
     };
     function stream(opts, factory, callback) {
       if (callback === void 0) {
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve8, reject) => {
           stream.call(this, opts, factory, (err, data) => {
-            return err ? reject(err) : resolve3(data);
+            return err ? reject(err) : resolve8(data);
           });
         });
       }
@@ -10141,9 +10141,9 @@ var require_api_upgrade = __commonJS({
     };
     function upgrade(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve8, reject) => {
           upgrade.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve3(data);
+            return err ? reject(err) : resolve8(data);
           });
         });
       }
@@ -10232,9 +10232,9 @@ var require_api_connect = __commonJS({
     };
     function connect(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve8, reject) => {
           connect.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve3(data);
+            return err ? reject(err) : resolve8(data);
           });
         });
       }
@@ -13857,7 +13857,7 @@ var require_fetch = __commonJS({
       async function dispatch({ body }) {
         const url2 = requestCurrentURL(request);
         const agent = fetchParams.controller.dispatcher;
-        return new Promise((resolve3, reject) => agent.dispatch(
+        return new Promise((resolve8, reject) => agent.dispatch(
           {
             path: url2.pathname + url2.search,
             origin: url2.origin,
@@ -13933,7 +13933,7 @@ var require_fetch = __commonJS({
                   }
                 }
               }
-              resolve3({
+              resolve8({
                 status,
                 statusText,
                 headersList: headers[kHeadersList],
@@ -13976,7 +13976,7 @@ var require_fetch = __commonJS({
                 const val = headersList[n + 1].toString("latin1");
                 headers[kHeadersList].append(key, val);
               }
-              resolve3({
+              resolve8({
                 status,
                 statusText: STATUS_CODES[status],
                 headersList: headers[kHeadersList],
@@ -17330,11 +17330,11 @@ var require_lib = __commonJS({
     };
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -17350,7 +17350,7 @@ var require_lib = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -17436,26 +17436,26 @@ var require_lib = __commonJS({
       }
       readBody() {
         return __awaiter(this, void 0, void 0, function* () {
-          return new Promise((resolve3) => __awaiter(this, void 0, void 0, function* () {
+          return new Promise((resolve8) => __awaiter(this, void 0, void 0, function* () {
             let output = Buffer.alloc(0);
             this.message.on("data", (chunk) => {
               output = Buffer.concat([output, chunk]);
             });
             this.message.on("end", () => {
-              resolve3(output.toString());
+              resolve8(output.toString());
             });
           }));
         });
       }
       readBodyBuffer() {
         return __awaiter(this, void 0, void 0, function* () {
-          return new Promise((resolve3) => __awaiter(this, void 0, void 0, function* () {
+          return new Promise((resolve8) => __awaiter(this, void 0, void 0, function* () {
             const chunks = [];
             this.message.on("data", (chunk) => {
               chunks.push(chunk);
             });
             this.message.on("end", () => {
-              resolve3(Buffer.concat(chunks));
+              resolve8(Buffer.concat(chunks));
             });
           }));
         });
@@ -17664,14 +17664,14 @@ var require_lib = __commonJS({
        */
       requestRaw(info3, data) {
         return __awaiter(this, void 0, void 0, function* () {
-          return new Promise((resolve3, reject) => {
+          return new Promise((resolve8, reject) => {
             function callbackForResult(err, res) {
               if (err) {
                 reject(err);
               } else if (!res) {
                 reject(new Error("Unknown error"));
               } else {
-                resolve3(res);
+                resolve8(res);
               }
             }
             this.requestRawWithCallback(info3, data, callbackForResult);
@@ -17853,12 +17853,12 @@ var require_lib = __commonJS({
         return __awaiter(this, void 0, void 0, function* () {
           retryNumber = Math.min(ExponentialBackoffCeiling, retryNumber);
           const ms = ExponentialBackoffTimeSlice * Math.pow(2, retryNumber);
-          return new Promise((resolve3) => setTimeout(() => resolve3(), ms));
+          return new Promise((resolve8) => setTimeout(() => resolve8(), ms));
         });
       }
       _processResponse(res, options) {
         return __awaiter(this, void 0, void 0, function* () {
-          return new Promise((resolve3, reject) => __awaiter(this, void 0, void 0, function* () {
+          return new Promise((resolve8, reject) => __awaiter(this, void 0, void 0, function* () {
             const statusCode = res.message.statusCode || 0;
             const response = {
               statusCode,
@@ -17866,7 +17866,7 @@ var require_lib = __commonJS({
               headers: {}
             };
             if (statusCode === HttpCodes.NotFound) {
-              resolve3(response);
+              resolve8(response);
             }
             function dateTimeDeserializer(key, value) {
               if (typeof value === "string") {
@@ -17905,7 +17905,7 @@ var require_lib = __commonJS({
               err.result = response.result;
               reject(err);
             } else {
-              resolve3(response);
+              resolve8(response);
             }
           }));
         });
@@ -17922,11 +17922,11 @@ var require_auth = __commonJS({
     "use strict";
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -17942,7 +17942,7 @@ var require_auth = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -18026,11 +18026,11 @@ var require_oidc_utils = __commonJS({
     "use strict";
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -18046,7 +18046,7 @@ var require_oidc_utils = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -18124,11 +18124,11 @@ var require_summary = __commonJS({
     "use strict";
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -18144,7 +18144,7 @@ var require_summary = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -18490,11 +18490,11 @@ var require_io_util = __commonJS({
     };
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -18510,7 +18510,7 @@ var require_io_util = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -18663,11 +18663,11 @@ var require_io = __commonJS({
     };
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -18683,7 +18683,7 @@ var require_io = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -18911,11 +18911,11 @@ var require_toolrunner = __commonJS({
     };
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -18931,7 +18931,7 @@ var require_toolrunner = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -19159,7 +19159,7 @@ var require_toolrunner = __commonJS({
             this.toolPath = path.resolve(process.cwd(), this.options.cwd || process.cwd(), this.toolPath);
           }
           this.toolPath = yield io.which(this.toolPath, true);
-          return new Promise((resolve3, reject) => __awaiter(this, void 0, void 0, function* () {
+          return new Promise((resolve8, reject) => __awaiter(this, void 0, void 0, function* () {
             this._debug(`exec tool: ${this.toolPath}`);
             this._debug("arguments:");
             for (const arg of this.args) {
@@ -19242,7 +19242,7 @@ var require_toolrunner = __commonJS({
               if (error48) {
                 reject(error48);
               } else {
-                resolve3(exitCode);
+                resolve8(exitCode);
               }
             });
             if (this.options.input) {
@@ -19395,11 +19395,11 @@ var require_exec = __commonJS({
     };
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -19415,7 +19415,7 @@ var require_exec = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -19506,11 +19506,11 @@ var require_platform = __commonJS({
     };
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -19526,7 +19526,7 @@ var require_platform = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -19625,11 +19625,11 @@ var require_core = __commonJS({
     };
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve3) {
-          resolve3(value);
+        return value instanceof P ? value : new P(function(resolve8) {
+          resolve8(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve3, reject) {
+      return new (P || (P = Promise))(function(resolve8, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -19645,7 +19645,7 @@ var require_core = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve3(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve8(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -19822,13 +19822,12 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
 });
 
 // src/index.ts
-var import_node_path3 = require("path");
+var import_node_path11 = require("path");
 var core3 = __toESM(require_core());
 
 // src/installer.ts
-var import_node_crypto = require("crypto");
-var import_node_fs2 = require("fs");
-var import_node_path2 = require("path");
+var import_node_fs14 = require("fs");
+var import_node_path10 = require("path");
 var core = __toESM(require_core());
 
 // ../agent-definitions/src/agents/definitions.ts
@@ -20409,65 +20408,429 @@ function getSkillPlacementPath(agentId, skillName, scope) {
   const basePath = scope === "project" ? agent.projectSkillPath : agent.globalSkillPath;
   return (0, import_node_path.join)(basePath, skillName);
 }
-
-// ../agent-definitions/src/types.ts
-var AGENT_IDS = [
-  "adal",
-  "aider",
-  "amp",
-  "antigravity",
-  "augment",
-  "claude-code",
-  "claude-cowork",
-  "cline",
-  "codebuddy",
-  "codex",
-  "command-code",
-  "continue",
-  "copilot",
-  "cortex",
-  "crush",
-  "cursor",
-  "droid",
-  "gemini-cli",
-  "goose",
-  "iflow-cli",
-  "junie",
-  "kilo",
-  "kimi-cli",
-  "kiro-cli",
-  "kode",
-  "mcpjam",
-  "mistral-vibe",
-  "mux",
-  "neovate",
-  "openclaw",
-  "opencode",
-  "openhands",
-  "pi",
-  "pochi",
-  "qoder",
-  "qwen-code",
-  "replit",
-  "roo",
-  "trae",
-  "trae-cn",
-  "universal",
-  "windsurf",
-  "zencoder"
-];
-var AGENT_ALIASES = {
-  gemini: "gemini-cli",
-  "roo-code": "roo",
-  "github-copilot": "copilot"
-};
-function resolveAgentId(id) {
-  const normalised = id.toLowerCase().trim();
-  if (AGENT_IDS.includes(normalised)) {
-    return normalised;
-  }
-  return AGENT_ALIASES[normalised] ?? null;
+function getAgentPlacementPath(agentId, fileName, scope) {
+  const agent = AGENT_DEFINITIONS.find((a) => a.id === agentId);
+  if (!agent) return null;
+  const basePath = scope === "project" ? agent.agentsPath : agent.globalAgentsPath;
+  if (!basePath) return null;
+  return (0, import_node_path.join)(basePath, fileName);
 }
+function getCommandPlacementPath(agentId, fileName, scope) {
+  const agent = AGENT_DEFINITIONS.find((a) => a.id === agentId);
+  if (!agent) return null;
+  const basePath = scope === "project" ? agent.commandsPath : agent.globalCommandsPath;
+  if (!basePath) return null;
+  return (0, import_node_path.join)(basePath, fileName);
+}
+
+// ../installer/dist/backup.js
+var import_node_fs2 = require("fs");
+var import_node_os = require("os");
+var import_node_path2 = require("path");
+function createFilesystemBackup(paths, _reason) {
+  const id = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+  const tempDir = (0, import_node_fs2.mkdtempSync)((0, import_node_path2.join)((0, import_node_os.tmpdir)(), `agentver-backup-${id}-`));
+  const originalPaths = [];
+  const uniquePaths = [...new Set(paths)];
+  for (const [i, originalPath] of uniquePaths.entries()) {
+    if (!(0, import_node_fs2.existsSync)(originalPath))
+      continue;
+    const backupPath = (0, import_node_path2.join)(tempDir, `target-${String(i)}`);
+    (0, import_node_fs2.cpSync)(originalPath, backupPath, { recursive: true, dereference: false });
+    originalPaths.push(originalPath);
+  }
+  return {
+    id,
+    backupPath: tempDir,
+    originalPaths,
+    cleanup: () => {
+      if ((0, import_node_fs2.existsSync)(tempDir)) {
+        (0, import_node_fs2.rmSync)(tempDir, { recursive: true, force: true });
+      }
+    }
+  };
+}
+function restoreFilesystemBackup(handle) {
+  if (!(0, import_node_fs2.existsSync)(handle.backupPath))
+    return;
+  const uniquePaths = [...new Set(handle.originalPaths)];
+  for (const [i, originalPath] of uniquePaths.entries()) {
+    const backupPath = (0, import_node_path2.join)(handle.backupPath, `target-${String(i)}`);
+    if (!(0, import_node_fs2.existsSync)(backupPath))
+      continue;
+    (0, import_node_fs2.rmSync)(originalPath, { recursive: true, force: true });
+    (0, import_node_fs2.mkdirSync)((0, import_node_path2.dirname)(originalPath), { recursive: true });
+    (0, import_node_fs2.cpSync)(backupPath, originalPath, { recursive: true, dereference: false });
+  }
+}
+
+// ../installer/dist/canonical.js
+var import_node_fs3 = require("fs");
+var import_node_os2 = require("os");
+var import_node_path3 = require("path");
+var CANONICAL_CATEGORY_DIRS = {
+  skills: ".agents/skills",
+  agents: ".agents/agents",
+  commands: ".agents/commands"
+};
+function resolveCanonicalCategory(packageType) {
+  switch (packageType) {
+    case "AGENT":
+      return "agents";
+    case "COMMAND":
+      return "commands";
+    case "SKILL":
+    case "AGENT_CONFIG":
+    case "PLUGIN":
+    case "SCRIPT":
+    case "PROMPT":
+    case "BUNDLE":
+      return "skills";
+  }
+}
+function getScopeRoot(projectRoot, scope) {
+  return scope === "global" ? (0, import_node_os2.homedir)() : projectRoot;
+}
+function validateName(name, label) {
+  if (name.includes("..") || name.startsWith("/")) {
+    throw new Error(`Invalid ${label}: path traversal detected in "${name}"`);
+  }
+}
+function getCanonicalSkillPath(projectRoot, name, scope) {
+  validateName(name, "skill name");
+  const root = getScopeRoot(projectRoot, scope);
+  return (0, import_node_path3.join)(root, CANONICAL_CATEGORY_DIRS.skills, name);
+}
+function getCanonicalFilePath(projectRoot, name, category, scope) {
+  validateName(name, "name");
+  const root = getScopeRoot(projectRoot, scope);
+  return (0, import_node_path3.join)(root, CANONICAL_CATEGORY_DIRS[category], `${name}.md`);
+}
+function resolvePlacementPath(placementPath, projectRoot, scope) {
+  if (scope === "global") {
+    const home = (0, import_node_os2.homedir)();
+    if (!placementPath.startsWith("~"))
+      return null;
+    const resolved2 = (0, import_node_path3.join)(home, placementPath.slice(1));
+    if (!resolved2.startsWith(`${home}/`))
+      return null;
+    return resolved2;
+  }
+  const resolved = (0, import_node_path3.join)(projectRoot, placementPath);
+  if (!resolved.startsWith(`${projectRoot}/`) && resolved !== projectRoot)
+    return null;
+  return resolved;
+}
+function getPlacementPathForCategory(agentId, name, category, scope) {
+  const agentScope = scope === "global" ? "global" : "project";
+  switch (category) {
+    case "skills":
+      return getSkillPlacementPath(agentId, name, agentScope);
+    case "agents":
+      return getAgentPlacementPath(agentId, `${name}.md`, agentScope);
+    case "commands":
+      return getCommandPlacementPath(agentId, `${name}.md`, agentScope);
+  }
+}
+function isSymlink(filePath) {
+  try {
+    const stats = (0, import_node_fs3.lstatSync)(filePath);
+    return stats.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+// ../installer/dist/conflict.js
+var import_node_fs4 = require("fs");
+var import_node_path4 = require("path");
+function detectConflicts(projectRoot, name, agents, scope, category, canonicalPath) {
+  const conflicts = [];
+  for (const agentId of agents) {
+    const placementPath = getPlacementPathForCategory(agentId, name, category, scope);
+    if (!placementPath)
+      continue;
+    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope);
+    if (!fullPath)
+      continue;
+    if (!(0, import_node_fs4.existsSync)(fullPath) && !isSymlink(fullPath)) {
+      continue;
+    }
+    if (isAgentverManagedSymlink(fullPath, canonicalPath)) {
+      continue;
+    }
+    const stats = (0, import_node_fs4.lstatSync)(fullPath);
+    conflicts.push({
+      agentId,
+      path: fullPath,
+      kind: stats.isDirectory() ? "directory" : "file"
+    });
+  }
+  return conflicts;
+}
+function isAgentverManagedSymlink(symlinkPath, canonicalPath) {
+  try {
+    const stats = (0, import_node_fs4.lstatSync)(symlinkPath);
+    if (!stats.isSymbolicLink())
+      return false;
+    const target = (0, import_node_fs4.readlinkSync)(symlinkPath);
+    const resolvedTarget = (0, import_node_path4.resolve)((0, import_node_path4.dirname)(symlinkPath), target);
+    return resolvedTarget === (0, import_node_path4.resolve)(canonicalPath);
+  } catch {
+    return false;
+  }
+}
+
+// ../installer/dist/executor.js
+var import_node_fs13 = require("fs");
+var import_node_path9 = require("path");
+
+// ../storage/dist/errors.js
+var StorageCorruptionError = class extends Error {
+  name = "StorageCorruptionError";
+  filePath;
+  reason;
+  constructor(filePath, reason) {
+    const detail = reason === "invalid-json" ? "could not parse JSON" : "schema validation failed with zero recoverable entries";
+    super(`Corrupt storage file at ${filePath} \u2014 ${detail}`);
+    this.filePath = filePath;
+    this.reason = reason;
+  }
+};
+var StorageLockError = class extends Error {
+  name = "StorageLockError";
+  lockPath;
+  holderPid;
+  timeoutMs;
+  constructor(lockPath, holderPid, timeoutMs) {
+    const holderInfo = holderPid !== void 0 ? ` (held by pid ${holderPid})` : "";
+    super(`Could not acquire storage lock at ${lockPath}${holderInfo} within ${timeoutMs}ms. Another agentver process may be running. If this is a mistake, remove the lock file manually: ${lockPath}`);
+    this.lockPath = lockPath;
+    this.holderPid = holderPid;
+    this.timeoutMs = timeoutMs;
+  }
+};
+var IntegrityError = class extends Error {
+  name = "IntegrityError";
+  packageName;
+  expected;
+  actual;
+  constructor(packageName, expected, actual) {
+    super(`Integrity check failed for "${packageName}": expected ${expected}, got ${actual}`);
+    this.packageName = packageName;
+    this.expected = expected;
+    this.actual = actual;
+  }
+};
+
+// ../storage/dist/file-lock.js
+var import_node_fs6 = require("fs");
+
+// ../storage/dist/files.js
+var import_node_fs5 = require("fs");
+var import_node_os3 = require("os");
+var import_node_path5 = require("path");
+
+// ../storage/dist/serialise.js
+function sortDeep(value) {
+  if (value === null || value === void 0) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const allStrings = value.length > 0 && value.every((item) => typeof item === "string");
+    if (allStrings) {
+      return [...value].sort();
+    }
+    return value.map(sortDeep);
+  }
+  if (typeof value === "object") {
+    const sorted = {};
+    const keys = Object.keys(value).sort();
+    for (const key of keys) {
+      sorted[key] = sortDeep(value[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+function serialiseDeterministic(data) {
+  const sorted = sortDeep(data);
+  return `${JSON.stringify(sorted, null, 2)}
+`;
+}
+
+// ../storage/dist/files.js
+var STORAGE_DIR = ".agentver";
+var MANIFEST_FILE = "manifest.json";
+var LOCKFILE_FILE = "lockfile.json";
+var LOCK_FILENAME = ".lock";
+var TRANSACTION_FILE = "storage-transaction.json";
+function getStorageRoot(projectRoot, scope) {
+  if (scope === "global") {
+    return (0, import_node_path5.join)((0, import_node_os3.homedir)(), STORAGE_DIR);
+  }
+  return (0, import_node_path5.join)(projectRoot, STORAGE_DIR);
+}
+function getManifestPath(projectRoot, scope = "project") {
+  return (0, import_node_path5.join)(getStorageRoot(projectRoot, scope), MANIFEST_FILE);
+}
+function getLockfilePath(projectRoot, scope = "project") {
+  return (0, import_node_path5.join)(getStorageRoot(projectRoot, scope), LOCKFILE_FILE);
+}
+function getStorageTransactionPath(projectRoot, scope = "project") {
+  return (0, import_node_path5.join)(getStorageRoot(projectRoot, scope), TRANSACTION_FILE);
+}
+function getLockPath(projectRoot, scope = "project") {
+  return (0, import_node_path5.join)(getStorageRoot(projectRoot, scope), LOCK_FILENAME);
+}
+function ensureStorageDir(projectRoot, scope = "project") {
+  const dir = getStorageRoot(projectRoot, scope);
+  if (!(0, import_node_fs5.existsSync)(dir)) {
+    (0, import_node_fs5.mkdirSync)(dir, { recursive: true });
+  }
+}
+function writeJsonFileAtomic(filePath, value) {
+  const tmpPath = `${filePath}.tmp`;
+  try {
+    (0, import_node_fs5.writeFileSync)(tmpPath, serialiseDeterministic(value));
+    (0, import_node_fs5.renameSync)(tmpPath, filePath);
+  } catch (error48) {
+    try {
+      (0, import_node_fs5.rmSync)(tmpPath, { force: true });
+    } catch {
+    }
+    throw error48;
+  }
+}
+
+// ../storage/dist/file-lock.js
+var DEFAULT_ACQUIRE_TIMEOUT_MS = 1e4;
+var DEFAULT_RETRY_INTERVAL_MS = 50;
+var DEFAULT_STALE_THRESHOLD_MS = 3e4;
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function readLockPayload(lockPath) {
+  try {
+    const raw = (0, import_node_fs6.readFileSync)(lockPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.pid === "number" && typeof parsed.createdAt === "number") {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function isLockStale(payload, staleThresholdMs) {
+  if (!isProcessAlive(payload.pid)) {
+    return true;
+  }
+  return Date.now() - payload.createdAt > staleThresholdMs;
+}
+function isEexistError(error48) {
+  return error48 !== null && typeof error48 === "object" && "code" in error48 && error48.code === "EEXIST";
+}
+function createRelease(lockPath, callbacks) {
+  let released = false;
+  return () => {
+    if (released)
+      return;
+    released = true;
+    try {
+      (0, import_node_fs6.rmSync)(lockPath, { force: true });
+      callbacks?.onDebug?.(`Lock released at ${lockPath}`);
+    } catch (error48) {
+      callbacks?.onWarning?.(`Failed to release lock at ${lockPath}: ${String(error48)}`);
+    }
+  };
+}
+function acquireLock(projectRoot, scope = "project", options, callbacks) {
+  const mode = options?.mode ?? "exclusive";
+  if (mode === "none") {
+    return () => {
+    };
+  }
+  const { acquireTimeoutMs = DEFAULT_ACQUIRE_TIMEOUT_MS, retryIntervalMs = DEFAULT_RETRY_INTERVAL_MS, staleThresholdMs = DEFAULT_STALE_THRESHOLD_MS } = options ?? {};
+  const lockDir = getStorageRoot(projectRoot, scope);
+  const lockPath = getLockPath(projectRoot, scope);
+  if (!(0, import_node_fs6.existsSync)(lockDir)) {
+    (0, import_node_fs6.mkdirSync)(lockDir, { recursive: true });
+  }
+  const payload = {
+    pid: process.pid,
+    createdAt: Date.now()
+  };
+  const payloadStr = JSON.stringify(payload);
+  const effectiveTimeout = mode === "advisory" ? 0 : acquireTimeoutMs;
+  const deadline = Date.now() + effectiveTimeout;
+  while (true) {
+    try {
+      (0, import_node_fs6.writeFileSync)(lockPath, payloadStr, { flag: "wx" });
+      callbacks?.onDebug?.(`Lock acquired at ${lockPath} (pid ${process.pid})`);
+      return createRelease(lockPath, callbacks);
+    } catch (error48) {
+      if (!isEexistError(error48)) {
+        throw error48;
+      }
+    }
+    const existing = readLockPayload(lockPath);
+    if (existing && isLockStale(existing, staleThresholdMs)) {
+      callbacks?.onWarning?.(`Reclaiming stale lock at ${lockPath} (held by pid ${existing.pid}, created ${Date.now() - existing.createdAt}ms ago)`);
+      try {
+        (0, import_node_fs6.rmSync)(lockPath, { force: true });
+      } catch {
+      }
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      if (mode === "advisory") {
+        callbacks?.onWarning?.(`Could not acquire advisory lock at ${lockPath}` + (existing ? ` (held by pid ${existing.pid})` : "") + " \u2014 proceeding without lock");
+        return () => {
+        };
+      }
+      throw new StorageLockError(lockPath, existing?.pid, acquireTimeoutMs);
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, retryIntervalMs);
+  }
+}
+function withStorageLock(projectRoot, scope, callback, options, callbacks) {
+  const release = acquireLock(projectRoot, scope, options, callbacks);
+  try {
+    return callback();
+  } finally {
+    release();
+  }
+}
+
+// ../storage/dist/integrity.js
+var import_node_crypto = require("crypto");
+function computeIntegrity(files) {
+  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
+  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join("\0");
+  return computeIntegrityFromBuffer(combined);
+}
+function computeIntegrityFromBuffer(content) {
+  const hash2 = (0, import_node_crypto.createHash)("sha256").update(content).digest("base64");
+  return `sha256-${hash2}`;
+}
+function verifyIntegrity(files, expected, packageName) {
+  if (!expected) {
+    return;
+  }
+  const actual = computeIntegrity(files);
+  if (actual !== expected) {
+    throw new IntegrityError(packageName, expected, actual);
+  }
+}
+
+// ../storage/dist/lockfile.js
+var import_node_fs7 = require("fs");
 
 // ../../node_modules/.bun/zod@4.3.6/node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -34343,35 +34706,6 @@ var packageSourceSchema = external_exports.discriminatedUnion("type", [
   unknownSourceSchema,
   wellKnownSourceSchema
 ]);
-function normalisePackageSource(source) {
-  if (source.type !== "git") {
-    return source;
-  }
-  if (source.uri === "local") {
-    return {
-      type: "local",
-      path: source.path
-    };
-  }
-  if (source.uri === "unknown") {
-    return {
-      type: "unknown",
-      path: source.path,
-      ref: source.ref,
-      commit: source.commit
-    };
-  }
-  if (source.uri.startsWith("agentver://")) {
-    return {
-      type: "platform",
-      uri: source.uri,
-      path: source.path,
-      ref: source.ref,
-      commit: source.commit
-    };
-  }
-  return source;
-}
 function getPackageSourceReference(source) {
   switch (source.type) {
     case "git":
@@ -34389,9 +34723,9 @@ function createPackageKey(displayName, source) {
   const identity = (() => {
     switch (source.type) {
       case "git":
-        return `${source.uri}#${source.path}`;
+        return `${source.uri}#${source.path}#${source.ref}`;
       case "platform":
-        return `${source.uri}#${source.path}`;
+        return `${source.uri}#${source.path}#${source.ref}`;
       case "well-known":
         return `${source.baseUrl}#${source.skillName}`;
       case "local":
@@ -34402,8 +34736,16 @@ function createPackageKey(displayName, source) {
   })();
   return `${source.type}:${encodeURIComponent(identity)}`;
 }
-function getPackageDisplayName(manifestKey, pkg) {
-  return pkg.name?.trim() || manifestKey;
+function extractFilesFromManifest(fileManifest) {
+  if (Array.isArray(fileManifest)) {
+    return fileManifest.filter((entry) => {
+      if (typeof entry !== "object" || entry === null)
+        return false;
+      const record2 = entry;
+      return typeof record2.path === "string" && typeof record2.content === "string";
+    });
+  }
+  return Object.entries(fileManifest).filter(([, value]) => typeof value === "string").map(([path, content]) => ({ path, content }));
 }
 var manifestV2PackageSchema = external_exports.object({
   name: external_exports.string().min(1).optional(),
@@ -34423,25 +34765,6 @@ var manifestV2Schema = external_exports.object({
   version: external_exports.literal(STORAGE_SCHEMA_VERSION),
   packages: external_exports.record(external_exports.string(), manifestV2PackageSchema)
 });
-function normaliseManifestV2(manifest) {
-  const packages = Object.fromEntries(Object.entries(manifest.packages).map(([name, pkg]) => {
-    const source = normalisePackageSource(pkg.source);
-    const displayName = getPackageDisplayName(name, pkg);
-    const stableKey = createPackageKey(displayName, source);
-    return [
-      stableKey,
-      {
-        name: displayName,
-        ...pkg,
-        source
-      }
-    ];
-  }));
-  return {
-    version: STORAGE_SCHEMA_VERSION,
-    packages
-  };
-}
 var linkModeSchema = external_exports.enum(["symlink", "copy", "junction"]);
 var lockfileV2PackageSchema = external_exports.object({
   name: external_exports.string().min(1).optional(),
@@ -34457,27 +34780,6 @@ var lockfileV2Schema = external_exports.object({
   version: external_exports.literal(STORAGE_SCHEMA_VERSION),
   packages: external_exports.record(external_exports.string(), lockfileV2PackageSchema)
 });
-function normaliseLockfileV2(lockfile) {
-  const packages = Object.fromEntries(Object.entries(lockfile.packages).map(([name, pkg]) => {
-    const source = normalisePackageSource(pkg.source);
-    const displayName = getPackageDisplayName(name, pkg);
-    const stableKey = createPackageKey(displayName, source);
-    return [
-      stableKey,
-      {
-        name: displayName,
-        ...pkg,
-        source
-      }
-    ];
-  }));
-  return {
-    version: STORAGE_SCHEMA_VERSION,
-    packages
-  };
-}
-var manifestAnySchema = manifestV2Schema;
-var lockfileAnySchema = lockfileV2Schema;
 var packageStructureSchema = external_exports.object({
   type: external_exports.enum([
     "SKILL",
@@ -34882,6 +35184,75 @@ var doctorResultSchema = external_exports.object({
   failed: external_exports.number(),
   warnings: external_exports.number()
 });
+var backupReasonSchema = external_exports.enum([
+  "conflict-replace",
+  "config-overwrite",
+  "update-replace",
+  "manual"
+]);
+var backupItemSchema = external_exports.object({
+  originalPath: external_exports.string(),
+  backupRelativePath: external_exports.string(),
+  kind: external_exports.enum(["file", "directory"]),
+  size: external_exports.number()
+});
+var backupIndexEntrySchema = external_exports.object({
+  id: external_exports.string(),
+  createdAt: external_exports.string(),
+  packageKey: external_exports.string(),
+  displayName: external_exports.string(),
+  reason: backupReasonSchema,
+  items: external_exports.array(backupItemSchema),
+  manifestEntry: external_exports.unknown().optional(),
+  lockfileEntry: external_exports.unknown().optional()
+});
+var backupIndexSchema = external_exports.object({
+  version: external_exports.literal(1),
+  entries: external_exports.array(backupIndexEntrySchema)
+});
+var backupListResultSchema = external_exports.object({
+  backups: external_exports.array(backupIndexEntrySchema)
+});
+var backupRestoreResultSchema = external_exports.object({
+  restored: external_exports.boolean(),
+  backupId: external_exports.string(),
+  paths: external_exports.array(external_exports.string())
+});
+var backupDeleteResultSchema = external_exports.object({
+  deleted: external_exports.boolean(),
+  backupId: external_exports.string()
+});
+var restorePackageResultSchema = external_exports.object({
+  packageKey: external_exports.string(),
+  displayName: external_exports.string(),
+  status: external_exports.enum(["installed", "up-to-date", "skipped", "failed", "integrity-mismatch"]),
+  agents: external_exports.array(external_exports.string()).optional(),
+  filesPlacedCount: external_exports.number().optional(),
+  reason: external_exports.string().optional(),
+  error: external_exports.string().optional()
+});
+var restoreResultSchema = external_exports.object({
+  type: external_exports.literal("RESTORE_COMPLETE"),
+  packages: external_exports.array(restorePackageResultSchema),
+  installedCount: external_exports.number(),
+  upToDateCount: external_exports.number(),
+  skippedCount: external_exports.number(),
+  failedCount: external_exports.number(),
+  success: external_exports.boolean()
+});
+var promoteResultSchema = external_exports.object({
+  type: external_exports.literal("PROMOTE_SUCCESS"),
+  packageKey: external_exports.string(),
+  displayName: external_exports.string(),
+  previousSource: packageSourceSchema,
+  newSource: packageSourceSchema,
+  dirty: external_exports.boolean().optional(),
+  canonicalised: external_exports.boolean().optional()
+});
+var ciResultSchema = external_exports.object({
+  restore: restoreResultSchema,
+  success: external_exports.boolean()
+});
 
 // ../shared/dist/mcp-schemas.js
 var mcpTransportSchema = external_exports.enum(["stdio", "http", "sse"]);
@@ -35027,6 +35398,751 @@ var agentverSkillSchema = agentSkillsSpecSchema.extend({
   conflictsWith: external_exports.array(external_exports.string()).optional()
 });
 
+// ../storage/dist/lockfile.js
+var EMPTY_LOCKFILE = { version: STORAGE_SCHEMA_VERSION, packages: {} };
+function readLockfile(projectRoot, scope = "project", options) {
+  const lockfilePath = getLockfilePath(projectRoot, scope);
+  if (!(0, import_node_fs7.existsSync)(lockfilePath)) {
+    return { data: { ...EMPTY_LOCKFILE, packages: {} } };
+  }
+  const raw = (0, import_node_fs7.readFileSync)(lockfilePath, "utf-8");
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new StorageCorruptionError(lockfilePath, "invalid-json");
+  }
+  const result = lockfileV2Schema.safeParse(parsed);
+  if (!result.success) {
+    options?.onWarning?.(`Invalid lockfile at ${lockfilePath}: ${result.error.message}`);
+    return { data: { version: STORAGE_SCHEMA_VERSION, packages: {} } };
+  }
+  return { data: result.data };
+}
+function writeLockfile(projectRoot, lockfile, scope = "project", lockOptions) {
+  withStorageLock(projectRoot, scope, () => writeLockfileUnsafe(projectRoot, lockfile, scope), lockOptions);
+}
+function writeLockfileUnsafe(projectRoot, lockfile, scope = "project") {
+  ensureStorageDir(projectRoot, scope);
+  writeJsonFileAtomic(getLockfilePath(projectRoot, scope), lockfile);
+}
+
+// ../storage/dist/manifest.js
+var import_node_fs8 = require("fs");
+var EMPTY_MANIFEST = { version: STORAGE_SCHEMA_VERSION, packages: {} };
+function readManifest(projectRoot, scope = "project", options) {
+  const manifestPath = getManifestPath(projectRoot, scope);
+  if (!(0, import_node_fs8.existsSync)(manifestPath)) {
+    return { data: { ...EMPTY_MANIFEST, packages: {} } };
+  }
+  const raw = (0, import_node_fs8.readFileSync)(manifestPath, "utf-8");
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new StorageCorruptionError(manifestPath, "invalid-json");
+  }
+  const result = manifestV2Schema.safeParse(parsed);
+  if (!result.success) {
+    options?.onWarning?.(`Invalid manifest at ${manifestPath}: ${result.error.message}`);
+    return { data: { version: STORAGE_SCHEMA_VERSION, packages: {} } };
+  }
+  return { data: result.data };
+}
+
+// ../storage/dist/package-identity.js
+function getPackageDisplayName(manifestKey, pkg) {
+  return pkg.name?.trim() || manifestKey;
+}
+function setManifestPackage(manifest, displayName, entry) {
+  const nextEntry = { ...entry, name: displayName };
+  const key = createPackageKey(displayName, nextEntry.source);
+  manifest.packages[key] = nextEntry;
+  return key;
+}
+function setLockfilePackage(lockfile, displayName, entry) {
+  const nextEntry = { ...entry, name: displayName };
+  const key = createPackageKey(displayName, nextEntry.source);
+  lockfile.packages[key] = nextEntry;
+  return key;
+}
+
+// ../storage/dist/transaction.js
+var import_node_fs9 = require("fs");
+function recoverPendingStorageTransaction(projectRoot, scope = "project", callbacks) {
+  const transactionPath = getStorageTransactionPath(projectRoot, scope);
+  if (!(0, import_node_fs9.existsSync)(transactionPath)) {
+    return;
+  }
+  try {
+    const raw = (0, import_node_fs9.readFileSync)(transactionPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!parsed.manifest || !parsed.lockfile) {
+      callbacks?.onWarning?.(`Ignoring invalid storage transaction at ${transactionPath}`);
+      (0, import_node_fs9.rmSync)(transactionPath, { force: true });
+      return;
+    }
+    const manifestResult = manifestV2Schema.safeParse(parsed.manifest);
+    const lockfileResult = lockfileV2Schema.safeParse(parsed.lockfile);
+    if (!manifestResult.success || !lockfileResult.success) {
+      callbacks?.onWarning?.(`Ignoring invalid storage transaction at ${transactionPath}`);
+      (0, import_node_fs9.rmSync)(transactionPath, { force: true });
+      return;
+    }
+    ensureStorageDir(projectRoot, scope);
+    writeJsonFileAtomic(getManifestPath(projectRoot, scope), manifestResult.data);
+    writeJsonFileAtomic(getLockfilePath(projectRoot, scope), lockfileResult.data);
+    (0, import_node_fs9.rmSync)(transactionPath, { force: true });
+    callbacks?.onWarning?.(`Recovered pending storage transaction at ${transactionPath}`);
+  } catch (error48) {
+    callbacks?.onWarning?.(`Failed to recover storage transaction at ${transactionPath}: ${String(error48)}`);
+    (0, import_node_fs9.rmSync)(transactionPath, { force: true });
+  }
+}
+function writeStorageTransaction(projectRoot, manifest, lockfile, scope = "project") {
+  ensureStorageDir(projectRoot, scope);
+  const transactionPath = getStorageTransactionPath(projectRoot, scope);
+  const transaction = { manifest, lockfile };
+  writeJsonFileAtomic(transactionPath, transaction);
+  writeJsonFileAtomic(getManifestPath(projectRoot, scope), manifest);
+  writeJsonFileAtomic(getLockfilePath(projectRoot, scope), lockfile);
+  (0, import_node_fs9.rmSync)(transactionPath, { force: true });
+}
+
+// ../installer/dist/persistent-backup.js
+var import_node_fs10 = require("fs");
+var import_node_os4 = require("os");
+var import_node_path6 = require("path");
+var BACKUPS_DIR = "backups";
+var INDEX_FILE = "index.json";
+var ITEMS_DIR = "items";
+var MAX_BACKUPS_PER_SCOPE = 20;
+var RETENTION_DAYS = 7;
+function getBackupsRoot(projectRoot, scope) {
+  return (0, import_node_path6.join)(getStorageRoot(projectRoot, scope), BACKUPS_DIR);
+}
+function getIndexPath(projectRoot, scope) {
+  return (0, import_node_path6.join)(getBackupsRoot(projectRoot, scope), INDEX_FILE);
+}
+function readBackupIndex(projectRoot, scope) {
+  const indexPath = getIndexPath(projectRoot, scope);
+  if (!(0, import_node_fs10.existsSync)(indexPath)) {
+    return { version: 1, entries: [] };
+  }
+  try {
+    const raw = (0, import_node_fs10.readFileSync)(indexPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+      return { version: 1, entries: [] };
+    }
+    return parsed;
+  } catch {
+    return { version: 1, entries: [] };
+  }
+}
+function writeBackupIndex(projectRoot, scope, index) {
+  const backupsRoot = getBackupsRoot(projectRoot, scope);
+  (0, import_node_fs10.mkdirSync)(backupsRoot, { recursive: true });
+  writeJsonFileAtomic(getIndexPath(projectRoot, scope), index);
+}
+function generateBackupId(backupsRoot) {
+  const base = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+  let id = base;
+  let suffix = 1;
+  while ((0, import_node_fs10.existsSync)((0, import_node_path6.join)(backupsRoot, id))) {
+    id = `${base}-${String(suffix)}`;
+    suffix++;
+  }
+  return id;
+}
+function measureSize(targetPath, depth = 0) {
+  if (!(0, import_node_fs10.existsSync)(targetPath))
+    return 0;
+  if (depth > 50)
+    return 0;
+  const stat = (0, import_node_fs10.lstatSync)(targetPath);
+  if (stat.isFile())
+    return stat.size;
+  if (stat.isDirectory()) {
+    let total = 0;
+    const entries = (0, import_node_fs10.readdirSync)(targetPath, { withFileTypes: true });
+    for (const entry of entries) {
+      total += measureSize((0, import_node_path6.join)(targetPath, entry.name), depth + 1);
+    }
+    return total;
+  }
+  return 0;
+}
+function getPathKind(targetPath) {
+  const stat = (0, import_node_fs10.lstatSync)(targetPath);
+  return stat.isDirectory() ? "directory" : "file";
+}
+function createPersistentBackup(projectRoot, scope, packageKey, displayName, paths, reason, manifestEntry, lockfileEntry) {
+  const backupsRoot = getBackupsRoot(projectRoot, scope);
+  (0, import_node_fs10.mkdirSync)(backupsRoot, { recursive: true });
+  const id = generateBackupId(backupsRoot);
+  const backupDir = (0, import_node_path6.join)(backupsRoot, id);
+  const itemsDir = (0, import_node_path6.join)(backupDir, ITEMS_DIR);
+  (0, import_node_fs10.mkdirSync)(itemsDir, { recursive: true });
+  const uniquePaths = [...new Set(paths)];
+  const items = [];
+  for (const [i, originalPath] of uniquePaths.entries()) {
+    if (!(0, import_node_fs10.existsSync)(originalPath))
+      continue;
+    const backupRelativePath = `target-${String(i)}`;
+    const backupPath = (0, import_node_path6.join)(itemsDir, backupRelativePath);
+    (0, import_node_fs10.cpSync)(originalPath, backupPath, { recursive: true, dereference: true });
+    items.push({
+      originalPath,
+      backupRelativePath,
+      kind: getPathKind(originalPath),
+      size: measureSize(originalPath)
+    });
+  }
+  const entry = {
+    id,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    packageKey,
+    displayName,
+    reason,
+    items,
+    ...manifestEntry !== void 0 ? { manifestEntry } : {},
+    ...lockfileEntry !== void 0 ? { lockfileEntry } : {}
+  };
+  const index = readBackupIndex(projectRoot, scope);
+  index.entries.push(entry);
+  writeBackupIndex(projectRoot, scope, index);
+  return { id, backupDir, entry };
+}
+function cleanupExpiredBackups(projectRoot, scope, options) {
+  const maxCount = options?.maxCount ?? MAX_BACKUPS_PER_SCOPE;
+  const retentionDays = options?.retentionDays ?? RETENTION_DAYS;
+  const index = readBackupIndex(projectRoot, scope);
+  if (index.entries.length <= maxCount)
+    return 0;
+  const now = Date.now();
+  const retentionMs = retentionDays * 24 * 60 * 60 * 1e3;
+  const backupsRoot = getBackupsRoot(projectRoot, scope);
+  const sorted = [...index.entries].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const toRemove = [];
+  for (const entry of sorted) {
+    if (index.entries.length - toRemove.length <= maxCount)
+      break;
+    const age = now - new Date(entry.createdAt).getTime();
+    if (age < retentionMs)
+      continue;
+    toRemove.push(entry.id);
+  }
+  for (const id of toRemove) {
+    const backupDir = (0, import_node_path6.join)(backupsRoot, id);
+    if ((0, import_node_fs10.existsSync)(backupDir)) {
+      (0, import_node_fs10.rmSync)(backupDir, { recursive: true, force: true });
+    }
+    const idx = index.entries.findIndex((e) => e.id === id);
+    if (idx !== -1) {
+      index.entries.splice(idx, 1);
+    }
+  }
+  if (toRemove.length > 0) {
+    writeBackupIndex(projectRoot, scope, index);
+  }
+  return toRemove.length;
+}
+
+// ../installer/dist/placement.js
+var import_node_fs11 = require("fs");
+var import_node_os5 = require("os");
+var import_node_path7 = require("path");
+function createAgentPlacements(canonicalPath, placements, projectRoot, scope, options) {
+  const results = [];
+  for (const placement of placements) {
+    const result = createSinglePlacement(canonicalPath, placement, projectRoot, scope, options);
+    results.push(result);
+  }
+  return results;
+}
+function createRelativeSymlink(target, linkPath) {
+  const parentDir = (0, import_node_path7.dirname)(linkPath);
+  const relativeTarget = (0, import_node_path7.relative)(parentDir, target);
+  (0, import_node_fs11.mkdirSync)(parentDir, { recursive: true });
+  (0, import_node_fs11.symlinkSync)(relativeTarget, linkPath);
+}
+function createCopy(source, destination) {
+  (0, import_node_fs11.mkdirSync)((0, import_node_path7.dirname)(destination), { recursive: true });
+  (0, import_node_fs11.cpSync)(source, destination, { recursive: true, dereference: true });
+}
+function createSinglePlacement(canonicalPath, placement, _projectRoot, _scope, options) {
+  const { agentId, destinationPath, linkMode } = placement;
+  const preferredMode = linkMode.mode;
+  if (isSymlink(destinationPath)) {
+    (0, import_node_fs11.rmSync)(destinationPath, { recursive: true, force: true });
+  }
+  (0, import_node_fs11.mkdirSync)((0, import_node_path7.dirname)(destinationPath), { recursive: true });
+  const primaryResult = attemptLink(canonicalPath, destinationPath, preferredMode);
+  if (primaryResult.success) {
+    return {
+      agentId,
+      destinationPath,
+      actualLinkMode: preferredMode,
+      fallbackUsed: false,
+      success: true
+    };
+  }
+  if (options.allowFallback && preferredMode !== "copy") {
+    const fallbackResult = attemptLink(canonicalPath, destinationPath, "copy");
+    if (fallbackResult.success) {
+      return {
+        agentId,
+        destinationPath,
+        actualLinkMode: "copy",
+        fallbackUsed: true,
+        fallbackReason: primaryResult.error,
+        success: true
+      };
+    }
+    return {
+      agentId,
+      destinationPath,
+      actualLinkMode: "copy",
+      fallbackUsed: true,
+      fallbackReason: primaryResult.error,
+      success: false,
+      error: fallbackResult.error
+    };
+  }
+  return {
+    agentId,
+    destinationPath,
+    actualLinkMode: preferredMode,
+    fallbackUsed: false,
+    success: false,
+    error: primaryResult.error
+  };
+}
+function attemptLink(canonicalPath, destinationPath, mode) {
+  try {
+    switch (mode) {
+      case "symlink": {
+        createRelativeSymlink(canonicalPath, destinationPath);
+        return { success: true };
+      }
+      case "copy": {
+        createCopy(canonicalPath, destinationPath);
+        return { success: true };
+      }
+      case "junction": {
+        (0, import_node_fs11.mkdirSync)((0, import_node_path7.dirname)(destinationPath), { recursive: true });
+        (0, import_node_fs11.symlinkSync)(canonicalPath, destinationPath, "junction");
+        return { success: true };
+      }
+      default: {
+        const _exhaustive = mode;
+        return { success: false, error: `Unsupported link mode: ${String(_exhaustive)}` };
+      }
+    }
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// ../installer/dist/planner.js
+var import_node_fs12 = require("fs");
+var import_node_path8 = require("path");
+function planInstall(request) {
+  const { displayName, packageType, files, target, policy, metadata } = request;
+  const category = resolveCanonicalCategory(packageType);
+  const kind = metadata?.isUpdate ? "update" : "fresh";
+  const canonicalPath = resolveCanonicalPath(target.projectRoot, displayName, category, target.scope, metadata?.customPath);
+  const agents = resolveAgents(target);
+  const { skippedFiles } = validateFiles(files, canonicalPath);
+  const { placements, skippedAgents } = resolvePlacements(agents, displayName, category, target.scope, target.projectRoot, policy.preferredLinkMode, metadata?.customPath);
+  const conflicts = metadata?.customPath ? [] : detectConflicts(target.projectRoot, displayName, agents, target.scope, category, canonicalPath);
+  const { filteredPlacements, backupsRequired, executable, blockedReason } = applyConflictStrategy(placements, conflicts, policy.conflictStrategy, kind);
+  const manifestEntry = buildManifestEntry(request, agents);
+  const lockfileEntry = buildLockfileEntry(request, agents);
+  return {
+    request,
+    kind,
+    canonical: {
+      path: canonicalPath,
+      category
+    },
+    placements: filteredPlacements,
+    conflicts,
+    backupsRequired,
+    manifestEntry,
+    lockfileEntry,
+    skippedAgents,
+    skippedFiles,
+    executable,
+    blockedReason
+  };
+}
+function resolveCanonicalPath(projectRoot, name, category, scope, customPath) {
+  if (customPath) {
+    const resolved = (0, import_node_path8.resolve)(projectRoot, customPath);
+    if (!resolved.startsWith(`${(0, import_node_path8.resolve)(projectRoot)}/`) && resolved !== (0, import_node_path8.resolve)(projectRoot)) {
+      throw new Error(`Custom path escapes project root: ${customPath}`);
+    }
+    return resolved;
+  }
+  if (category === "skills") {
+    return getCanonicalSkillPath(projectRoot, name, scope);
+  }
+  return getCanonicalFilePath(projectRoot, name, category, scope);
+}
+function resolveAgents(target) {
+  if (target.agents.length > 0)
+    return target.agents;
+  const detected = detectInstalledAgents(target.projectRoot);
+  return detected.map((a) => a.id);
+}
+function validateFiles(files, canonicalPath) {
+  const skippedFiles = [];
+  for (const file2 of files) {
+    if (file2.path.includes("..")) {
+      skippedFiles.push({ path: file2.path, reason: "Path traversal detected (..)" });
+      continue;
+    }
+    if (file2.path.startsWith("/")) {
+      skippedFiles.push({ path: file2.path, reason: "Absolute path not allowed" });
+      continue;
+    }
+    const resolvedFilePath = (0, import_node_path8.resolve)(canonicalPath, file2.path);
+    if (!resolvedFilePath.startsWith(`${(0, import_node_path8.resolve)(canonicalPath)}/`) && resolvedFilePath !== (0, import_node_path8.resolve)(canonicalPath)) {
+      skippedFiles.push({ path: file2.path, reason: "Resolved path escapes canonical directory" });
+    }
+  }
+  return { skippedFiles };
+}
+function resolvePlacements(agents, name, category, scope, projectRoot, preferredLinkMode, customPath) {
+  if (customPath) {
+    return { placements: [], skippedAgents: [] };
+  }
+  const placements = [];
+  const skippedAgents = [];
+  for (const agentId of agents) {
+    const placementPath = getPlacementPathForCategory(agentId, name, category, scope);
+    if (!placementPath) {
+      skippedAgents.push({
+        agentId,
+        reason: `Agent does not support ${category} placements`
+      });
+      continue;
+    }
+    const fullPath = resolvePlacementPath(placementPath, projectRoot, scope);
+    if (!fullPath) {
+      skippedAgents.push({
+        agentId,
+        reason: "Placement path could not be resolved safely"
+      });
+      continue;
+    }
+    const linkMode = {
+      mode: preferredLinkMode,
+      isFallback: false
+    };
+    placements.push({
+      agentId,
+      destinationPath: fullPath,
+      linkMode
+    });
+  }
+  return { placements, skippedAgents };
+}
+function applyConflictStrategy(placements, conflicts, strategy, kind) {
+  if (conflicts.length === 0) {
+    return {
+      filteredPlacements: placements,
+      backupsRequired: [],
+      executable: true
+    };
+  }
+  const conflictPaths = new Set(conflicts.map((c) => c.path));
+  const backupsRequired = [];
+  switch (strategy) {
+    case "error":
+      return {
+        filteredPlacements: placements,
+        backupsRequired: [],
+        executable: false,
+        blockedReason: `Conflicts detected at ${conflicts.length} placement path(s). Use a different conflict strategy to proceed.`
+      };
+    case "backup-and-replace":
+      for (const conflict of conflicts) {
+        backupsRequired.push({
+          originalPath: conflict.path,
+          reason: kind === "update" ? "update-replace" : "conflict-replace"
+        });
+      }
+      return {
+        filteredPlacements: placements,
+        backupsRequired,
+        executable: true
+      };
+    case "skip":
+      return {
+        filteredPlacements: placements.filter((p) => !conflictPaths.has(p.destinationPath)),
+        backupsRequired: [],
+        executable: true
+      };
+    case "force":
+      return {
+        filteredPlacements: placements,
+        backupsRequired: [],
+        executable: true
+      };
+  }
+}
+function buildManifestEntry(request, agents) {
+  const entry = {
+    name: request.displayName,
+    source: request.source,
+    agents,
+    installedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    modified: false,
+    packageType: request.packageType
+  };
+  if (request.metadata?.customPath) {
+    entry.path = request.metadata.customPath;
+  }
+  if (request.metadata?.bundleParentKey) {
+    entry.bundle = request.metadata.bundleParentKey;
+  }
+  if (request.metadata?.entryFile) {
+    entry.entryFile = request.metadata.entryFile;
+  }
+  if (request.metadata?.dependsOn && request.metadata.dependsOn.length > 0) {
+    entry.dependsOn = request.metadata.dependsOn;
+  }
+  if (request.metadata?.conflictsWith && request.metadata.conflictsWith.length > 0) {
+    entry.conflictsWith = request.metadata.conflictsWith;
+  }
+  return entry;
+}
+function buildLockfileEntry(request, agents) {
+  return {
+    name: request.displayName,
+    source: request.source,
+    integrity: request.integrity,
+    agents
+  };
+}
+
+// ../installer/dist/executor.js
+function executeInstall(plan) {
+  const { request, canonical, placements, backupsRequired, manifestEntry, lockfileEntry } = plan;
+  if (!plan.executable) {
+    return {
+      success: false,
+      error: {
+        code: "PLAN_NOT_EXECUTABLE",
+        message: plan.blockedReason ?? "Plan is not executable"
+      },
+      packageKey: request.packageKey,
+      displayName: request.displayName,
+      canonicalPath: canonical.path,
+      placements: [],
+      conflictsResolved: [],
+      backups: [],
+      manifestWritten: false,
+      lockfileWritten: false,
+      manifestEntry,
+      lockfileEntry,
+      filesPlacedCount: 0,
+      agentsInstalledCount: 0
+    };
+  }
+  return withStorageLock(request.target.projectRoot, request.target.scope, () => {
+    const backups = [];
+    const conflictsResolved = [];
+    let placementResults = [];
+    let filesPlacedCount = 0;
+    try {
+      if (backupsRequired.length > 0) {
+        const pathsToBackup = backupsRequired.map((b) => b.originalPath);
+        const firstBackup = backupsRequired[0];
+        createPersistentBackup(request.target.projectRoot, request.target.scope, request.packageKey, request.displayName, pathsToBackup, firstBackup?.reason ?? "conflict-replace", manifestEntry, lockfileEntry);
+        cleanupExpiredBackups(request.target.projectRoot, request.target.scope);
+        const handle = createFilesystemBackup(pathsToBackup, firstBackup?.reason ?? "conflict-replace");
+        backups.push(handle);
+        for (const backup of backupsRequired) {
+          (0, import_node_fs13.rmSync)(backup.originalPath, { recursive: true, force: true });
+          conflictsResolved.push({
+            agentId: findAgentForPath(plan, backup.originalPath),
+            path: backup.originalPath,
+            resolution: "backed-up"
+          });
+        }
+      }
+      if (request.policy.conflictStrategy === "force" && plan.conflicts.length > 0) {
+        for (const conflict of plan.conflicts) {
+          (0, import_node_fs13.rmSync)(conflict.path, { recursive: true, force: true });
+          conflictsResolved.push({
+            agentId: conflict.agentId,
+            path: conflict.path,
+            resolution: "overwritten"
+          });
+        }
+      }
+      filesPlacedCount = writeCanonicalFiles(plan);
+      if (placements.length > 0) {
+        placementResults = createAgentPlacements(canonical.path, placements, request.target.projectRoot, request.target.scope, { allowFallback: request.policy.allowFallback });
+      }
+      const agentsInstalledCount = placementResults.filter((p) => p.success).length;
+      const finalLockfileEntry = { ...lockfileEntry };
+      const firstPlacement = placementResults[0];
+      if (firstPlacement) {
+        finalLockfileEntry.linkMode = firstPlacement.actualLinkMode;
+        finalLockfileEntry.degraded = placementResults.some((p) => p.fallbackUsed === true);
+      }
+      let manifestWritten = false;
+      let lockfileWritten = false;
+      if (request.policy.persist) {
+        recoverPendingStorageTransaction(request.target.projectRoot, request.target.scope);
+        const { data: manifest } = readManifest(request.target.projectRoot, request.target.scope);
+        const { data: lockfile } = readLockfile(request.target.projectRoot, request.target.scope);
+        setManifestPackage(manifest, request.displayName, {
+          name: manifestEntry.name,
+          source: manifestEntry.source,
+          agents: manifestEntry.agents,
+          installedAt: manifestEntry.installedAt,
+          modified: manifestEntry.modified,
+          pinned: manifestEntry.pinned,
+          path: manifestEntry.path,
+          bundle: manifestEntry.bundle,
+          packageType: manifestEntry.packageType,
+          entryFile: manifestEntry.entryFile,
+          dependsOn: manifestEntry.dependsOn,
+          conflictsWith: manifestEntry.conflictsWith
+        });
+        setLockfilePackage(lockfile, request.displayName, {
+          name: finalLockfileEntry.name,
+          source: finalLockfileEntry.source,
+          integrity: finalLockfileEntry.integrity,
+          agents: finalLockfileEntry.agents,
+          linkMode: finalLockfileEntry.linkMode,
+          degraded: finalLockfileEntry.degraded
+        });
+        writeStorageTransaction(request.target.projectRoot, manifest, lockfile, request.target.scope);
+        manifestWritten = true;
+        lockfileWritten = true;
+      }
+      return {
+        success: true,
+        packageKey: request.packageKey,
+        displayName: request.displayName,
+        canonicalPath: canonical.path,
+        placements: placementResults,
+        conflictsResolved,
+        backups,
+        manifestWritten,
+        lockfileWritten,
+        manifestEntry,
+        lockfileEntry: finalLockfileEntry,
+        filesPlacedCount,
+        agentsInstalledCount
+      };
+    } catch (err) {
+      for (const placement of placementResults) {
+        if (placement.success && (0, import_node_fs13.existsSync)(placement.destinationPath)) {
+          try {
+            (0, import_node_fs13.rmSync)(placement.destinationPath, { recursive: true, force: true });
+          } catch {
+          }
+        }
+      }
+      if (filesPlacedCount > 0 && (0, import_node_fs13.existsSync)(canonical.path)) {
+        try {
+          (0, import_node_fs13.rmSync)(canonical.path, { recursive: true, force: true });
+        } catch {
+        }
+      }
+      for (const backup of backups) {
+        try {
+          restoreFilesystemBackup(backup);
+        } catch {
+        }
+      }
+      return {
+        success: false,
+        error: {
+          code: "INSTALL_FAILED",
+          message: err instanceof Error ? err.message : String(err)
+        },
+        packageKey: request.packageKey,
+        displayName: request.displayName,
+        canonicalPath: canonical.path,
+        placements: [],
+        conflictsResolved,
+        backups,
+        manifestWritten: false,
+        lockfileWritten: false,
+        manifestEntry,
+        lockfileEntry,
+        filesPlacedCount: 0,
+        agentsInstalledCount: 0
+      };
+    }
+  });
+}
+function writeCanonicalFiles(plan) {
+  const { request, canonical } = plan;
+  const { files } = request;
+  let count = 0;
+  if (canonical.category === "skills") {
+    if ((0, import_node_fs13.existsSync)(canonical.path) && plan.kind === "update") {
+      (0, import_node_fs13.rmSync)(canonical.path, { recursive: true, force: true });
+    }
+    (0, import_node_fs13.mkdirSync)(canonical.path, { recursive: true });
+    for (const file2 of files) {
+      if (file2.path.includes("..") || file2.path.startsWith("/"))
+        continue;
+      const targetPath = (0, import_node_path9.join)(canonical.path, file2.path);
+      const resolvedTarget = (0, import_node_path9.resolve)(canonical.path, file2.path);
+      if (!resolvedTarget.startsWith(`${(0, import_node_path9.resolve)(canonical.path)}/`) && resolvedTarget !== (0, import_node_path9.resolve)(canonical.path)) {
+        continue;
+      }
+      (0, import_node_fs13.mkdirSync)((0, import_node_path9.dirname)(targetPath), { recursive: true });
+      writeFileAtomic(targetPath, file2.content);
+      count++;
+    }
+  } else {
+    (0, import_node_fs13.mkdirSync)((0, import_node_path9.dirname)(canonical.path), { recursive: true });
+    const entryFileName = request.metadata?.entryFile;
+    const entryFile = entryFileName ? files.find((f) => f.path === entryFileName) : files[0];
+    if (entryFile) {
+      writeFileAtomic(canonical.path, entryFile.content);
+      count = 1;
+    }
+  }
+  return count;
+}
+function writeFileAtomic(filePath, content) {
+  const tmpPath = `${filePath}.tmp`;
+  try {
+    (0, import_node_fs13.writeFileSync)(tmpPath, content, "utf-8");
+    (0, import_node_fs13.renameSync)(tmpPath, filePath);
+  } catch (error48) {
+    try {
+      (0, import_node_fs13.rmSync)(tmpPath, { force: true });
+    } catch {
+    }
+    throw error48;
+  }
+}
+function findAgentForPath(plan, path) {
+  for (const conflict of plan.conflicts) {
+    if (conflict.path === path)
+      return conflict.agentId;
+  }
+  for (const placement of plan.placements) {
+    if (placement.destinationPath === path)
+      return placement.agentId;
+  }
+  return "unknown";
+}
+
 // src/installer.ts
 var REQUEST_TIMEOUT_MS = 3e4;
 var ManifestNotFoundError = class extends Error {
@@ -35056,60 +36172,42 @@ var RegistryTimeoutError = class extends Error {
     this.name = "RegistryTimeoutError";
   }
 };
-var IntegrityError = class extends Error {
-  constructor(packageName, expected, actual) {
-    super(`Integrity check failed for ${packageName}: expected ${expected}, got ${actual}`);
-    this.name = "IntegrityError";
-  }
-};
-function readManifestFile(manifestPath) {
-  if (!(0, import_node_fs2.existsSync)(manifestPath)) {
+function readManifestFile(projectRoot) {
+  const manifestPath = getManifestPath(projectRoot, "project");
+  if (!(0, import_node_fs14.existsSync)(manifestPath)) {
     throw new ManifestNotFoundError(manifestPath);
   }
-  const raw = (0, import_node_fs2.readFileSync)(manifestPath, "utf-8");
-  let parsed;
   try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(`Failed to parse manifest at ${manifestPath}: invalid JSON`);
+    const { data } = readManifest(projectRoot, "project", {
+      onWarning: (msg) => core.warning(msg)
+    });
+    return data;
+  } catch (error48) {
+    if (error48 instanceof StorageCorruptionError) {
+      if (error48.reason === "invalid-json") {
+        throw new Error(`Failed to parse manifest at ${manifestPath}: invalid JSON`);
+      }
+      throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`);
+    }
+    throw error48;
   }
-  const result = manifestAnySchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(`Invalid manifest at ${manifestPath}: schema validation failed`);
-  }
-  const normalised = normaliseManifestV2(result.data);
-  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
-    (0, import_node_fs2.writeFileSync)(manifestPath, JSON.stringify(normalised, null, 2), "utf-8");
-  }
-  return normalised;
 }
-function readLockfileFile(lockfilePath) {
-  if (!(0, import_node_fs2.existsSync)(lockfilePath)) {
+function readLockfileFile(projectRoot) {
+  const lockfilePath = (0, import_node_path10.resolve)(projectRoot, ".agentver", "lockfile.json");
+  if (!(0, import_node_fs14.existsSync)(lockfilePath)) {
     return null;
   }
-  const raw = (0, import_node_fs2.readFileSync)(lockfilePath, "utf-8");
-  let parsed;
   try {
-    parsed = JSON.parse(raw);
+    const { data } = readLockfile(projectRoot, "project", {
+      onWarning: (msg) => core.warning(msg)
+    });
+    return data;
   } catch {
     return null;
   }
-  const result = lockfileAnySchema.safeParse(parsed);
-  if (!result.success) {
-    return null;
-  }
-  const normalised = normaliseLockfileV2(result.data);
-  if (JSON.stringify(normalised) !== JSON.stringify(result.data)) {
-    (0, import_node_fs2.writeFileSync)(lockfilePath, JSON.stringify(normalised, null, 2), "utf-8");
-  }
-  return normalised;
 }
-function writeLockfileFile(lockfilePath, lockfile) {
-  const dir = (0, import_node_path2.dirname)(lockfilePath);
-  if (!(0, import_node_fs2.existsSync)(dir)) {
-    (0, import_node_fs2.mkdirSync)(dir, { recursive: true });
-  }
-  (0, import_node_fs2.writeFileSync)(lockfilePath, JSON.stringify(lockfile, null, 2), "utf-8");
+function writeLockfileFile(projectRoot, lockfile) {
+  writeLockfile(projectRoot, lockfile, "project", { mode: "none" });
 }
 async function registryFetch(path, registryUrl, apiKey) {
   const url2 = `${registryUrl}${path}`;
@@ -35158,16 +36256,6 @@ function assertDownloadResponse(data) {
     );
   }
 }
-function extractFilesFromManifest(fileManifest) {
-  if (Array.isArray(fileManifest)) {
-    return fileManifest.filter((entry) => {
-      if (typeof entry !== "object" || entry === null) return false;
-      const record2 = entry;
-      return typeof record2.path === "string" && typeof record2.content === "string";
-    });
-  }
-  return Object.entries(fileManifest).filter(([, value]) => typeof value === "string").map(([path, content]) => ({ path, content }));
-}
 async function resolveLatestVersion(org, name, registryUrl, apiKey) {
   const data = await registryFetch(
     `/skills/${encodeURIComponent(org)}/${encodeURIComponent(name)}/versions`,
@@ -35191,21 +36279,12 @@ async function resolvePackage(name, version2, registryUrl, apiKey) {
   assertDownloadResponse(data);
   return data;
 }
-function computeIntegrity(files) {
-  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
-  const combined = sorted.map((f) => `${f.path}\0${f.content}`).join("\0");
-  const hash2 = (0, import_node_crypto.createHash)("sha256").update(combined).digest("base64");
-  return `sha256-${hash2}`;
-}
-function verifyIntegrity(files, lockfileIntegrity, packageName) {
+function verifyIntegrityWithWarning(files, lockfileIntegrity, packageName) {
   if (!lockfileIntegrity) {
     core.debug(`No lockfile integrity for ${packageName}, skipping verification`);
     return;
   }
-  const actual = computeIntegrity(files);
-  if (actual !== lockfileIntegrity) {
-    throw new IntegrityError(packageName, lockfileIntegrity, actual);
-  }
+  verifyIntegrity(files, lockfileIntegrity, packageName);
 }
 function detectAgents(workingDirectory, specifiedAgents) {
   if (specifiedAgents.length > 0) {
@@ -35214,47 +36293,12 @@ function detectAgents(workingDirectory, specifiedAgents) {
   const detected = detectInstalledAgents(workingDirectory);
   return detected.map((a) => a.id);
 }
-function placeFiles(files, packageName, agents, workingDirectory) {
-  let filesWritten = 0;
-  const skillName = packageName.split("/").pop() ?? packageName;
-  for (const agentId of agents) {
-    const resolvedId = resolveAgentId(agentId);
-    if (!resolvedId) {
-      core.warning(`Unrecognised agent ID '${agentId}', skipping.`);
-      continue;
-    }
-    const placementPath = getSkillPlacementPath(resolvedId, skillName, "project");
-    if (!placementPath) {
-      core.warning(`No placement path found for agent '${agentId}', skipping.`);
-      continue;
-    }
-    const fullPath = (0, import_node_path2.join)(workingDirectory, placementPath);
-    if (!(0, import_node_fs2.existsSync)(fullPath)) {
-      (0, import_node_fs2.mkdirSync)(fullPath, { recursive: true });
-    }
-    for (const file2 of files) {
-      const filePath = (0, import_node_path2.resolve)(fullPath, file2.path);
-      const resolvedBase = (0, import_node_path2.resolve)(fullPath);
-      const rel = (0, import_node_path2.relative)(resolvedBase, filePath);
-      if (rel.startsWith("..") || (0, import_node_path2.isAbsolute)(rel)) {
-        core.warning(`Skipping file that escapes target directory: '${file2.path}'`);
-        continue;
-      }
-      const fileDir = (0, import_node_path2.dirname)(filePath);
-      if (!(0, import_node_fs2.existsSync)(fileDir)) {
-        (0, import_node_fs2.mkdirSync)(fileDir, { recursive: true });
-      }
-      (0, import_node_fs2.writeFileSync)(filePath, file2.content, "utf-8");
-      filesWritten++;
-    }
-  }
-  return filesWritten;
-}
-function updateLockfile(lockfile, results, resolvedData) {
+function updateLockfile2(lockfile, results, resolvedData) {
   const updated = { ...lockfile, packages: { ...lockfile.packages } };
   for (const result of results) {
     if (!result.success) continue;
-    const entry = resolvedData.get(result.name);
+    if (!result.packageKey) continue;
+    const entry = resolvedData.get(result.packageKey);
     if (!entry) continue;
     if (!entry.response.gitUri || !entry.response.gitRef || !entry.response.gitCommitSha) {
       core.warning(
@@ -35278,14 +36322,32 @@ function updateLockfile(lockfile, results, resolvedData) {
   }
   return updated;
 }
-async function installPackageWithData(packageName, response, files, config2, lockfileIntegrity) {
+function buildSourceFromResponse(response) {
+  if (response.gitUri && response.gitRef && response.gitCommitSha) {
+    return {
+      type: "git",
+      uri: response.gitUri,
+      path: response.gitPath ?? "",
+      ref: response.gitRef,
+      commit: response.gitCommitSha
+    };
+  }
+  return {
+    type: "unknown",
+    path: "",
+    ref: response.gitRef ?? void 0,
+    commit: response.gitCommitSha ?? void 0
+  };
+}
+function installPackageWithData(packageName, response, files, config2, lockfileIntegrity) {
   try {
     if (config2.verifyIntegrity) {
-      verifyIntegrity(files, lockfileIntegrity, packageName);
+      verifyIntegrityWithWarning(files, lockfileIntegrity, packageName);
     }
     const agents = detectAgents(config2.workingDirectory, config2.agents);
     if (agents.length === 0) {
       return {
+        packageKey: packageName,
         name: packageName,
         version: response.version,
         agents: [],
@@ -35294,17 +36356,44 @@ async function installPackageWithData(packageName, response, files, config2, loc
         error: 'No agents detected. Use the "agents" input to specify target agents.'
       };
     }
-    const fileCount = placeFiles(files, packageName, agents, config2.workingDirectory);
+    const source = buildSourceFromResponse(response);
+    const request = {
+      packageKey: createPackageKey(packageName, source),
+      displayName: packageName,
+      packageType: "SKILL",
+      source,
+      files,
+      integrity: computeIntegrity(files),
+      target: {
+        scope: "project",
+        projectRoot: config2.workingDirectory,
+        agents
+      },
+      policy: {
+        conflictStrategy: "force",
+        preferredLinkMode: "copy",
+        allowFallback: false,
+        dryRun: false,
+        persist: false,
+        securityScanPolicy: "skip"
+      }
+    };
+    const plan = planInstall(request);
+    const result = executeInstall(plan);
+    const installedAgents = result.placements.filter((p) => p.success).map((p) => p.agentId);
     return {
+      packageKey: request.packageKey,
       name: packageName,
       version: response.version,
-      agents,
-      fileCount,
-      success: true
+      agents: installedAgents.length > 0 ? installedAgents : agents,
+      fileCount: result.filesPlacedCount,
+      success: result.success,
+      error: result.error?.message
     };
   } catch (error48) {
     const message = error48 instanceof Error ? error48.message : String(error48);
     return {
+      packageKey: packageName,
       name: packageName,
       version: response.version,
       agents: [],
@@ -35348,7 +36437,7 @@ async function installAllPackages(manifest, config2, existingLockfile) {
         });
         continue;
       }
-      resolvedData.set(displayName, { response, files });
+      resolvedData.set(packageKey, { response, files });
     } catch (error48) {
       const message = error48 instanceof Error ? error48.message : String(error48);
       core.warning(`Failed to resolve ${displayName}@${version2}: ${message}`);
@@ -35364,13 +36453,7 @@ async function installAllPackages(manifest, config2, existingLockfile) {
     }
     core.info(`Installing ${displayName}@${response.version}...`);
     const lockfileIntegrity = existingLockfile?.packages[packageKey]?.integrity;
-    const result = await installPackageWithData(
-      displayName,
-      response,
-      files,
-      config2,
-      lockfileIntegrity
-    );
+    const result = installPackageWithData(displayName, response, files, config2, lockfileIntegrity);
     results.push(result);
     if (result.success) {
       core.info(
@@ -35436,17 +36519,12 @@ async function run() {
     const apiKey = core3.getInput("api-key", { required: true });
     core3.setSecret(apiKey);
     const registryUrl = core3.getInput("registry-url");
-    const manifestPath = core3.getInput("manifest-path");
-    const lockfilePath = core3.getInput("lockfile-path");
     const agentsInput = core3.getInput("agents");
     const workingDirectory = core3.getInput("working-directory");
     const verifyIntegrity2 = core3.getBooleanInput("verify-integrity");
-    const resolvedWorkDir = (0, import_node_path3.resolve)(workingDirectory);
-    const resolvedManifestPath = (0, import_node_path3.resolve)(resolvedWorkDir, manifestPath);
-    const resolvedLockfilePath = (0, import_node_path3.resolve)(resolvedWorkDir, lockfilePath);
+    const resolvedWorkDir = (0, import_node_path11.resolve)(workingDirectory);
     const agents = agentsInput ? agentsInput.split(",").map((a) => a.trim()).filter(Boolean) : [];
     core3.info(`Working directory: ${resolvedWorkDir}`);
-    core3.info(`Manifest path: ${resolvedManifestPath}`);
     core3.info(`Registry URL: ${registryUrl}`);
     core3.info(`Integrity verification: ${verifyIntegrity2 ? "enabled" : "disabled"}`);
     if (agents.length > 0) {
@@ -35456,7 +36534,7 @@ async function run() {
     }
     let manifest;
     try {
-      manifest = readManifestFile(resolvedManifestPath);
+      manifest = readManifestFile(resolvedWorkDir);
     } catch (error48) {
       if (error48 instanceof ManifestNotFoundError) {
         core3.warning(error48.message);
@@ -35477,7 +36555,7 @@ async function run() {
       return;
     }
     core3.info(`Found ${packageCount} package(s) in manifest.`);
-    const existingLockfile = readLockfileFile(resolvedLockfilePath) ?? {
+    const existingLockfile = readLockfileFile(resolvedWorkDir) ?? {
       version: 2,
       packages: {}
     };
@@ -35492,9 +36570,9 @@ async function run() {
       },
       existingLockfile
     );
-    const updatedLockfile = updateLockfile(existingLockfile, results, resolvedData);
-    writeLockfileFile(resolvedLockfilePath, updatedLockfile);
-    core3.info(`Lockfile updated at ${resolvedLockfilePath}`);
+    const updatedLockfile = updateLockfile2(existingLockfile, results, resolvedData);
+    writeLockfileFile(resolvedWorkDir, updatedLockfile);
+    core3.info(`Lockfile updated at ${resolvedWorkDir}/.agentver/lockfile.json`);
     const summary2 = buildSummary(results);
     setOutputs(summary2);
     await generateJobSummary(summary2);

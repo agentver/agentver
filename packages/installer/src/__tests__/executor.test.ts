@@ -14,9 +14,10 @@ vi.mock('@agentver/agent-definitions', () => ({
   getCommandPlacementPath: vi.fn().mockReturnValue('.claude/commands/test-command.md'),
 }))
 
-const mockUpdateManifestAndLockfile = vi.fn()
 const mockSetManifestPackage = vi.fn()
 const mockSetLockfilePackage = vi.fn()
+const mockWriteStorageTransaction = vi.fn()
+const mockRecoverPendingStorageTransaction = vi.fn()
 
 vi.mock('@agentver/storage', () => {
   const { join } = require('node:path') as typeof import('node:path')
@@ -25,8 +26,15 @@ vi.mock('@agentver/storage', () => {
 
   return {
     computeIntegrity: vi.fn().mockReturnValue('sha256-disc-hash'),
-    getDisplayName: vi.fn((key: string, pkg: { name?: string }) => pkg.name?.trim() || key),
-    updateManifestAndLockfile: (...args: unknown[]) => mockUpdateManifestAndLockfile(...args),
+    getPackageDisplayName: vi.fn((key: string, pkg: { name?: string }) => pkg.name?.trim() || key),
+    withStorageLock: vi.fn((_projectRoot: string, _scope: string, callback: () => unknown) =>
+      callback()
+    ),
+    readManifest: vi.fn().mockReturnValue({ data: { version: 2, packages: {} } }),
+    readLockfile: vi.fn().mockReturnValue({ data: { version: 2, packages: {} } }),
+    recoverPendingStorageTransaction: (...args: unknown[]) =>
+      mockRecoverPendingStorageTransaction(...args),
+    writeStorageTransaction: (...args: unknown[]) => mockWriteStorageTransaction(...args),
     setManifestPackage: (...args: unknown[]) => mockSetManifestPackage(...args),
     setLockfilePackage: (...args: unknown[]) => mockSetLockfilePackage(...args),
     getStorageRoot: vi.fn((projectRoot: string, scope: string) => {
@@ -100,12 +108,6 @@ describe('executor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     tmpDir = mkdtempSync(join(tmpdir(), 'agentver-executor-test-'))
-    // Reset the mock to use proper projectRoot after tmpDir is created
-    mockUpdateManifestAndLockfile.mockImplementation(
-      (_root: string, _scope: string, fn: (m: unknown, l: unknown) => unknown) => {
-        fn({ version: 2, packages: {} }, { version: 2, packages: {} })
-      }
-    )
   })
 
   afterEach(() => {
@@ -233,7 +235,7 @@ describe('executor', () => {
       expect(result.success).toBe(true)
       expect(result.manifestWritten).toBe(true)
       expect(result.lockfileWritten).toBe(true)
-      expect(mockUpdateManifestAndLockfile).toHaveBeenCalled()
+      expect(mockWriteStorageTransaction).toHaveBeenCalled()
     })
 
     it('does NOT persist when policy.persist is false', () => {
@@ -255,7 +257,7 @@ describe('executor', () => {
       expect(result.success).toBe(true)
       expect(result.manifestWritten).toBe(false)
       expect(result.lockfileWritten).toBe(false)
-      expect(mockUpdateManifestAndLockfile).not.toHaveBeenCalled()
+      expect(mockWriteStorageTransaction).not.toHaveBeenCalled()
     })
 
     it('creates backups before removing conflicts (backup-and-replace)', () => {
@@ -366,8 +368,8 @@ describe('executor', () => {
       const mockGetSkill = vi.mocked(getSkillPlacementPath)
       mockGetSkill.mockReturnValue('.claude/skills/test-skill')
 
-      // Make manifest/lockfile update throw to simulate mid-install failure
-      mockUpdateManifestAndLockfile.mockImplementation(() => {
+      // Make storage transaction throw to simulate mid-install failure
+      mockWriteStorageTransaction.mockImplementation(() => {
         throw new Error('Simulated write failure')
       })
 

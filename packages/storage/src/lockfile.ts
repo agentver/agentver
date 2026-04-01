@@ -1,11 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import type { LockfileV2 } from '@agentver/shared'
-import {
-  lockfileAnySchema,
-  lockfileV2PackageSchema,
-  normaliseLockfileV2,
-  STORAGE_SCHEMA_VERSION,
-} from '@agentver/shared'
+import { lockfileV2Schema, STORAGE_SCHEMA_VERSION } from '@agentver/shared'
 import { StorageCorruptionError } from './errors'
 import { withStorageLock } from './file-lock'
 import { ensureStorageDir, getLockfilePath, writeJsonFileAtomic } from './files'
@@ -13,14 +8,6 @@ import type { LockOptions, ReadOptions, ReadResult, Scope } from './types'
 
 const EMPTY_LOCKFILE: LockfileV2 = { version: STORAGE_SCHEMA_VERSION, packages: {} }
 
-/**
- * Reads and normalises the lockfile.
- *
- * - Missing file returns empty lockfile (expected on first run)
- * - Invalid JSON throws StorageCorruptionError
- * - Per-entry recovery rescues valid entries from a partially corrupt lockfile
- * - Does NOT write back on read — check `dirty` flag and persist explicitly if needed
- */
 export function readLockfile(
   projectRoot: string,
   scope: Scope = 'project',
@@ -29,7 +16,7 @@ export function readLockfile(
   const lockfilePath = getLockfilePath(projectRoot, scope)
 
   if (!existsSync(lockfilePath)) {
-    return { data: { ...EMPTY_LOCKFILE, packages: {} }, dirty: false, droppedEntries: [] }
+    return { data: { ...EMPTY_LOCKFILE, packages: {} } }
   }
 
   const raw = readFileSync(lockfilePath, 'utf-8')
@@ -41,48 +28,13 @@ export function readLockfile(
     throw new StorageCorruptionError(lockfilePath, 'invalid-json')
   }
 
-  const result = lockfileAnySchema.safeParse(parsed)
+  const result = lockfileV2Schema.safeParse(parsed)
   if (!result.success) {
-    const raw2 = parsed as Record<string, unknown>
-    if (
-      raw2?.version === STORAGE_SCHEMA_VERSION &&
-      typeof raw2?.packages === 'object' &&
-      raw2.packages !== null
-    ) {
-      const recovered: LockfileV2['packages'] = {}
-      const droppedEntries: Array<{ key: string; reason: string }> = []
-
-      for (const [name, entry] of Object.entries(raw2.packages as Record<string, unknown>)) {
-        const entryResult = lockfileV2PackageSchema.safeParse(entry)
-        if (entryResult.success) {
-          recovered[name] = entryResult.data
-        } else {
-          droppedEntries.push({ key: name, reason: entryResult.error.message })
-          options?.onWarning?.(
-            `Dropping invalid lockfile entry "${name}" — ${entryResult.error.message}`
-          )
-        }
-      }
-
-      if (Object.keys(recovered).length > 0) {
-        options?.onWarning?.(
-          `Recovered ${Object.keys(recovered).length} entry/entries from lockfile (${droppedEntries.length} dropped)`
-        )
-        const normalised = normaliseLockfileV2({
-          version: STORAGE_SCHEMA_VERSION,
-          packages: recovered,
-        })
-        return { data: normalised, dirty: true, droppedEntries }
-      }
-    }
-
-    throw new StorageCorruptionError(lockfilePath, 'schema-validation-failed')
+    options?.onWarning?.(`Invalid lockfile at ${lockfilePath}: ${result.error.message}`)
+    return { data: { version: STORAGE_SCHEMA_VERSION, packages: {} } }
   }
 
-  const normalised = normaliseLockfileV2(result.data)
-  const dirty = JSON.stringify(normalised) !== JSON.stringify(result.data)
-
-  return { data: normalised, dirty, droppedEntries: [] }
+  return { data: result.data }
 }
 
 /**

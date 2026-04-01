@@ -20,7 +20,7 @@ import { getCanonicalSkillPath, resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity'
 import { readLockfile } from '../storage/lockfile'
 import { readManifest } from '../storage/manifest'
-import { getDisplayName, resolvePackageQuery } from '../storage/package-identity'
+import { getPackageDisplayName, resolvePackageQuery } from '../storage/package-identity'
 import { applyPatch, generatePatch, removePatch, savePatch } from '../storage/patches.js'
 import { type BackupState, cleanupBackup, createBackup, restoreBackup } from '../utils/backup'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
@@ -420,7 +420,9 @@ export function registerUpdateCommand(program: Command): void {
         if (pinnedNames.length > 0 && !jsonMode) {
           for (const pinnedName of pinnedNames) {
             console.log(
-              chalk.dim(`Skipping ${getDisplayName(pinnedName, packages[pinnedName]!)} (pinned)`)
+              chalk.dim(
+                `Skipping ${getPackageDisplayName(pinnedName, packages[pinnedName]!)} (pinned)`
+              )
             )
           }
         }
@@ -431,11 +433,11 @@ export function registerUpdateCommand(program: Command): void {
               updated: [],
               skipped: [
                 ...pinnedNames.map((n) => ({
-                  name: getDisplayName(n, packages[n]!),
+                  name: getPackageDisplayName(n, packages[n]!),
                   reason: 'pinned',
                 })),
                 ...unsupportedNames.map((n) => ({
-                  name: getDisplayName(n, packages[n]!),
+                  name: getPackageDisplayName(n, packages[n]!),
                   reason: 'No known update source',
                 })),
               ],
@@ -457,7 +459,7 @@ export function registerUpdateCommand(program: Command): void {
 
           for (const packageKey of updatable) {
             const pkg = packages[packageKey]!
-            const displayName = getDisplayName(packageKey, pkg)
+            const displayName = getPackageDisplayName(packageKey, pkg)
             try {
               if (pkg.source.type === 'git' || pkg.source.type === 'platform') {
                 const installSource = buildInstallSource(
@@ -570,11 +572,11 @@ export function registerUpdateCommand(program: Command): void {
                 updated: [],
                 skipped: [
                   ...pinnedNames.map((n) => ({
-                    name: getDisplayName(n, packages[n]!),
+                    name: getPackageDisplayName(n, packages[n]!),
                     reason: 'pinned',
                   })),
                   ...unsupportedNames.map((n) => ({
-                    name: getDisplayName(n, packages[n]!),
+                    name: getPackageDisplayName(n, packages[n]!),
                     reason: 'No known update source',
                   })),
                   ...resolutionSkips,
@@ -607,11 +609,11 @@ export function registerUpdateCommand(program: Command): void {
                 updated: [],
                 skipped: [
                   ...pinnedNames.map((n) => ({
-                    name: getDisplayName(n, packages[n]!),
+                    name: getPackageDisplayName(n, packages[n]!),
                     reason: 'pinned',
                   })),
                   ...unsupportedNames.map((n) => ({
-                    name: getDisplayName(n, packages[n]!),
+                    name: getPackageDisplayName(n, packages[n]!),
                     reason: 'No known update source',
                   })),
                   ...resolutionSkips,
@@ -807,11 +809,11 @@ export function registerUpdateCommand(program: Command): void {
               updated: jsonUpdated,
               skipped: [
                 ...pinnedNames.map((n) => ({
-                  name: getDisplayName(n, packages[n]!),
+                  name: getPackageDisplayName(n, packages[n]!),
                   reason: 'pinned',
                 })),
                 ...unsupportedNames.map((n) => ({
-                  name: getDisplayName(n, packages[n]!),
+                  name: getPackageDisplayName(n, packages[n]!),
                   reason: 'No known update source',
                 })),
                 ...resolutionSkips,

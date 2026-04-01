@@ -8,7 +8,7 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputSuccess } from '../output.js'
 import { readManifest } from '../storage/manifest'
-import { getDisplayName, resolveBundleDisplayName } from '../storage/package-identity'
+import { getPackageDisplayName, resolveBundleDisplayName } from '../storage/package-identity'
 import type { Scope } from '../utils/paths'
 
 const SCOPE_LABELS: Record<Scope, string> = {
@@ -23,7 +23,7 @@ function resolveScopes(options: { global?: boolean; all?: boolean }): Scope[] {
 }
 
 function formatPackageLine(name: string, pkg: ManifestV2Package, indent: string): string {
-  const displayName = getDisplayName(name, pkg)
+  const displayName = getPackageDisplayName(name, pkg)
   const agents = pkg.agents.length > 0 ? chalk.dim(` [${pkg.agents.join(', ')}]`) : ''
   const pinned = pkg.pinned === true ? chalk.yellow(' [pinned]') : ''
 
@@ -72,7 +72,7 @@ export function registerListCommand(program: Command): void {
           const manifest = readManifest(projectRoot, scope)
           for (const [name, pkg] of Object.entries(manifest.packages)) {
             allPackages.push({
-              name: getDisplayName(name, pkg),
+              name: getPackageDisplayName(name, pkg),
               scope,
               package: {
                 ...pkg,
@@ -107,7 +107,7 @@ export function registerListCommand(program: Command): void {
         const standalone: [string, ManifestV2Package][] = []
 
         for (const [packageKey, pkg] of entries) {
-          const displayName = getDisplayName(packageKey, pkg)
+          const displayName = getPackageDisplayName(packageKey, pkg)
           if (pkg.packageType === 'BUNDLE') {
             const existing = bundles.get(packageKey)
             bundles.set(packageKey, {

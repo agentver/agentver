@@ -17,7 +17,7 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import { isJSONMode, outputSuccess } from '../output'
 import { readManifest } from '../storage/manifest.js'
-import { getDisplayName } from '../storage/package-identity.js'
+import { getPackageDisplayName } from '../storage/package-identity.js'
 
 export function registerScanCommand(program: Command): void {
   program
@@ -132,7 +132,7 @@ export function registerScanCommand(program: Command): void {
         console.log(chalk.bold(`\nInstalled skills (${manifestEntries.length}):\n`))
 
         for (const [packageKey, pkg] of manifestEntries) {
-          const displayName = getDisplayName(packageKey, pkg)
+          const displayName = getPackageDisplayName(packageKey, pkg)
           const source = pkg.source
           const agentList = `[${pkg.agents.join(', ')}]`
 

@@ -11,7 +11,6 @@ import {
   updateManifest,
   writeManifest,
 } from '../index'
-import { serialiseDeterministic } from '../serialise'
 
 let tmpDir: string
 let agentverDir: string
@@ -41,10 +40,11 @@ function makeValidManifest(overrides?: Partial<ManifestV2>): ManifestV2 {
 }
 
 function makeManifestWithPackage(): ManifestV2 {
+  const stableKey = `git:${encodeURIComponent('https://github.com/org/repo.git#skills/test#main')}`
   return {
     version: STORAGE_SCHEMA_VERSION,
     packages: {
-      'git:test-key': {
+      [stableKey]: {
         name: 'test-skill',
         source: {
           type: 'git',
@@ -70,8 +70,6 @@ describe('readManifest', () => {
       version: STORAGE_SCHEMA_VERSION,
       packages: {},
     })
-    expect(result.dirty).toBe(false)
-    expect(result.droppedEntries).toEqual([])
   })
 
   it('returns valid manifest from well-formed file', () => {
@@ -80,102 +78,6 @@ describe('readManifest', () => {
 
     const result = readManifest(tmpDir, 'project')
     expect(result.data.version).toBe(STORAGE_SCHEMA_VERSION)
-    expect(Object.keys(result.data.packages).length).toBe(1)
-  })
-
-  it('returns dirty: false when file is already normalised', () => {
-    // Use the stable key that normalisation would produce, including the name field
-    const stableKey = `git:${encodeURIComponent('https://github.com/org/repo.git#skills/test')}`
-    const manifest: ManifestV2 = {
-      version: STORAGE_SCHEMA_VERSION,
-      packages: {
-        [stableKey]: {
-          name: 'test-skill',
-          source: {
-            type: 'git',
-            uri: 'https://github.com/org/repo.git',
-            path: 'skills/test',
-            ref: 'main',
-            commit: 'abc1234',
-          },
-          agents: ['claude-code'],
-          installedAt: '2025-01-01T00:00:00.000Z',
-          modified: false,
-        },
-      },
-    }
-    mkdirSync(agentverDir, { recursive: true })
-    writeFileSync(manifestPath, serialiseDeterministic(manifest))
-
-    const result = readManifest(tmpDir, 'project')
-    expect(result.dirty).toBe(false)
-  })
-
-  it('returns dirty: true when normalisation changes data', () => {
-    // Write a manifest with an old-style key that normalisation will rewrite
-    const manifest = {
-      version: STORAGE_SCHEMA_VERSION,
-      packages: {
-        'old-style-key': {
-          name: 'test-skill',
-          source: {
-            type: 'git' as const,
-            uri: 'https://github.com/org/repo.git',
-            path: 'skills/test',
-            ref: 'main',
-            commit: 'abc1234',
-          },
-          agents: ['claude-code'],
-          installedAt: '2025-01-01T00:00:00.000Z',
-          modified: false,
-        },
-      },
-    }
-    writeManifestFile(manifest)
-
-    const result = readManifest(tmpDir, 'project')
-    // The key will be rewritten to a stable key, so dirty should be true
-    expect(result.dirty).toBe(true)
-  })
-
-  it('reports droppedEntries when per-entry recovery kicks in', () => {
-    const manifest = {
-      version: STORAGE_SCHEMA_VERSION,
-      packages: {
-        'good-entry': {
-          name: 'good-skill',
-          source: {
-            type: 'git',
-            uri: 'https://github.com/org/repo.git',
-            path: 'skills/good',
-            ref: 'main',
-            commit: 'abc1234',
-          },
-          agents: ['claude-code'],
-          installedAt: '2025-01-01T00:00:00.000Z',
-          modified: false,
-        },
-        'bad-entry': {
-          // Missing required fields — this entry is invalid
-          name: 'bad-skill',
-          source: { type: 'invalid-type' },
-        },
-      },
-    }
-    // Write raw JSON so the whole-manifest parse fails but per-entry recovery works
-    mkdirSync(agentverDir, { recursive: true })
-    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
-
-    const warnings: string[] = []
-    const result = readManifest(tmpDir, 'project', {
-      onWarning: (msg) => warnings.push(msg),
-    })
-
-    expect(result.dirty).toBe(true)
-    expect(result.droppedEntries.length).toBeGreaterThan(0)
-    expect(result.droppedEntries.some((e) => e.key === 'bad-entry')).toBe(true)
-    expect(warnings.length).toBeGreaterThan(0)
-    // The good entry should still be in the data
     expect(Object.keys(result.data.packages).length).toBe(1)
   })
 
@@ -194,8 +96,7 @@ describe('readManifest', () => {
     }
   })
 
-  it('throws StorageCorruptionError when schema validation fails completely', () => {
-    // A file that is valid JSON but has zero recoverable entries
+  it('returns empty manifest when schema validation fails', () => {
     writeManifestFile({
       version: STORAGE_SCHEMA_VERSION,
       packages: {
@@ -205,14 +106,11 @@ describe('readManifest', () => {
       },
     })
 
-    expect(() => readManifest(tmpDir, 'project')).toThrow(StorageCorruptionError)
-
-    try {
-      readManifest(tmpDir, 'project')
-    } catch (error) {
-      const corruptionError = error as StorageCorruptionError
-      expect(corruptionError.reason).toBe('schema-validation-failed')
-    }
+    const result = readManifest(tmpDir, 'project')
+    expect(result.data).toEqual({
+      version: STORAGE_SCHEMA_VERSION,
+      packages: {},
+    })
   })
 
   it('does NOT write back to disc (no side-effect writes)', () => {

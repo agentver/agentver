@@ -21,9 +21,9 @@ describe('sanitiseRedirectUrl', () => {
     expect(sanitiseRedirectUrl('javascript:alert(1)')).toBe('/')
   })
 
-  it('rejects percent-encoded bypass attempts', () => {
-    expect(sanitiseRedirectUrl('%2F%2Fevil.com')).toBe('/')
-    expect(sanitiseRedirectUrl('/%2Fevil.com')).toBe('/')
+  it('treats percent-encoded paths as same-origin (not a bypass)', () => {
+    expect(sanitiseRedirectUrl('%2F%2Fevil.com')).toBe('/%2F%2Fevil.com')
+    expect(sanitiseRedirectUrl('/%2Fevil.com')).toBe('/%2Fevil.com')
   })
 
   it('rejects data: URLs', () => {

@@ -11,7 +11,7 @@ import type { PackageLookupResult } from './types'
 type NamedPackage = Record<string, unknown> & { name?: string }
 
 /** Extracts the display name from a manifest key and package entry. */
-export function getDisplayName(manifestKey: string, pkg: NamedPackage): string {
+export function getPackageDisplayName(manifestKey: string, pkg: NamedPackage): string {
   return pkg.name?.trim() || manifestKey
 }
 
@@ -29,12 +29,7 @@ export function resolveBundleDisplayName<T extends NamedPackage>(
     return bundleRef
   }
 
-  return getDisplayName(bundleRef, bundlePkg)
-}
-
-/** Creates a deterministic key from a display name and source. */
-export function createStablePackageKey(displayName: string, source: PackageSource): string {
-  return createPackageKey(displayName, source)
+  return getPackageDisplayName(bundleRef, bundlePkg)
 }
 
 /** Finds a package by query (exact key, exact name, or short name). */
@@ -44,17 +39,17 @@ export function resolvePackageQuery<T extends NamedPackage>(
 ): PackageLookupResult<T> {
   if (query in packages) {
     const pkg = packages[query]!
-    return { ok: true, key: query, displayName: getDisplayName(query, pkg), pkg }
+    return { ok: true, key: query, displayName: getPackageDisplayName(query, pkg), pkg }
   }
 
   const shortQuery = query.split('/').pop() ?? query
   const exactNameMatches = Object.entries(packages).filter(
-    ([key, pkg]) => getDisplayName(key, pkg) === query
+    ([key, pkg]) => getPackageDisplayName(key, pkg) === query
   )
 
   if (exactNameMatches.length === 1) {
     const [key, pkg] = exactNameMatches[0]!
-    return { ok: true, key, displayName: getDisplayName(key, pkg), pkg }
+    return { ok: true, key, displayName: getPackageDisplayName(key, pkg), pkg }
   }
 
   if (exactNameMatches.length > 1) {
@@ -66,13 +61,13 @@ export function resolvePackageQuery<T extends NamedPackage>(
   }
 
   const shortMatches = Object.entries(packages).filter(([key, pkg]) => {
-    const name = getDisplayName(key, pkg)
+    const name = getPackageDisplayName(key, pkg)
     return name.split('/').pop() === shortQuery
   })
 
   if (shortMatches.length === 1) {
     const [key, pkg] = shortMatches[0]!
-    return { ok: true, key, displayName: getDisplayName(key, pkg), pkg }
+    return { ok: true, key, displayName: getPackageDisplayName(key, pkg), pkg }
   }
 
   if (shortMatches.length > 1) {
@@ -93,7 +88,7 @@ export function setManifestPackage(
   entry: ManifestV2['packages'][string]
 ): string {
   const nextEntry = { ...entry, name: displayName }
-  const key = createStablePackageKey(displayName, nextEntry.source)
+  const key = createPackageKey(displayName, nextEntry.source)
   manifest.packages[key] = nextEntry
   return key
 }
@@ -105,7 +100,7 @@ export function setLockfilePackage(
   entry: LockfileV2['packages'][string]
 ): string {
   const nextEntry = { ...entry, name: displayName }
-  const key = createStablePackageKey(displayName, nextEntry.source)
+  const key = createPackageKey(displayName, nextEntry.source)
   lockfile.packages[key] = nextEntry
   return key
 }

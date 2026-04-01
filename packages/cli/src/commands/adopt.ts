@@ -483,14 +483,20 @@ async function reclassifyLocalEntries(
       const lockfilePkg = currentLockfile.packages[update.key]
 
       if (manifestPkg) {
-        manifestPkg.source = update.newSource
-        if (update.dirty) {
-          manifestPkg.modified = true
-        }
+        delete currentManifest.packages[update.key]
+        setManifestPackage(currentManifest, update.name, {
+          ...manifestPkg,
+          source: update.newSource,
+          ...(update.dirty ? { modified: true } : {}),
+        })
       }
 
       if (lockfilePkg) {
-        lockfilePkg.source = update.newSource
+        delete currentLockfile.packages[update.key]
+        setLockfilePackage(currentLockfile, update.name, {
+          ...lockfilePkg,
+          source: update.newSource,
+        })
       }
 
       reclassified.push({

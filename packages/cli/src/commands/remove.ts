@@ -21,7 +21,7 @@ import {
 } from '../storage/canonical'
 import { readManifest } from '../storage/manifest'
 import {
-  getDisplayName,
+  getPackageDisplayName,
   resolveBundleDisplayName,
   resolvePackageQuery,
 } from '../storage/package-identity'
@@ -184,7 +184,7 @@ export function registerRemoveCommand(program: Command): void {
           const caseMatches = Object.keys(manifest.packages).filter(
             (key) =>
               (key.toLowerCase() === name.toLowerCase() ||
-                getDisplayName(key, manifest.packages[key]!).toLowerCase() ===
+                getPackageDisplayName(key, manifest.packages[key]!).toLowerCase() ===
                   name.toLowerCase()) &&
               key !== name
           )
@@ -235,7 +235,7 @@ export function registerRemoveCommand(program: Command): void {
         // Collect constituents if this is a bundle
         const constituents = isBundle ? findBundleConstituents(manifest, manifestKey) : []
         const constituentDisplayNames = constituents.map((key) =>
-          getDisplayName(key, manifest.packages[key]!)
+          getPackageDisplayName(key, manifest.packages[key]!)
         )
 
         // Collect removal paths
@@ -248,7 +248,7 @@ export function registerRemoveCommand(program: Command): void {
         for (const cName of constituents) {
           const cPkg = manifest.packages[cName]
           if (cPkg) {
-            const constituentDisplayName = getDisplayName(cName, cPkg)
+            const constituentDisplayName = getPackageDisplayName(cName, cPkg)
             const constituentShortName = constituentDisplayName.split('/').pop()!
             constituentPaths[constituentDisplayName] = collectRemovalPaths(
               projectRoot,
@@ -321,7 +321,9 @@ export function registerRemoveCommand(program: Command): void {
               )
             )
             for (const cName of constituents) {
-              console.log(`  ${chalk.dim('•')} ${getDisplayName(cName, manifest.packages[cName]!)}`)
+              console.log(
+                `  ${chalk.dim('•')} ${getPackageDisplayName(cName, manifest.packages[cName]!)}`
+              )
             }
             console.log()
           } else if (isConstituent) {
@@ -379,7 +381,7 @@ export function registerRemoveCommand(program: Command): void {
             for (const cName of constituents) {
               const cPkg = currentManifest.packages[cName]
               if (cPkg) {
-                const constituentDisplayName = getDisplayName(cName, cPkg)
+                const constituentDisplayName = getPackageDisplayName(cName, cPkg)
                 const constituentShortName = constituentDisplayName.split('/').pop()!
                 removePackageFiles(
                   projectRoot,

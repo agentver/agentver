@@ -16,7 +16,7 @@ vi.mock('@agentver/agent-definitions', () => ({
 
 vi.mock('@agentver/storage', () => ({
   computeIntegrity: vi.fn().mockReturnValue('sha256-disc-hash'),
-  getDisplayName: vi.fn((key: string, pkg: { name?: string }) => pkg.name?.trim() || key),
+  getPackageDisplayName: vi.fn((key: string, pkg: { name?: string }) => pkg.name?.trim() || key),
   updateManifestAndLockfile: vi.fn(),
   setManifestPackage: vi.fn(),
   setLockfilePackage: vi.fn(),

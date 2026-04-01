@@ -1,9 +1,6 @@
 import { homedir } from 'node:os'
-import {
-  getPackageDisplayName,
-  getPackageSourceLocation,
-  getPackageSourceReference,
-} from '@agentver/shared'
+import { getPackageSourceLocation, getPackageSourceReference } from '@agentver/shared'
+import { getPackageDisplayName } from '@agentver/storage'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import * as z from 'zod/v4'
 import { getWorkingDirectory } from '../shared/context'

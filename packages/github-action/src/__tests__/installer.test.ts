@@ -145,16 +145,19 @@ describe('installer', () => {
       expect(() => readManifestFile(tempDir)).toThrow('invalid JSON')
     })
 
-    it('throws on schema validation failure', () => {
+    it('returns empty manifest when schema validation fails', () => {
       writeManifest(tempDir, { foo: 'bar' })
-      expect(() => readManifestFile(tempDir)).toThrow('schema validation failed')
+      const result = readManifestFile(tempDir)
+      expect(result).toEqual({ version: 2, packages: {} })
     })
 
     it('reads a valid v2 manifest', () => {
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const manifest = {
         version: 2,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git',
               uri: 'https://github.com/org/repo',
@@ -172,33 +175,9 @@ describe('installer', () => {
 
       const result = readManifestFile(tempDir)
       expect(result.version).toBe(2)
-      expect(result.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']).toEqual(
+      expect(result.packages[stableKey]).toEqual(
         expect.objectContaining({
           name: 'org/skill',
-        })
-      )
-    })
-
-    it('migrates a legacy manifest schema in memory', () => {
-      const legacyManifest = {
-        version: 1,
-        packages: {
-          'org/skill': {
-            name: 'org/skill',
-            version: '1.0.0',
-            agents: ['claude-code'],
-            installedAt: new Date().toISOString(),
-          },
-        },
-      }
-      writeManifest(tempDir, legacyManifest)
-
-      const result = readManifestFile(tempDir)
-      expect(Object.keys(result.packages)).toHaveLength(1)
-      expect(Object.values(result.packages)[0]).toEqual(
-        expect.objectContaining({
-          name: 'org/skill',
-          source: expect.objectContaining({ type: 'unknown' }),
         })
       )
     })
@@ -220,16 +199,19 @@ describe('installer', () => {
       expect(readLockfileFile(tempDir)).toBeNull()
     })
 
-    it('returns null when schema validation fails', () => {
+    it('returns empty lockfile when schema validation fails', () => {
       writeLockfile(tempDir, { invalid: true })
-      expect(readLockfileFile(tempDir)).toBeNull()
+      const result = readLockfileFile(tempDir)
+      expect(result).toEqual({ version: 2, packages: {} })
     })
 
     it('reads a valid v2 lockfile', () => {
+      const stableKey = `git:${encodeURIComponent('https://github.com/org/repo#skills/skill#v1.0.0')}`
       const lockfile = {
         version: 2,
         packages: {
-          'org/skill': {
+          [stableKey]: {
+            name: 'org/skill',
             source: {
               type: 'git',
               uri: 'https://github.com/org/repo',
@@ -247,33 +229,11 @@ describe('installer', () => {
       const result = readLockfileFile(tempDir)
       expect(result).not.toBeNull()
       expect(result!.version).toBe(2)
-      expect(
-        result!.packages['git:https%3A%2F%2Fgithub.com%2Forg%2Frepo%23skills%2Fskill']
-      ).toEqual(
+      expect(result!.packages[stableKey]).toEqual(
         expect.objectContaining({
           name: 'org/skill',
         })
       )
-    })
-
-    it('returns null for a legacy lockfile schema', () => {
-      const legacyLockfile = {
-        version: 1,
-        packages: {
-          'org/skill': {
-            version: '1.0.0',
-            resolved: 'https://example.com/package.tar.gz',
-            integrity: 'sha256-abc',
-            agents: ['claude-code'],
-          },
-        },
-      }
-      writeLockfile(tempDir, legacyLockfile)
-
-      expect(readLockfileFile(tempDir)).toBeNull()
-      expect(
-        JSON.parse(readFileSync(join(agentverDir(tempDir), 'lockfile.json'), 'utf-8'))
-      ).toEqual(legacyLockfile)
     })
   })
 

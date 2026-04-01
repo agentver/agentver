@@ -13,7 +13,7 @@ import type { FetchedFile } from '../git/types.js'
 import type { SpinnerLike } from '../output.js'
 import { computeSha256FromFiles } from '../storage/integrity'
 import {
-  createStablePackageKey,
+  createPackageKey,
   setLockfilePackage,
   setManifestPackage,
 } from '../storage/package-identity'
@@ -163,7 +163,7 @@ export async function installBundleFromFiles(
   const pendingStorageUpdates: PendingStorageUpdate[] = []
   const projectRoot = process.cwd()
   const scope = options.global ? 'global' : 'project'
-  const bundleKey = createStablePackageKey(bundleName, source)
+  const bundleKey = createPackageKey(bundleName, source)
 
   // Install each constituent package
   for (const pkgRef of resolved.packages) {

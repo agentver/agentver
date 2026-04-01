@@ -23,7 +23,7 @@ import { resolveReadPath } from '../storage/canonical.js'
 import { computeSha256FromFiles, deriveCommitFromIntegrity } from '../storage/integrity.js'
 import { readLockfile } from '../storage/lockfile.js'
 import { readManifest } from '../storage/manifest.js'
-import { getDisplayName } from '../storage/package-identity'
+import { getPackageDisplayName } from '../storage/package-identity'
 import { resolvePlacementPath, type Scope } from '../utils/paths'
 
 type StatusCategory = 'up-to-date' | 'modified' | 'upstream' | 'both' | 'unknown'
@@ -391,7 +391,7 @@ export function registerStatusCommand(program: Command): void {
 
           const statusResults = await Promise.allSettled(
             entries.map(async ([name, pkg]) => {
-              const displayName = getDisplayName(name, pkg)
+              const displayName = getPackageDisplayName(name, pkg)
               if (spinner) spinner.text = `Checking ${displayName}...`
 
               const lockfileEntry = lockfile.packages[name]
@@ -415,7 +415,7 @@ export function registerStatusCommand(program: Command): void {
 
             const [name, pkg] = entries[index]!
             const fallbackStatus: PackageStatus = {
-              name: getDisplayName(name, pkg),
+              name: getPackageDisplayName(name, pkg),
               category: 'unknown',
               sourceUri: getPackageSourceLocation(pkg.source),
               ref: getPackageSourceReference(pkg.source),

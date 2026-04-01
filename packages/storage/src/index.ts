@@ -39,8 +39,7 @@ export { readLockfile, updateLockfile, writeLockfile } from './lockfile'
 export { readManifest, updateManifest, writeManifest } from './manifest'
 // --- Package identity ---
 export {
-  createStablePackageKey,
-  getDisplayName,
+  getPackageDisplayName,
   getTrackedSourceCommit,
   getTrackedSourceRef,
   isPlatformManagedSource,

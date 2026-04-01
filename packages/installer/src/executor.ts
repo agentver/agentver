@@ -1,9 +1,13 @@
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import {
+  readLockfile,
+  readManifest,
+  recoverPendingStorageTransaction,
   setLockfilePackage,
   setManifestPackage,
-  updateManifestAndLockfile,
+  withStorageLock,
+  writeStorageTransaction,
 } from '@agentver/storage'
 import { createFilesystemBackup, restoreFilesystemBackup } from './backup'
 import { cleanupExpiredBackups, createPersistentBackup } from './persistent-backup'
@@ -63,190 +67,196 @@ export function executeInstall(plan: InstallPlan): InstallResult {
     }
   }
 
-  const backups: BackupHandle[] = []
-  const conflictsResolved: InstallResult['conflictsResolved'] = []
-  let placementResults: PlacementResult[] = []
-  let filesPlacedCount = 0
+  return withStorageLock(request.target.projectRoot, request.target.scope, () => {
+    const backups: BackupHandle[] = []
+    const conflictsResolved: InstallResult['conflictsResolved'] = []
+    let placementResults: PlacementResult[] = []
+    let filesPlacedCount = 0
 
-  try {
-    // 1. Create backups for required paths
-    if (backupsRequired.length > 0) {
-      const pathsToBackup = backupsRequired.map((b) => b.originalPath)
-      const firstBackup = backupsRequired[0]
+    try {
+      // 1. Create backups for required paths
+      if (backupsRequired.length > 0) {
+        const pathsToBackup = backupsRequired.map((b) => b.originalPath)
+        const firstBackup = backupsRequired[0]
 
-      // Create persistent backup for user recovery
-      createPersistentBackup(
-        request.target.projectRoot,
-        request.target.scope,
-        request.packageKey,
-        request.displayName,
-        pathsToBackup,
-        firstBackup?.reason ?? 'conflict-replace',
-        manifestEntry,
-        lockfileEntry
-      )
+        // Create persistent backup for user recovery
+        createPersistentBackup(
+          request.target.projectRoot,
+          request.target.scope,
+          request.packageKey,
+          request.displayName,
+          pathsToBackup,
+          firstBackup?.reason ?? 'conflict-replace',
+          manifestEntry,
+          lockfileEntry
+        )
 
-      // Run retention cleanup after creating a new backup
-      cleanupExpiredBackups(request.target.projectRoot, request.target.scope)
+        // Run retention cleanup after creating a new backup
+        cleanupExpiredBackups(request.target.projectRoot, request.target.scope)
 
-      // Create temp backup for crash rollback
-      const handle = createFilesystemBackup(
-        pathsToBackup,
-        firstBackup?.reason ?? 'conflict-replace'
-      )
-      backups.push(handle)
+        // Create temp backup for crash rollback
+        const handle = createFilesystemBackup(
+          pathsToBackup,
+          firstBackup?.reason ?? 'conflict-replace'
+        )
+        backups.push(handle)
 
-      // Remove conflicting paths after backup
-      for (const backup of backupsRequired) {
-        rmSync(backup.originalPath, { recursive: true, force: true })
-        conflictsResolved.push({
-          agentId: findAgentForPath(plan, backup.originalPath),
-          path: backup.originalPath,
-          resolution: 'backed-up',
-        })
-      }
-    }
-
-    // 2. Handle force conflicts (remove without backup)
-    if (request.policy.conflictStrategy === 'force' && plan.conflicts.length > 0) {
-      for (const conflict of plan.conflicts) {
-        rmSync(conflict.path, { recursive: true, force: true })
-        conflictsResolved.push({
-          agentId: conflict.agentId,
-          path: conflict.path,
-          resolution: 'overwritten',
-        })
-      }
-    }
-
-    // 3. Write files to canonical path
-    filesPlacedCount = writeCanonicalFiles(plan)
-
-    // 4. Create agent placements
-    if (placements.length > 0) {
-      placementResults = createAgentPlacements(
-        canonical.path,
-        placements,
-        request.target.projectRoot,
-        request.target.scope,
-        { allowFallback: request.policy.allowFallback }
-      )
-    }
-
-    const agentsInstalledCount = placementResults.filter((p) => p.success).length
-
-    // Record actual link mode and degraded status from placement results
-    const firstPlacement = placementResults[0]
-    if (firstPlacement) {
-      lockfileEntry.linkMode = firstPlacement.actualLinkMode
-      lockfileEntry.degraded = placementResults.some((p) => p.fallbackUsed === true)
-    }
-
-    // 5. Persist manifest/lockfile entries
-    let manifestWritten = false
-    let lockfileWritten = false
-
-    if (request.policy.persist) {
-      updateManifestAndLockfile(
-        request.target.projectRoot,
-        request.target.scope,
-        (manifest, lockfile) => {
-          setManifestPackage(manifest, request.displayName, {
-            name: manifestEntry.name,
-            source: manifestEntry.source,
-            agents: manifestEntry.agents,
-            installedAt: manifestEntry.installedAt,
-            modified: manifestEntry.modified,
-            pinned: manifestEntry.pinned,
-            path: manifestEntry.path,
-            bundle: manifestEntry.bundle,
-            packageType: manifestEntry.packageType,
-            entryFile: manifestEntry.entryFile,
-            dependsOn: manifestEntry.dependsOn,
-            conflictsWith: manifestEntry.conflictsWith,
+        // Remove conflicting paths after backup
+        for (const backup of backupsRequired) {
+          rmSync(backup.originalPath, { recursive: true, force: true })
+          conflictsResolved.push({
+            agentId: findAgentForPath(plan, backup.originalPath),
+            path: backup.originalPath,
+            resolution: 'backed-up',
           })
-
-          setLockfilePackage(lockfile, request.displayName, {
-            name: lockfileEntry.name,
-            source: lockfileEntry.source,
-            integrity: lockfileEntry.integrity,
-            agents: lockfileEntry.agents,
-            linkMode: lockfileEntry.linkMode,
-            degraded: lockfileEntry.degraded,
-          })
-
-          return { manifest, lockfile }
         }
-      )
+      }
 
-      manifestWritten = true
-      lockfileWritten = true
-    }
+      // 2. Handle force conflicts (remove without backup)
+      if (request.policy.conflictStrategy === 'force' && plan.conflicts.length > 0) {
+        for (const conflict of plan.conflicts) {
+          rmSync(conflict.path, { recursive: true, force: true })
+          conflictsResolved.push({
+            agentId: conflict.agentId,
+            path: conflict.path,
+            resolution: 'overwritten',
+          })
+        }
+      }
 
-    return {
-      success: true,
-      packageKey: request.packageKey,
-      displayName: request.displayName,
-      canonicalPath: canonical.path,
-      placements: placementResults,
-      conflictsResolved,
-      backups,
-      manifestWritten,
-      lockfileWritten,
-      manifestEntry,
-      lockfileEntry,
-      filesPlacedCount,
-      agentsInstalledCount,
-    }
-  } catch (err) {
-    for (const placement of placementResults) {
-      if (placement.success && existsSync(placement.destinationPath)) {
+      // 3. Write files to canonical path
+      filesPlacedCount = writeCanonicalFiles(plan)
+
+      // 4. Create agent placements
+      if (placements.length > 0) {
+        placementResults = createAgentPlacements(
+          canonical.path,
+          placements,
+          request.target.projectRoot,
+          request.target.scope,
+          { allowFallback: request.policy.allowFallback }
+        )
+      }
+
+      const agentsInstalledCount = placementResults.filter((p) => p.success).length
+
+      // Record actual link mode and degraded status from placement results
+      const finalLockfileEntry = { ...lockfileEntry }
+      const firstPlacement = placementResults[0]
+      if (firstPlacement) {
+        finalLockfileEntry.linkMode = firstPlacement.actualLinkMode
+        finalLockfileEntry.degraded = placementResults.some((p) => p.fallbackUsed === true)
+      }
+
+      // 5. Persist manifest/lockfile entries (lock already held)
+      let manifestWritten = false
+      let lockfileWritten = false
+
+      if (request.policy.persist) {
+        recoverPendingStorageTransaction(request.target.projectRoot, request.target.scope)
+        const { data: manifest } = readManifest(request.target.projectRoot, request.target.scope)
+        const { data: lockfile } = readLockfile(request.target.projectRoot, request.target.scope)
+
+        setManifestPackage(manifest, request.displayName, {
+          name: manifestEntry.name,
+          source: manifestEntry.source,
+          agents: manifestEntry.agents,
+          installedAt: manifestEntry.installedAt,
+          modified: manifestEntry.modified,
+          pinned: manifestEntry.pinned,
+          path: manifestEntry.path,
+          bundle: manifestEntry.bundle,
+          packageType: manifestEntry.packageType,
+          entryFile: manifestEntry.entryFile,
+          dependsOn: manifestEntry.dependsOn,
+          conflictsWith: manifestEntry.conflictsWith,
+        })
+
+        setLockfilePackage(lockfile, request.displayName, {
+          name: finalLockfileEntry.name,
+          source: finalLockfileEntry.source,
+          integrity: finalLockfileEntry.integrity,
+          agents: finalLockfileEntry.agents,
+          linkMode: finalLockfileEntry.linkMode,
+          degraded: finalLockfileEntry.degraded,
+        })
+
+        writeStorageTransaction(
+          request.target.projectRoot,
+          manifest,
+          lockfile,
+          request.target.scope
+        )
+
+        manifestWritten = true
+        lockfileWritten = true
+      }
+
+      return {
+        success: true,
+        packageKey: request.packageKey,
+        displayName: request.displayName,
+        canonicalPath: canonical.path,
+        placements: placementResults,
+        conflictsResolved,
+        backups,
+        manifestWritten,
+        lockfileWritten,
+        manifestEntry,
+        lockfileEntry: finalLockfileEntry,
+        filesPlacedCount,
+        agentsInstalledCount,
+      }
+    } catch (err) {
+      for (const placement of placementResults) {
+        if (placement.success && existsSync(placement.destinationPath)) {
+          try {
+            rmSync(placement.destinationPath, { recursive: true, force: true })
+          } catch {
+            // Best-effort cleanup
+          }
+        }
+      }
+
+      if (filesPlacedCount > 0 && existsSync(canonical.path)) {
         try {
-          rmSync(placement.destinationPath, { recursive: true, force: true })
+          rmSync(canonical.path, { recursive: true, force: true })
         } catch {
           // Best-effort cleanup
         }
       }
-    }
 
-    if (filesPlacedCount > 0 && existsSync(canonical.path)) {
-      try {
-        rmSync(canonical.path, { recursive: true, force: true })
-      } catch {
-        // Best-effort cleanup
+      // On failure, attempt to restore backups
+      for (const backup of backups) {
+        try {
+          restoreFilesystemBackup(backup)
+        } catch {
+          // Best-effort restoration — swallowing is acceptable here since
+          // we are already in an error path and the primary error is more useful.
+        }
+      }
+
+      return {
+        success: false,
+        error: {
+          code: 'INSTALL_FAILED',
+          message: err instanceof Error ? err.message : String(err),
+        },
+        packageKey: request.packageKey,
+        displayName: request.displayName,
+        canonicalPath: canonical.path,
+        placements: [],
+        conflictsResolved,
+        backups,
+        manifestWritten: false,
+        lockfileWritten: false,
+        manifestEntry,
+        lockfileEntry,
+        filesPlacedCount: 0,
+        agentsInstalledCount: 0,
       }
     }
-
-    // On failure, attempt to restore backups
-    for (const backup of backups) {
-      try {
-        restoreFilesystemBackup(backup)
-      } catch {
-        // Best-effort restoration — swallowing is acceptable here since
-        // we are already in an error path and the primary error is more useful.
-      }
-    }
-
-    return {
-      success: false,
-      error: {
-        code: 'INSTALL_FAILED',
-        message: err instanceof Error ? err.message : String(err),
-      },
-      packageKey: request.packageKey,
-      displayName: request.displayName,
-      canonicalPath: canonical.path,
-      placements: [],
-      conflictsResolved,
-      backups,
-      manifestWritten: false,
-      lockfileWritten: false,
-      manifestEntry,
-      lockfileEntry,
-      filesPlacedCount: 0,
-      agentsInstalledCount: 0,
-    }
-  }
+  })
 }
 
 /**
@@ -469,8 +479,17 @@ function writeCanonicalFiles(plan: InstallPlan): number {
  */
 function writeFileAtomic(filePath: string, content: string): void {
   const tmpPath = `${filePath}.tmp`
-  writeFileSync(tmpPath, content, 'utf-8')
-  renameSync(tmpPath, filePath)
+  try {
+    writeFileSync(tmpPath, content, 'utf-8')
+    renameSync(tmpPath, filePath)
+  } catch (error) {
+    try {
+      rmSync(tmpPath, { force: true })
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw error
+  }
 }
 
 /**

@@ -8,7 +8,7 @@
 import type { ManifestV2 } from '@agentver/shared'
 import { AgentverError, parseSkillFrontmatter } from '@agentver/shared'
 import type { FetchedFile } from './git/types'
-import { getDisplayName, resolvePackageQuery } from './storage/package-identity'
+import { getPackageDisplayName, resolvePackageQuery } from './storage/package-identity'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,13 +115,13 @@ export function findReverseDependencies(
 ): ReverseDependency[] {
   const dependents: ReverseDependency[] = []
   const targetLookup = resolvePackageQuery(manifest.packages, targetName)
-  const targetDisplayName = targetLookup.ok ? targetLookup.displayName : targetName
+  const targetPackageDisplayName = targetLookup.ok ? targetLookup.displayName : targetName
 
   for (const [packageKey, pkg] of Object.entries(manifest.packages)) {
-    const displayName = getDisplayName(packageKey, pkg)
-    if (displayName === targetDisplayName || packageKey === targetName) continue
+    const displayName = getPackageDisplayName(packageKey, pkg)
+    if (displayName === targetPackageDisplayName || packageKey === targetName) continue
     const deps = pkg.dependsOn ?? []
-    if (deps.includes(targetDisplayName) || deps.includes(targetName)) {
+    if (deps.includes(targetPackageDisplayName) || deps.includes(targetName)) {
       dependents.push({ name: displayName, dependsOn: deps })
     }
   }

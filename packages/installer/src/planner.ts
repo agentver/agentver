@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { detectInstalledAgents } from '@agentver/agent-definitions'
 import type { LockfileV2, ManifestV2, PackageSource } from '@agentver/shared'
-import { computeIntegrity, getDisplayName } from '@agentver/storage'
+import { computeIntegrity, getPackageDisplayName } from '@agentver/storage'
 import {
   getCanonicalFilePath,
   getCanonicalSkillPath,
@@ -142,7 +142,7 @@ export function planRestore(
       : detectInstalledAgents(policy.projectRoot).map((a) => a.id)
 
   for (const [key, manifestEntry] of Object.entries(manifest.packages)) {
-    const displayName = getDisplayName(key, manifestEntry)
+    const displayName = getPackageDisplayName(key, manifestEntry)
     const lockfileEntry = lockfile.packages[key]
     const classification = classifySource(manifestEntry.source)
 
@@ -496,15 +496,18 @@ function isUpToDate(entry: RestoreEntry, policy: RestorePolicy): boolean {
  */
 function readDirectoryFiles(
   dirPath: string,
-  basePath: string
+  basePath: string,
+  depth = 0
 ): Array<{ path: string; content: string }> {
+  if (depth > 50) return []
+
   const files: Array<{ path: string; content: string }> = []
 
   const entries = readdirSync(dirPath, { withFileTypes: true })
   for (const entry of entries) {
     const fullPath = join(dirPath, entry.name)
     if (entry.isDirectory()) {
-      files.push(...readDirectoryFiles(fullPath, basePath))
+      files.push(...readDirectoryFiles(fullPath, basePath, depth + 1))
     } else if (entry.isFile()) {
       const relativePath = fullPath.slice(basePath.length + 1)
       const content = readFileSync(fullPath, 'utf-8')
