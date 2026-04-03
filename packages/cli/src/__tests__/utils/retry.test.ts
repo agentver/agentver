@@ -350,5 +350,221 @@ describe('utils/retry', () => {
       expect(result).toEqual({ online: true })
       expect(mockFetch).toHaveBeenCalledTimes(2)
     })
+
+    it('propagates error when .json() rejects mid-response without retrying', async () => {
+      // When response.ok is true, fetchWithRetry returns response.json() directly
+      // (not awaited inside the try block). A .json() rejection escapes the retry
+      // loop entirely and propagates straight to the caller.
+      const mockFetch = vi.fn().mockResolvedValue(
+        mockResponse({
+          ok: true,
+          json: () => Promise.reject(new Error('network timeout at: https://example.com/api')),
+        })
+      )
+      vi.stubGlobal('fetch', mockFetch)
+
+      await expect(fetchWithRetry(buildOptions())).rejects.toThrow(
+        'network timeout at: https://example.com/api'
+      )
+      // Only one attempt — the error bypasses the retry mechanism
+      expect(mockFetch).toHaveBeenCalledOnce()
+    })
+
+    it('retries on ECONNREFUSED then succeeds on next attempt', async () => {
+      vi.useFakeTimers()
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+      const connRefused = new Error('connect ECONNREFUSED 127.0.0.1:443')
+      ;(connRefused as NodeJS.ErrnoException).code = 'ECONNREFUSED'
+
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(connRefused)
+        .mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            json: () => Promise.resolve({ connected: true }),
+          })
+        )
+      vi.stubGlobal('fetch', mockFetch)
+
+      const promise = fetchWithRetry<{ connected: boolean }>(buildOptions())
+      await vi.advanceTimersByTimeAsync(1_000)
+      const result = await promise
+
+      expect(result).toEqual({ connected: true })
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('retries on DNS resolution failure (ENOTFOUND) as it is treated as a generic error', async () => {
+      // DNS failures hit the catch block without a response, so isRetryable(error)
+      // returns true (no response context). All 3 attempts are exhausted.
+      vi.useFakeTimers()
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+      const dnsError = new Error('getaddrinfo ENOTFOUND example.com')
+      ;(dnsError as NodeJS.ErrnoException).code = 'ENOTFOUND'
+
+      const mockFetch = vi.fn().mockRejectedValue(dnsError)
+      vi.stubGlobal('fetch', mockFetch)
+
+      const promise = fetchWithRetry(buildOptions())
+      promise.catch(() => {})
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      await expect(promise).rejects.toThrow('ENOTFOUND')
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+    })
+
+    it('propagates SyntaxError from .json() on 200 response without retrying', async () => {
+      // Same as the timeout mid-response case: response.ok is true so
+      // response.json() is returned directly (not awaited in try block).
+      // The SyntaxError escapes the retry loop.
+      const mockFetch = vi.fn().mockResolvedValue(
+        mockResponse({
+          ok: true,
+          json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
+        })
+      )
+      vi.stubGlobal('fetch', mockFetch)
+
+      await expect(fetchWithRetry(buildOptions())).rejects.toThrow(SyntaxError)
+      expect(mockFetch).toHaveBeenCalledOnce()
+    })
+
+    it('creates a fresh AbortSignal per attempt via the AbortController', async () => {
+      vi.useFakeTimers()
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+      const signals: AbortSignal[] = []
+      const mockFetch = vi.fn((_url: string, init?: RequestInit) => {
+        if (init?.signal) {
+          signals.push(init.signal)
+        }
+        if (signals.length < 3) {
+          return Promise.resolve(
+            mockResponse({
+              ok: false,
+              status: 503,
+              text: () => Promise.resolve('Service Unavailable'),
+            })
+          )
+        }
+        return Promise.resolve(
+          mockResponse({
+            ok: true,
+            json: () => Promise.resolve({ done: true }),
+          })
+        )
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const promise = fetchWithRetry(buildOptions())
+      await vi.advanceTimersByTimeAsync(1_000)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await promise
+
+      expect(signals).toHaveLength(3)
+      // Each attempt should have its own distinct AbortSignal instance
+      expect(signals[0]).not.toBe(signals[1])
+      expect(signals[1]).not.toBe(signals[2])
+      expect(signals[0]).not.toBe(signals[2])
+    })
+
+    it('uses exponential backoff with correct delays across all retries', async () => {
+      vi.useFakeTimers()
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+      const callTimestamps: number[] = []
+      const mockFetch = vi.fn(() => {
+        callTimestamps.push(Date.now())
+        return Promise.resolve(
+          mockResponse({
+            ok: false,
+            status: 500,
+            text: () => Promise.resolve('Error'),
+          })
+        )
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const promise = fetchWithRetry(buildOptions())
+      promise.catch(() => {})
+
+      // First call is immediate
+      expect(callTimestamps).toHaveLength(1)
+
+      // First retry after 1000ms (1000 * 2^0)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(callTimestamps).toHaveLength(2)
+      expect(callTimestamps[1]! - callTimestamps[0]!).toBe(1_000)
+
+      // Second retry after 2000ms (1000 * 2^1)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(callTimestamps).toHaveLength(3)
+      expect(callTimestamps[2]! - callTimestamps[1]!).toBe(2_000)
+
+      await expect(promise).rejects.toThrow()
+    })
+
+    it('calls buildRequest fresh on each retry so consumed bodies are not reused', async () => {
+      vi.useFakeTimers()
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+      const bodies: string[] = []
+      let invocation = 0
+      const buildRequest = vi.fn(() => {
+        invocation++
+        const body = JSON.stringify({ attempt: invocation, timestamp: Date.now() })
+        bodies.push(body)
+        return {
+          url: 'https://example.com/api',
+          method: 'POST' as const,
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        }
+      })
+
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse({
+            ok: false,
+            status: 502,
+            text: () => Promise.resolve('Bad Gateway'),
+          })
+        )
+        .mockResolvedValueOnce(
+          mockResponse({
+            ok: false,
+            status: 502,
+            text: () => Promise.resolve('Bad Gateway'),
+          })
+        )
+        .mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            json: () => Promise.resolve({ success: true }),
+          })
+        )
+      vi.stubGlobal('fetch', mockFetch)
+
+      const promise = fetchWithRetry(buildOptions({ buildRequest }))
+      await vi.advanceTimersByTimeAsync(1_000)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await promise
+
+      expect(buildRequest).toHaveBeenCalledTimes(3)
+      // Each call should produce a distinct body string (different attempt number + timestamp)
+      expect(bodies[0]).not.toBe(bodies[1])
+      expect(bodies[1]).not.toBe(bodies[2])
+
+      // Verify the actual body passed to fetch matches what buildRequest returned
+      for (let i = 0; i < 3; i++) {
+        expect(mockFetch.mock.calls[i]![1]).toHaveProperty('body', bodies[i])
+      }
+    })
   })
 })

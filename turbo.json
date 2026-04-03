@@ -66,6 +66,11 @@
       "outputs": [],
       "cache": false
     },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "outputs": [],
+      "cache": false
+    },
     "db:studio": {
       "cache": false,
       "persistent": true,

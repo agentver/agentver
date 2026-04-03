@@ -84,6 +84,57 @@ describe('registry/auth', () => {
       const result = await authModule.getCredentials()
       expect(result).toBeNull()
     })
+
+    it('returns null when file contains binary garbage', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        Buffer.from([0x00, 0x89, 0x50, 0x4e, 0x47, 0xff, 0xd8, 0xff]).toString()
+      )
+
+      const result = await authModule.getCredentials()
+      expect(result).toBeNull()
+    })
+
+    it('returns null for truncated JSON', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('{"token":"abc')
+
+      const result = await authModule.getCredentials()
+      expect(result).toBeNull()
+    })
+
+    it('returns null when file contains an array', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('[]')
+
+      const result = await authModule.getCredentials()
+      expect(result).toBeNull()
+    })
+
+    it('returns null when file contains null', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('null')
+
+      const result = await authModule.getCredentials()
+      expect(result).toBeNull()
+    })
+
+    it('returns null when credentials have wrong value types', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ token: 123, apiKey: true }))
+
+      // Zod schema expects strings — wrong types should fail validation
+      const result = await authModule.getCredentials()
+      expect(result).toBeNull()
+    })
+
+    it('returns null when file is empty', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('')
+
+      const result = await authModule.getCredentials()
+      expect(result).toBeNull()
+    })
   })
 
   describe('saveCredentials', () => {
@@ -114,6 +165,29 @@ describe('registry/auth', () => {
       expect(() => authModule.saveCredentials({ token: '' })).toThrow(
         'Credentials must include a non-empty token or API key.'
       )
+    })
+
+    it('saves valid credentials after a corrupt read, producing a readable file', async () => {
+      // Simulate a corrupted credentials file
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('corrupted binary garbage')
+
+      const corruptResult = await authModule.getCredentials()
+      expect(corruptResult).toBeNull()
+
+      // Now save fresh credentials over the corrupted file
+      authModule.saveCredentials({ token: 'fresh-token' })
+
+      // Verify writeFileSync was called with the new credentials
+      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      const parsed = JSON.parse(writtenContent)
+      expect(parsed.token).toBe('fresh-token')
+
+      // Simulate reading back the newly written file
+      vi.mocked(fs.readFileSync).mockReturnValue(writtenContent)
+
+      const freshResult = await authModule.getCredentials()
+      expect(freshResult).toEqual({ token: 'fresh-token' })
     })
   })
 
