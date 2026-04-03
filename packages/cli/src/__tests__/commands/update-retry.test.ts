@@ -409,6 +409,7 @@ describe('commands/update retry flow', () => {
     const installCalls = vi.mocked(installPackage).mock.calls
     const installedSources = installCalls.map((call) => call[0])
     expect(installedSources.some((s) => s.includes('skill-a'))).toBe(true)
+    expect(installedSources.some((s) => s.includes('skill-b'))).toBe(false)
   })
 
   it('restores backup when installPackage throws after all retries', async () => {

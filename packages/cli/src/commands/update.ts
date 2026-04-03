@@ -849,7 +849,7 @@ export function registerUpdateCommand(program: Command): void {
           const { code, message } = extractError(error, 'UPDATE_FAILED')
           if (jsonMode) {
             outputError(code, message)
-            process.exit(1)
+            return process.exit(1)
           }
           spinner.fail(`Update check failed: ${message}`)
           process.exit(1)
