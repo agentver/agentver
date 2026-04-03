@@ -139,7 +139,7 @@ export async function migrateSkills(
     for (const [packageName, pkg] of packageEntries) {
       const shortName = (pkg.name ?? packageName).split('/').pop() ?? packageName
       const singleFile = isSingleFilePackageType(pkg.packageType)
-      const category = singleFile ? PACKAGE_TYPE_TO_CATEGORY[pkg.packageType] : undefined
+      const category = singleFile ? PACKAGE_TYPE_TO_CATEGORY[pkg.packageType as string] : undefined
 
       if (
         pkg.packageType &&

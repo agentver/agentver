@@ -829,13 +829,13 @@ describe('commands/migrate', () => {
   // -------------------------------------------------------------------------
 
   describe('non-skill package types', () => {
-    it('skips AGENT type packages with a descriptive reason', async () => {
+    it('skips non-migratable package types with a descriptive reason', async () => {
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       manifest = createManifest({
         packages: {
-          'test-agent': createManifestPackage({
-            source: { type: 'local', path: '/project/.claude/agents/test-agent' },
-            packageType: 'AGENT',
+          'test-plugin': createManifestPackage({
+            source: { type: 'local', path: '/project/.claude/plugins/test-plugin' },
+            packageType: 'PLUGIN',
           }),
         },
       })
@@ -849,7 +849,7 @@ describe('commands/migrate', () => {
 
       expect(emitted.migrated).toHaveLength(0)
       expect(emitted.skipped).toHaveLength(1)
-      expect(emitted.skipped[0]!.reason).toContain('AGENT')
+      expect(emitted.skipped[0]!.reason).toContain('PLUGIN')
     })
   })
 })
