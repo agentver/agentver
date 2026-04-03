@@ -100,7 +100,7 @@ export async function migrateSkills(
     const result: MigrationResult = { migrated: [], skipped: [] }
 
     for (const [packageName, pkg] of packageEntries) {
-      const shortName = packageName.split('/').pop() ?? packageName
+      const shortName = (pkg.name ?? packageName).split('/').pop() ?? packageName
 
       if (pkg.packageType && pkg.packageType !== 'SKILL') {
         result.skipped.push({

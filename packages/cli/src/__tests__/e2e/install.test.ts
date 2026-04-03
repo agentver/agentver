@@ -90,7 +90,6 @@ const COMMIT_SHA = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852
 const skillContent = createSkillMd()
 
 let tempDir: string
-let originalCwd: string
 
 function setupGitMocks(files: Array<{ path: string; content: string; size: number }>): void {
   const gitSource = createGitSource({
@@ -120,25 +119,18 @@ function setupGitMocks(files: Array<{ path: string; content: string; size: numbe
   })
 }
 
-// NOTE: process.chdir is required because installPackage reads process.cwd()
-// internally and does not accept a cwd parameter. Vitest 4.x uses the forks
-// pool by default, so each test file runs in its own process — no cross-file
-// race condition. Tests within this file run sequentially.
 beforeEach(() => {
   tempDir = createTempDir()
-  originalCwd = process.cwd()
-  process.chdir(tempDir)
+  vi.spyOn(process, 'cwd').mockReturnValue(tempDir)
 
-  // Create .claude/ so detectInstalledAgents finds claude-code
   mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
   setupGitMocks([{ path: 'SKILL.md', content: skillContent, size: skillContent.length }])
 })
 
 afterEach(() => {
-  process.chdir(originalCwd)
-  cleanupTempDir(tempDir)
   vi.restoreAllMocks()
+  cleanupTempDir(tempDir)
 })
 
 // ---------------------------------------------------------------------------

@@ -55,6 +55,99 @@ describe('registry/config', () => {
       const result = configModule.readConfig()
       expect(result).toEqual({})
     })
+
+    it('returns default config when file contains binary garbage', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        Buffer.from([0x00, 0x89, 0x50, 0x4e, 0x47]).toString()
+      )
+
+      const result = configModule.readConfig()
+      expect(result).toEqual({})
+    })
+
+    it('returns default config for truncated JSON', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('{"platformUrl":"ht')
+
+      const result = configModule.readConfig()
+      expect(result).toEqual({})
+    })
+
+    it('preserves known fields and ignores unknown fields (forward compatibility)', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({
+          platformUrl: 'http://x',
+          unknownField: 'value',
+          nested: { a: 1 },
+        })
+      )
+
+      const result = configModule.readConfig()
+      expect(result.platformUrl).toBe('http://x')
+      // Unknown fields are carried through because readConfig uses a plain JSON.parse cast
+      expect((result as Record<string, unknown>).unknownField).toBe('value')
+    })
+
+    it('returns default config when file contains a plain string', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('"just a string"')
+
+      const result = configModule.readConfig()
+      // JSON.parse succeeds but a string is not an AgentverConfig object;
+      // the current implementation casts whatever JSON.parse returns, so
+      // accessing properties on a string yields undefined — equivalent to
+      // a default (empty) config.
+      expect(result.platformUrl).toBeUndefined()
+      expect(result.telemetry).toBeUndefined()
+    })
+
+    it('returns default config when file contains an array', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('[1,2,3]')
+
+      const result = configModule.readConfig()
+      // An array is not a valid AgentverConfig — properties should be absent
+      expect(result.platformUrl).toBeUndefined()
+      expect(result.telemetry).toBeUndefined()
+    })
+
+    it('returns default config when file contains null', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue('null')
+
+      const result = configModule.readConfig()
+      // null has no properties — should behave like empty config
+      expect(result?.platformUrl).toBeUndefined()
+    })
+
+    it('handles config with wrong value types gracefully', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ platformUrl: 123, telemetry: 'yes' })
+      )
+
+      // Should not throw — readConfig does a plain cast, so wrong types
+      // are surfaced but do not crash
+      const result = configModule.readConfig()
+      expect(result).toBeDefined()
+      expect(result.platformUrl).toBe(123)
+      expect(result.telemetry).toBe('yes')
+    })
+
+    it('handles a very large config file without crashing', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      // Build ~1 MB of valid JSON
+      const largeValue = 'x'.repeat(1_000_000)
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ platformUrl: 'https://large.test', bigField: largeValue })
+      )
+
+      const result = configModule.readConfig()
+      expect(result.platformUrl).toBe('https://large.test')
+      expect((result as Record<string, unknown>).bigField).toBe(largeValue)
+    })
   })
 
   describe('writeConfig', () => {
@@ -156,6 +249,30 @@ describe('registry/config', () => {
       const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
       const parsed = JSON.parse(writtenContent)
       expect(parsed.platformUrl).toBe('https://test.com')
+    })
+
+    it('preserves unknown fields through a read-write round-trip', () => {
+      const configWithExtras = {
+        platformUrl: 'https://roundtrip.test',
+        futureFeature: true,
+        nested: { deep: 'value' },
+      }
+
+      vi.mocked(fs.existsSync).mockReturnValue(true)
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(configWithExtras))
+
+      // Read the config (which includes unknown fields)
+      const loaded = configModule.readConfig()
+
+      // Write it back
+      configModule.writeConfig(loaded)
+
+      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0]![1] as string
+      const parsed = JSON.parse(writtenContent)
+
+      expect(parsed.platformUrl).toBe('https://roundtrip.test')
+      expect(parsed.futureFeature).toBe(true)
+      expect(parsed.nested).toEqual({ deep: 'value' })
     })
   })
 })

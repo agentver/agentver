@@ -6,7 +6,12 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { GitSource, LockfileV2Package, ManifestV2Package } from '@agentver/shared'
+import type {
+  GitSource,
+  LockfileV2Package,
+  ManifestV2Package,
+  PackageSource,
+} from '@agentver/shared'
 
 // ---------------------------------------------------------------------------
 // Shared CI output types
@@ -181,7 +186,11 @@ type SetupSkillOptions = {
   files: Record<string, string>
   agents: string[]
   scope?: 'project' | 'global'
-  source?: GitSource
+  source?: PackageSource
+  /** Bundle manifest key this package belongs to (constituent of a bundle). */
+  bundle?: string
+  /** Package type enum value (e.g. 'BUNDLE', 'SKILL', 'PROMPT'). */
+  packageType?: ManifestV2Package['packageType']
 }
 
 const DEFAULT_SOURCE: GitSource = {
@@ -226,6 +235,8 @@ export function setupInstalledSkill(dir: string, options: SetupSkillOptions): vo
     agents: options.agents,
     installedAt: new Date().toISOString(),
     modified: false,
+    ...(options.bundle ? { bundle: options.bundle } : {}),
+    ...(options.packageType ? { packageType: options.packageType } : {}),
   }
   manifest.packages[options.name] = manifestPkg
   writeManifest(dir, manifest, scope)

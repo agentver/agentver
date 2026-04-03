@@ -102,7 +102,6 @@ const INITIAL_SHA = '1111111111111111111111111111111111111111'
 const UPDATED_SHA = '2222222222222222222222222222222222222222'
 
 let tempDir: string
-let originalCwd: string
 
 function setGitState(commitSha: string, skillContent: string): void {
   const source = {
@@ -124,8 +123,7 @@ function setGitState(commitSha: string, skillContent: string): void {
 
 beforeEach(() => {
   tempDir = createTempDir()
-  originalCwd = process.cwd()
-  process.chdir(tempDir)
+  vi.spyOn(process, 'cwd').mockReturnValue(tempDir)
 
   mkdirSync(join(tempDir, '.claude'), { recursive: true })
 
@@ -142,9 +140,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  process.chdir(originalCwd)
-  cleanupTempDir(tempDir)
   vi.restoreAllMocks()
+  cleanupTempDir(tempDir)
 })
 
 describe('E2E: install -> update -> remove lifecycle', () => {
