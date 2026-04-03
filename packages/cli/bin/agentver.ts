@@ -30,6 +30,7 @@ import { registerRemoveCommand } from '../src/commands/remove'
 import { registerSaveCommand } from '../src/commands/save'
 import { registerScanCommand } from '../src/commands/scan'
 import { registerSearchCommand } from '../src/commands/search'
+import { registerSetupCommand } from '../src/commands/setup'
 import { registerStatusCommand } from '../src/commands/status'
 import { registerSuggestCommand } from '../src/commands/suggest'
 import { registerSuggestionsCommand } from '../src/commands/suggestions'
@@ -99,6 +100,7 @@ registerRemoveCommand(program)
 registerSaveCommand(program)
 registerScanCommand(program)
 registerSearchCommand(program)
+registerSetupCommand(program)
 registerStatusCommand(program)
 registerSuggestCommand(program)
 registerSuggestionsCommand(program)

@@ -57,12 +57,17 @@ vi.mock('../../output.js', () => ({
   createSpinner: vi.fn(),
 }))
 
+vi.mock('../../commands/migrate.js', () => ({
+  migrateSkills: vi.fn().mockResolvedValue(undefined),
+}))
+
 // ---------------------------------------------------------------------------
 // SUT import (after mocks)
 // ---------------------------------------------------------------------------
 
 import * as agentDefs from '@agentver/agent-definitions'
 import { adoptSkills } from '../../commands/adopt'
+import * as migrateModule from '../../commands/migrate.js'
 import type { LocalGitContext } from '../../git/local-context'
 import * as localContextModule from '../../git/local-context.js'
 import * as outputModule from '../../output.js'
@@ -559,6 +564,98 @@ describe('commands/adopt', () => {
       const [, lockfile] = vi.mocked(lockfileModule.writeLockfile).mock.calls[0]!
       const pkg = getStoredLockfilePackage(lockfile, 'test-skill')
       expect(pkg?.integrity).toBe('sha256-test-hash')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // 12. --canonicalise flag
+  // -------------------------------------------------------------------------
+
+  describe('--canonicalise flag', () => {
+    it('calls migrateSkills after adopting skills', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+
+      await adoptSkills(undefined, { canonicalise: true })
+
+      expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
+      expect(migrateModule.migrateSkills).toHaveBeenCalledTimes(1)
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith(undefined, {
+        yes: true,
+        global: undefined,
+        dryRun: undefined,
+      })
+    })
+
+    it('does not call migrateSkills when no skills are adopted', async () => {
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([])
+
+      await adoptSkills(undefined, { canonicalise: true })
+
+      expect(migrateModule.migrateSkills).not.toHaveBeenCalled()
+    })
+
+    it('does not call migrateSkills when canonicalise is not set', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+
+      await adoptSkills(undefined, {})
+
+      expect(migrateModule.migrateSkills).not.toHaveBeenCalled()
+    })
+
+    it('passes global flag through to migrateSkills', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+
+      await adoptSkills(undefined, { canonicalise: true, global: true })
+
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith(undefined, {
+        yes: true,
+        global: true,
+        dryRun: undefined,
+      })
+    })
+
+    it('passes dryRun flag through to migrateSkills', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+
+      await adoptSkills(undefined, { canonicalise: true, dryRun: true })
+
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith(undefined, {
+        yes: true,
+        global: undefined,
+        dryRun: true,
+      })
+    })
+
+    it('calls migrateSkills in JSON mode when canonicalise is set', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      process.argv = ['node', 'agentver', 'adopt', '--json']
+
+      await adoptSkills(undefined, { canonicalise: true })
+
+      expect(migrateModule.migrateSkills).toHaveBeenCalledTimes(1)
+      expect(outputModule.outputSuccess).toHaveBeenCalled()
+    })
+
+    it('skips canonicalise when all skills are already managed', async () => {
+      const scannedFile = createScannedFile()
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
+      vi.mocked(manifestModule.readManifest).mockReturnValue(
+        createManifest({
+          packages: {
+            'test-skill': createManifestPackage(),
+          },
+        })
+      )
+
+      await adoptSkills(undefined, { canonicalise: true })
+
+      expect(migrateModule.migrateSkills).not.toHaveBeenCalled()
     })
   })
 })

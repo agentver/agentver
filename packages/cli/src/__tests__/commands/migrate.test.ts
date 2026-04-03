@@ -4,11 +4,13 @@ import { createLockfile, createManifest, createManifestPackage } from '../helper
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 vi.mock('node:fs', () => ({
+  copyFileSync: vi.fn(),
   cpSync: vi.fn(),
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
   mkdtempSync: vi.fn().mockReturnValue('/tmp/agentver-migrate-backup'),
   rmSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }))
 
 vi.mock('@agentver/agent-definitions', () => ({
@@ -24,8 +26,11 @@ vi.mock('../../output.js', () => ({
 
 vi.mock('../../storage/canonical.js', () => ({
   createAgentSymlinks: vi.fn(),
+  createFileSymlinks: vi.fn(),
   findAgentSkillPlacementConflicts: vi.fn().mockReturnValue([]),
+  getCanonicalFilePath: vi.fn(),
   getCanonicalSkillPath: vi.fn(),
+  getFilePlacementPath: vi.fn(),
   resolveReadPath: vi.fn(),
 }))
 

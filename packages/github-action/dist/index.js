@@ -20340,6 +20340,20 @@ var AGENT_DEFINITIONS = [
     mcpConfigFormat: null
   },
   {
+    id: "forgecode",
+    name: "ForgeCode",
+    projectSkillPath: ".forge/skills",
+    // ForgeCode uses ~/forge/ (not ~/.forge/) as its home directory by design
+    globalSkillPath: "~/forge/skills",
+    configFiles: [".forge.toml"],
+    configDirs: [".forge"],
+    category: "agent-specific",
+    aliases: ["forge"],
+    mcpConfigPath: null,
+    globalMcpConfigPath: null,
+    mcpConfigFormat: null
+  },
+  {
     id: "openclaw",
     name: "OpenClaw",
     projectSkillPath: "skills",
@@ -34622,6 +34636,7 @@ var AGENT_IDS_FOR_SCHEMA = [
   "crush",
   "cursor",
   "droid",
+  "forgecode",
   "gemini-cli",
   "goose",
   "iflow-cli",
@@ -35252,6 +35267,41 @@ var promoteResultSchema = external_exports.object({
 var ciResultSchema = external_exports.object({
   restore: restoreResultSchema,
   success: external_exports.boolean()
+});
+var setupResultSchema = external_exports.object({
+  agents: external_exports.array(external_exports.object({
+    id: external_exports.string(),
+    name: external_exports.string(),
+    configPath: external_exports.string(),
+    scope: external_exports.enum(["project", "global"])
+  })),
+  discovered: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    path: external_exports.string(),
+    type: external_exports.string(),
+    agents: external_exports.array(external_exports.string()),
+    alreadyManaged: external_exports.boolean()
+  })),
+  adopted: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    path: external_exports.string(),
+    type: external_exports.string(),
+    agents: external_exports.array(external_exports.string())
+  })),
+  skipped: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    reason: external_exports.string()
+  })),
+  canonicalised: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    from: external_exports.string(),
+    to: external_exports.string()
+  })),
+  healthChecks: external_exports.array(external_exports.object({
+    name: external_exports.string(),
+    status: external_exports.enum(["pass", "fail", "warn"]),
+    message: external_exports.string()
+  }))
 });
 
 // ../shared/dist/mcp-schemas.js

@@ -574,3 +574,55 @@ export const ciResultSchema = z.object({
 })
 
 export type CiResult = z.infer<typeof ciResultSchema>
+
+// --- Setup ---
+
+export const setupResultSchema = z.object({
+  agents: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      configPath: z.string(),
+      scope: z.enum(['project', 'global']),
+    })
+  ),
+  discovered: z.array(
+    z.object({
+      name: z.string(),
+      path: z.string(),
+      type: z.string(),
+      agents: z.array(z.string()),
+      alreadyManaged: z.boolean(),
+    })
+  ),
+  adopted: z.array(
+    z.object({
+      name: z.string(),
+      path: z.string(),
+      type: z.string(),
+      agents: z.array(z.string()),
+    })
+  ),
+  skipped: z.array(
+    z.object({
+      name: z.string(),
+      reason: z.string(),
+    })
+  ),
+  canonicalised: z.array(
+    z.object({
+      name: z.string(),
+      from: z.string(),
+      to: z.string(),
+    })
+  ),
+  healthChecks: z.array(
+    z.object({
+      name: z.string(),
+      status: z.enum(['pass', 'fail', 'warn']),
+      message: z.string(),
+    })
+  ),
+})
+
+export type SetupResult = z.infer<typeof setupResultSchema>
