@@ -375,11 +375,14 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
     // Output results
     if (jsonMode) {
       if (options.canonicalise && adopted.length > 0) {
-        await migrateSkills(undefined, {
-          yes: true,
-          global: options.global,
-          dryRun: options.dryRun,
-        })
+        for (const entry of adopted) {
+          await migrateSkills(entry.name, {
+            yes: true,
+            global: options.global,
+            dryRun: options.dryRun,
+            silent: true,
+          })
+        }
       }
       outputSuccess<AdoptResult>({ adopted, skipped })
       return
@@ -422,11 +425,14 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
     // Canonicalise adopted skills if requested
     if (options.canonicalise && adopted.length > 0) {
       process.stdout.write(chalk.bold('\nCanonicalising adopted skills...\n'))
-      await migrateSkills(undefined, {
-        yes: true,
-        global: options.global,
-        dryRun: options.dryRun,
-      })
+      for (const entry of adopted) {
+        await migrateSkills(entry.name, {
+          yes: true,
+          global: options.global,
+          dryRun: options.dryRun,
+          silent: true,
+        })
+      }
     }
 
     const summary = `\nAdopted ${adopted.length} skill${adopted.length === 1 ? '' : 's'}, skipped ${skipped.length}.\n`

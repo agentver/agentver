@@ -5,7 +5,13 @@ import { AgentverError } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
-import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
+import {
+  createSpinner,
+  isJSONMode,
+  outputError,
+  outputSuccess,
+  type SpinnerLike,
+} from '../output.js'
 import {
   type CanonicalCategory,
   createAgentSymlinks,
@@ -14,6 +20,8 @@ import {
   getCanonicalFilePath,
   getCanonicalSkillPath,
   getFilePlacementPath,
+  removeAgentSymlinks,
+  removeFileSymlinks,
   resolveReadPath,
 } from '../storage/canonical.js'
 import { readManifest } from '../storage/manifest.js'
@@ -26,9 +34,10 @@ type MigrateOptions = {
   global?: boolean
   dryRun?: boolean
   yes?: boolean
+  silent?: boolean
 }
 
-type MigrationResult = {
+export type MigrationResult = {
   migrated: Array<{ name: string; from: string; to: string }>
   skipped: Array<{ name: string; reason: string }>
 }
@@ -36,6 +45,28 @@ type MigrationResult = {
 const PACKAGE_TYPE_TO_CATEGORY: Record<string, CanonicalCategory> = {
   AGENT: 'agents',
   COMMAND: 'commands',
+}
+
+const noopSpinnerLike: SpinnerLike = {
+  start() {
+    return this
+  },
+  succeed() {
+    return this
+  },
+  fail() {
+    return this
+  },
+  warn() {
+    return this
+  },
+  info() {
+    return this
+  },
+  stop() {
+    return this
+  },
+  text: '',
 }
 
 function isSingleFilePackageType(
@@ -116,12 +147,15 @@ async function confirmMigration(
 export async function migrateSkills(
   name: string | undefined,
   options: MigrateOptions
-): Promise<void> {
+): Promise<MigrationResult> {
   const jsonMode = isJSONMode()
+  const silent = options.silent === true
   const projectRoot = process.cwd()
   const scope: Scope = options.global ? 'global' : 'project'
   const manifest = readManifest(projectRoot, scope)
-  const spinner = createSpinner('Inspecting installed packages...').start()
+  const spinner = silent
+    ? noopSpinnerLike.start()
+    : createSpinner('Inspecting installed packages...').start()
 
   try {
     const packageEntries = Object.entries(manifest.packages).filter(([packageName, pkg]) => {
@@ -252,17 +286,27 @@ export async function migrateSkills(
           const manifestEntry = currentManifest.packages[packageName]
           const lockfileEntry = currentLockfile.packages[packageName]
 
-          if (manifestEntry?.source.type === 'local' && manifestEntry.source.path === readPath) {
+          // For single-file packages, source.path is the parent directory,
+          // not the full file path, so also compare against dirname(readPath).
+          const isLocalMatch = (sourcePath: string) =>
+            sourcePath === readPath || (singleFile && sourcePath === dirname(readPath))
+
+          // Single-file packages store the directory in source.path (filename
+          // lives in entryFile), so point to the canonical directory rather
+          // than the full file path.
+          const newSourcePath = singleFile ? dirname(canonicalPath) : canonicalPath
+
+          if (manifestEntry?.source.type === 'local' && isLocalMatch(manifestEntry.source.path)) {
             manifestEntry.source = {
               ...manifestEntry.source,
-              path: canonicalPath,
+              path: newSourcePath,
             }
           }
 
-          if (lockfileEntry?.source.type === 'local' && lockfileEntry.source.path === readPath) {
+          if (lockfileEntry?.source.type === 'local' && isLocalMatch(lockfileEntry.source.path)) {
             lockfileEntry.source = {
               ...lockfileEntry.source,
-              path: canonicalPath,
+              path: newSourcePath,
             }
           }
 
@@ -275,6 +319,14 @@ export async function migrateSkills(
         restoreFilesystemBackup(backup)
         cleanupBackup(backup)
         rmSync(canonicalPath, { recursive: true, force: true })
+
+        // Clean up any symlinks that were partially created before the error
+        if (singleFile && category) {
+          removeFileSymlinks(projectRoot, shortName, category, pkg.agents, scope)
+        } else {
+          removeAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
+        }
+
         result.skipped.push({
           name: packageName,
           reason: error instanceof Error ? error.message : String(error),
@@ -284,9 +336,13 @@ export async function migrateSkills(
 
     spinner.stop()
 
+    if (silent) {
+      return result
+    }
+
     if (jsonMode) {
       outputSuccess(result)
-      return
+      return result
     }
 
     if (result.migrated.length > 0) {
@@ -304,7 +360,12 @@ export async function migrateSkills(
         process.stdout.write(`  ${chalk.dim('\u2013')} ${item.name} ${chalk.dim(item.reason)}\n`)
       }
     }
+
+    return result
   } catch (error) {
+    if (silent) {
+      throw error
+    }
     const { code, message } = extractError(error, 'MIGRATE_FAILED')
     if (jsonMode) {
       outputError(code, message)

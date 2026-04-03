@@ -58,7 +58,7 @@ vi.mock('../../output.js', () => ({
 }))
 
 vi.mock('../../commands/migrate.js', () => ({
-  migrateSkills: vi.fn().mockResolvedValue(undefined),
+  migrateSkills: vi.fn().mockResolvedValue({ migrated: [], skipped: [] }),
 }))
 
 // ---------------------------------------------------------------------------
@@ -572,7 +572,7 @@ describe('commands/adopt', () => {
   // -------------------------------------------------------------------------
 
   describe('--canonicalise flag', () => {
-    it('calls migrateSkills after adopting skills', async () => {
+    it('calls migrateSkills per adopted skill with silent: true', async () => {
       const scannedFile = createScannedFile()
       vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
 
@@ -580,10 +580,11 @@ describe('commands/adopt', () => {
 
       expect(manifestModule.writeManifest).toHaveBeenCalledTimes(1)
       expect(migrateModule.migrateSkills).toHaveBeenCalledTimes(1)
-      expect(migrateModule.migrateSkills).toHaveBeenCalledWith(undefined, {
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith('test-skill', {
         yes: true,
         global: undefined,
         dryRun: undefined,
+        silent: true,
       })
     })
 
@@ -610,10 +611,11 @@ describe('commands/adopt', () => {
 
       await adoptSkills(undefined, { canonicalise: true, global: true })
 
-      expect(migrateModule.migrateSkills).toHaveBeenCalledWith(undefined, {
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith('test-skill', {
         yes: true,
         global: true,
         dryRun: undefined,
+        silent: true,
       })
     })
 
@@ -623,10 +625,11 @@ describe('commands/adopt', () => {
 
       await adoptSkills(undefined, { canonicalise: true, dryRun: true })
 
-      expect(migrateModule.migrateSkills).toHaveBeenCalledWith(undefined, {
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith('test-skill', {
         yes: true,
         global: undefined,
         dryRun: true,
+        silent: true,
       })
     })
 

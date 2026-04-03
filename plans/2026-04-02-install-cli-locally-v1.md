@@ -19,7 +19,7 @@ The tsup config at `packages/cli/tsup.config.ts:16` uses `noExternal: [/@agentve
 
 ## Implementation Plan
 
-- [ ] **Step 1: Install workspace dependencies** — Run `bun install` from the monorepo root (`/home/jaythegeek/code/agentver/agentver`) to ensure all workspace dependencies are resolved and up to date. This is necessary because the CLI depends on `@agentver/installer` and `@agentver/storage` at build time.
+- [ ] **Step 1: Install workspace dependencies** — Run `bun install` from the monorepo root (`<monorepo-root>`) to ensure all workspace dependencies are resolved and up to date. This is necessary because the CLI depends on `@agentver/installer` and `@agentver/storage` at build time.
 
 - [ ] **Step 2: Build the CLI and its dependencies** — Run `bun run --cwd packages/cli build` (or `turbo build --filter=@agentver/cli` which will also build transitive workspace deps via the `dependsOn: ["^build"]` config in `turbo.json:8`). This compiles `bin/agentver.ts` through tsup into `packages/cli/dist/agentver.js` with all `@agentver/*` workspace packages inlined.
 
@@ -37,7 +37,7 @@ The tsup config at `packages/cli/tsup.config.ts:16` uses `noExternal: [/@agentve
 ## Exact Commands (Copy-Paste Ready)
 
 ```bash
-# From monorepo root: /home/jaythegeek/code/agentver/agentver
+# From monorepo root: <monorepo-root>
 
 # 1. Install dependencies
 bun install
@@ -57,11 +57,11 @@ agentver --help
 
 1. **Run without linking** — Skip the global link and invoke the CLI directly via `bun run --cwd packages/cli dist/agentver.js` or `node packages/cli/dist/agentver.js`. Trade-off: works immediately but requires the full path each time.
 2. **Use `bun run` with workspace script** — Add a script like `"cli": "bun run --cwd packages/cli dist/agentver.js"` to the root `package.json` for convenience without global pollution.
-3. **PATH alias** — Add `alias agentver="node /home/jaythegeek/code/agentver/agentver/packages/cli/dist/agentver.js"` to your shell profile for a lightweight alternative to `bun link`.
+3. **PATH alias** — Add `alias agentver="node <monorepo-root>/packages/cli/dist/agentver.js"` to your shell profile for a lightweight alternative to `bun link`.
 
 ## Potential Risks and Mitigations
 
-1. **Stale build artifacts** — If `dist/` contains an older build, the linked binary will be outdated.
+1. **Stale build artefacts** — If `dist/` contains an older build, the linked binary will be outdated.
    Mitigation: tsup config has `clean: true` (`packages/cli/tsup.config.ts:9`), so each build wipes `dist/` first.
 
 2. **Workspace dependency build order** — The CLI bundles `@agentver/installer` and `@agentver/storage`. If these aren't built first, tsup may fail.

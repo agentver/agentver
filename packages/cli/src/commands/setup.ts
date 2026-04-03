@@ -497,7 +497,7 @@ async function setupProject(options: SetupOptions): Promise<void> {
     }
 
     // Canonicalisation
-    let canonicalised: SetupResult['canonicalised'] = []
+    const canonicalised: SetupResult['canonicalised'] = []
 
     if (!options.dryRun && adopted.length > 0) {
       const shouldCanonicalise = await offerCanonicalisation(options)
@@ -506,14 +506,15 @@ async function setupProject(options: SetupOptions): Promise<void> {
         if (!jsonMode) {
           process.stdout.write('\n')
         }
-        await migrateSkills(undefined, { yes: true, global: options.global, dryRun: false })
-        // migrateSkills handles its own output and manifest updates
-        // We record a simplified result for the summary
-        canonicalised = adopted.map((a) => ({
-          name: a.name,
-          from: a.path,
-          to: `.agents/skills/${a.name}`,
-        }))
+        for (const entry of adopted) {
+          const migration = await migrateSkills(entry.name, {
+            yes: true,
+            global: options.global,
+            dryRun: false,
+            silent: true,
+          })
+          canonicalised.push(...migration.migrated)
+        }
       }
     }
 

@@ -89,7 +89,7 @@ vi.mock('../../commands/doctor.js', () => ({
 }))
 
 vi.mock('../../commands/migrate.js', () => ({
-  migrateSkills: vi.fn().mockResolvedValue(undefined),
+  migrateSkills: vi.fn().mockResolvedValue({ migrated: [], skipped: [] }),
 }))
 
 vi.mock('prompts', () => ({
@@ -104,6 +104,7 @@ import * as agentDefs from '@agentver/agent-definitions'
 import { Command } from 'commander'
 import prompts from 'prompts'
 import * as doctorModule from '../../commands/doctor.js'
+import * as migrateModule from '../../commands/migrate.js'
 import { registerSetupCommand } from '../../commands/setup'
 import * as localContextModule from '../../git/local-context.js'
 import * as outputModule from '../../output.js'
@@ -608,6 +609,105 @@ describe('commands/setup', () => {
 
       expect(typed.healthChecks).toHaveLength(5)
       expect(typed.healthChecks.every((c) => c.status === 'pass')).toBe(true)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // --canonicalise flag
+  // -------------------------------------------------------------------------
+
+  describe('--canonicalise flag', () => {
+    it('calls migrateSkills with silent: true for each adopted package in JSON mode', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const file1 = createScannedFile({
+        name: 'skill-a',
+        path: '/project/.claude/skills/skill-a/SKILL.md',
+      })
+      const file2 = createScannedFile({
+        name: 'skill-b',
+        path: '/project/.claude/skills/skill-b/SKILL.md',
+      })
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([file1, file2])
+
+      await runSetup('--yes', '--canonicalise')
+
+      // migrateSkills should be called once per adopted skill
+      expect(migrateModule.migrateSkills).toHaveBeenCalledTimes(2)
+
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith('skill-a', {
+        yes: true,
+        global: undefined,
+        dryRun: false,
+        silent: true,
+      })
+      expect(migrateModule.migrateSkills).toHaveBeenCalledWith('skill-b', {
+        yes: true,
+        global: undefined,
+        dryRun: false,
+        silent: true,
+      })
+    })
+
+    it('includes canonicalised entries in JSON output when migration succeeds', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      const file1 = createScannedFile({
+        name: 'skill-x',
+        path: '/project/.claude/skills/skill-x/SKILL.md',
+      })
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([file1])
+
+      // Mock migrateSkills to return a successful migration result
+      vi.mocked(migrateModule.migrateSkills).mockResolvedValue({
+        migrated: [
+          {
+            name: 'skill-x',
+            from: '/project/.claude/skills/skill-x',
+            to: '/project/.agents/skills/skill-x',
+          },
+        ],
+        skipped: [],
+      })
+
+      await runSetup('--yes', '--canonicalise')
+
+      expect(outputModule.outputSuccess).toHaveBeenCalledOnce()
+      const [data] = vi.mocked(outputModule.outputSuccess).mock.calls[0]!
+      const typed = data as {
+        canonicalised: Array<{ name: string; from: string; to: string }>
+      }
+
+      expect(typed.canonicalised).toHaveLength(1)
+      expect(typed.canonicalised[0]).toEqual({
+        name: 'skill-x',
+        from: '/project/.claude/skills/skill-x',
+        to: '/project/.agents/skills/skill-x',
+      })
+    })
+
+    it('does not call migrateSkills when --canonicalise is not passed', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([
+        createScannedFile({ name: 'some-skill' }),
+      ])
+
+      await runSetup('--yes')
+
+      expect(migrateModule.migrateSkills).not.toHaveBeenCalled()
+    })
+
+    it('does not call migrateSkills in dry-run mode even with --canonicalise', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+
+      vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([
+        createScannedFile({ name: 'some-skill' }),
+      ])
+
+      await runSetup('--yes', '--canonicalise', '--dry-run')
+
+      expect(migrateModule.migrateSkills).not.toHaveBeenCalled()
     })
   })
 })
