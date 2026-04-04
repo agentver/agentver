@@ -4,11 +4,13 @@ import { createLockfile, createManifest, createManifestPackage } from '../helper
 import { createNoopSpinner } from '../helpers/mock-spinner.js'
 
 vi.mock('node:fs', () => ({
+  copyFileSync: vi.fn(),
   cpSync: vi.fn(),
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
   mkdtempSync: vi.fn().mockReturnValue('/tmp/agentver-migrate-backup'),
   rmSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }))
 
 vi.mock('@agentver/agent-definitions', () => ({
@@ -24,8 +26,13 @@ vi.mock('../../output.js', () => ({
 
 vi.mock('../../storage/canonical.js', () => ({
   createAgentSymlinks: vi.fn(),
+  createFileSymlinks: vi.fn(),
   findAgentSkillPlacementConflicts: vi.fn().mockReturnValue([]),
+  getCanonicalFilePath: vi.fn(),
   getCanonicalSkillPath: vi.fn(),
+  getFilePlacementPath: vi.fn(),
+  removeAgentSymlinks: vi.fn(),
+  removeFileSymlinks: vi.fn(),
   resolveReadPath: vi.fn(),
 }))
 
@@ -824,13 +831,13 @@ describe('commands/migrate', () => {
   // -------------------------------------------------------------------------
 
   describe('non-skill package types', () => {
-    it('skips AGENT type packages with a descriptive reason', async () => {
+    it('skips non-migratable package types with a descriptive reason', async () => {
       vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
       manifest = createManifest({
         packages: {
-          'test-agent': createManifestPackage({
-            source: { type: 'local', path: '/project/.claude/agents/test-agent' },
-            packageType: 'AGENT',
+          'test-plugin': createManifestPackage({
+            source: { type: 'local', path: '/project/.claude/plugins/test-plugin' },
+            packageType: 'PLUGIN',
           }),
         },
       })
@@ -844,7 +851,138 @@ describe('commands/migrate', () => {
 
       expect(emitted.migrated).toHaveLength(0)
       expect(emitted.skipped).toHaveLength(1)
-      expect(emitted.skipped[0]!.reason).toContain('AGENT')
+      expect(emitted.skipped[0]!.reason).toContain('PLUGIN')
+    })
+
+    it('migrates an AGENT single-file package using copyFileSync and createFileSymlinks', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      manifest = createManifest({
+        packages: {
+          'test-agent': createManifestPackage({
+            source: { type: 'local', path: '/project/.claude/agents' },
+            packageType: 'AGENT',
+            agents: ['claude-code'],
+          }),
+        },
+      })
+      lockfile = createLockfile({
+        packages: {
+          'test-agent': {
+            source: { type: 'local', path: '/project/.claude/agents' },
+            integrity: 'sha256-agent',
+            agents: ['claude-code'],
+          },
+        },
+      })
+
+      vi.mocked(canonicalModule.getCanonicalFilePath).mockReturnValue(
+        '/project/.agents/agents/test-agent.md'
+      )
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/project/.claude/agents/test-agent.md'
+      )
+      vi.mocked(nodeFs.existsSync).mockImplementation(
+        (path) => String(path) === '/project/.claude/agents/test-agent.md'
+      )
+
+      await migrateSkills(undefined, { yes: true })
+
+      // Single-file migration uses copyFileSync + unlinkSync, NOT cpSync + rmSync
+      expect(nodeFs.copyFileSync).toHaveBeenCalledWith(
+        '/project/.claude/agents/test-agent.md',
+        '/project/.agents/agents/test-agent.md'
+      )
+      expect(nodeFs.unlinkSync).toHaveBeenCalledWith('/project/.claude/agents/test-agent.md')
+      expect(nodeFs.cpSync).not.toHaveBeenCalled()
+      expect(nodeFs.rmSync).not.toHaveBeenCalled()
+
+      // Uses createFileSymlinks, NOT createAgentSymlinks
+      expect(canonicalModule.createFileSymlinks).toHaveBeenCalledWith(
+        '/project',
+        'test-agent',
+        'agents',
+        ['claude-code'],
+        'project'
+      )
+      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
+
+      // JSON output includes the migrated entry
+      const emitted = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        migrated: Array<{ name: string; from: string; to: string }>
+        skipped: Array<{ name: string; reason: string }>
+      }
+      expect(emitted.migrated).toHaveLength(1)
+      expect(emitted.migrated[0]).toEqual({
+        name: 'test-agent',
+        from: '/project/.claude/agents/test-agent.md',
+        to: '/project/.agents/agents/test-agent.md',
+      })
+      expect(emitted.skipped).toHaveLength(0)
+    })
+
+    it('migrates a COMMAND single-file package using copyFileSync and createFileSymlinks', async () => {
+      vi.mocked(outputModule.isJSONMode).mockReturnValue(true)
+      manifest = createManifest({
+        packages: {
+          'test-command': createManifestPackage({
+            source: { type: 'local', path: '/project/.claude/commands' },
+            packageType: 'COMMAND',
+            agents: ['claude-code'],
+          }),
+        },
+      })
+      lockfile = createLockfile({
+        packages: {
+          'test-command': {
+            source: { type: 'local', path: '/project/.claude/commands' },
+            integrity: 'sha256-cmd',
+            agents: ['claude-code'],
+          },
+        },
+      })
+
+      vi.mocked(canonicalModule.getCanonicalFilePath).mockReturnValue(
+        '/project/.agents/commands/test-command.md'
+      )
+      vi.mocked(canonicalModule.resolveReadPath).mockReturnValue(
+        '/project/.claude/commands/test-command.md'
+      )
+      vi.mocked(nodeFs.existsSync).mockImplementation(
+        (path) => String(path) === '/project/.claude/commands/test-command.md'
+      )
+
+      await migrateSkills(undefined, { yes: true })
+
+      // Single-file migration uses copyFileSync + unlinkSync
+      expect(nodeFs.copyFileSync).toHaveBeenCalledWith(
+        '/project/.claude/commands/test-command.md',
+        '/project/.agents/commands/test-command.md'
+      )
+      expect(nodeFs.unlinkSync).toHaveBeenCalledWith('/project/.claude/commands/test-command.md')
+      expect(nodeFs.cpSync).not.toHaveBeenCalled()
+      expect(nodeFs.rmSync).not.toHaveBeenCalled()
+
+      // Uses createFileSymlinks with 'commands' category
+      expect(canonicalModule.createFileSymlinks).toHaveBeenCalledWith(
+        '/project',
+        'test-command',
+        'commands',
+        ['claude-code'],
+        'project'
+      )
+      expect(canonicalModule.createAgentSymlinks).not.toHaveBeenCalled()
+
+      // JSON output includes the migrated entry
+      const emitted = vi.mocked(outputModule.outputSuccess).mock.calls[0]![0] as {
+        migrated: Array<{ name: string; from: string; to: string }>
+        skipped: Array<{ name: string; reason: string }>
+      }
+      expect(emitted.migrated).toHaveLength(1)
+      expect(emitted.migrated[0]).toEqual({
+        name: 'test-command',
+        from: '/project/.claude/commands/test-command.md',
+        to: '/project/.agents/commands/test-command.md',
+      })
     })
   })
 })

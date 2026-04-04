@@ -27,6 +27,7 @@ import {
   setManifestPackage,
 } from '../storage/package-identity'
 import { updateManifestAndLockfile } from '../storage/pair'
+import { migrateSkills } from './migrate.js'
 
 export type AdoptOptions = {
   global?: boolean
@@ -34,6 +35,7 @@ export type AdoptOptions = {
   dryRun?: boolean
   reclassify?: boolean
   preferRemote?: string
+  canonicalise?: boolean
 }
 
 type AdoptedEntry = {
@@ -57,7 +59,7 @@ type ReclassifiedEntry = {
   newUri: string
 }
 
-type DeduplicatedFile = {
+export type DeduplicatedFile = {
   path: string
   name: string
   detectedType: ScannedFile['detectedType']
@@ -84,7 +86,7 @@ type PendingAdoption = {
   }
 }
 
-function deduplicateByPath(files: ScannedFile[]): DeduplicatedFile[] {
+export function deduplicateByPath(files: ScannedFile[]): DeduplicatedFile[] {
   const byPath = new Map<string, DeduplicatedFile>()
 
   for (const file of files) {
@@ -112,7 +114,7 @@ function deduplicateByPath(files: ScannedFile[]): DeduplicatedFile[] {
  * For single-file types (AGENT_CONFIG, AGENT, COMMAND), reads only the entry
  * file directly to avoid recursing into large agent home directories.
  */
-async function computeAdoptedIntegrity(
+export async function computeAdoptedIntegrity(
   entryFilePath: string,
   detectedType: ScannedFile['detectedType']
 ): Promise<string> {
@@ -141,7 +143,7 @@ async function computeAdoptedIntegrity(
 /**
  * Build the appropriate source record from local git context.
  */
-function buildAdoptSource(
+export function buildAdoptSource(
   context: LocalGitContext | null,
   fallbackPath: string
 ): { source: PackageSource; modified: boolean; sourceInfo: string } {
@@ -372,6 +374,16 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
 
     // Output results
     if (jsonMode) {
+      if (options.canonicalise && adopted.length > 0) {
+        for (const entry of adopted) {
+          await migrateSkills(entry.name, {
+            yes: true,
+            global: false,
+            dryRun: options.dryRun,
+            silent: true,
+          })
+        }
+      }
       outputSuccess<AdoptResult>({ adopted, skipped })
       return
     }
@@ -407,6 +419,19 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
         process.stdout.write(
           `  ${chalk.dim('\u2013')} ${entry.name.padEnd(16)} ${chalk.dim(entry.reason)}\n`
         )
+      }
+    }
+
+    // Canonicalise adopted skills if requested
+    if (options.canonicalise && adopted.length > 0) {
+      process.stdout.write(chalk.bold('\nCanonicalising adopted skills...\n'))
+      for (const entry of adopted) {
+        await migrateSkills(entry.name, {
+          yes: true,
+          global: false,
+          dryRun: options.dryRun,
+          silent: true,
+        })
       }
     }
 
@@ -521,6 +546,7 @@ export function registerAdoptCommand(program: Command): void {
     .option('--dry-run', 'Show what would be adopted without making changes')
     .option('--reclassify', 'Re-resolve git context for existing local entries')
     .option('--prefer-remote <name>', 'Prefer a specific remote name (default: origin)')
+    .option('--canonicalise', 'Move adopted skills into canonical .agents/ storage with symlinks')
     .action(async (path: string | undefined, options: AdoptOptions) => {
       await adoptSkills(path, options)
     })

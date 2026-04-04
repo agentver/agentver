@@ -1,15 +1,27 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, unlinkSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { type AgentId, getSkillPlacementPath } from '@agentver/agent-definitions'
 import { AgentverError } from '@agentver/shared'
 import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
-import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
 import {
+  createSpinner,
+  isJSONMode,
+  outputError,
+  outputSuccess,
+  type SpinnerLike,
+} from '../output.js'
+import {
+  type CanonicalCategory,
   createAgentSymlinks,
+  createFileSymlinks,
   findAgentSkillPlacementConflicts,
+  getCanonicalFilePath,
   getCanonicalSkillPath,
+  getFilePlacementPath,
+  removeAgentSymlinks,
+  removeFileSymlinks,
   resolveReadPath,
 } from '../storage/canonical.js'
 import { readManifest } from '../storage/manifest.js'
@@ -22,11 +34,67 @@ type MigrateOptions = {
   global?: boolean
   dryRun?: boolean
   yes?: boolean
+  silent?: boolean
 }
 
-type MigrationResult = {
+export type MigrationResult = {
   migrated: Array<{ name: string; from: string; to: string }>
   skipped: Array<{ name: string; reason: string }>
+}
+
+const PACKAGE_TYPE_TO_CATEGORY: Record<string, CanonicalCategory> = {
+  AGENT: 'agents',
+  COMMAND: 'commands',
+}
+
+const noopSpinnerLike: SpinnerLike = {
+  start() {
+    return this
+  },
+  succeed() {
+    return this
+  },
+  fail() {
+    return this
+  },
+  warn() {
+    return this
+  },
+  info() {
+    return this
+  },
+  stop() {
+    return this
+  },
+  text: '',
+}
+
+function isSingleFilePackageType(
+  packageType: string | undefined
+): packageType is 'AGENT' | 'COMMAND' {
+  return packageType === 'AGENT' || packageType === 'COMMAND'
+}
+
+function getExistingFilePaths(
+  projectRoot: string,
+  packageName: string,
+  agents: string[],
+  category: CanonicalCategory,
+  scope: Scope
+): string[] {
+  const paths = new Set<string>()
+
+  for (const agentId of agents) {
+    const placementPath = getFilePlacementPath(agentId as AgentId, packageName, category, scope)
+    if (!placementPath) continue
+
+    const resolvedPath = resolvePlacementPath(placementPath, projectRoot, scope)
+    if (!resolvedPath || !existsSync(resolvedPath)) continue
+
+    paths.add(resolvedPath)
+  }
+
+  return [...paths]
 }
 
 function getExistingSkillPaths(
@@ -79,12 +147,15 @@ async function confirmMigration(
 export async function migrateSkills(
   name: string | undefined,
   options: MigrateOptions
-): Promise<void> {
+): Promise<MigrationResult> {
   const jsonMode = isJSONMode()
+  const silent = options.silent === true
   const projectRoot = process.cwd()
   const scope: Scope = options.global ? 'global' : 'project'
   const manifest = readManifest(projectRoot, scope)
-  const spinner = createSpinner('Inspecting installed skills...').start()
+  const spinner = silent
+    ? noopSpinnerLike.start()
+    : createSpinner('Inspecting installed packages...').start()
 
   try {
     const packageEntries = Object.entries(manifest.packages).filter(([packageName, pkg]) => {
@@ -101,20 +172,36 @@ export async function migrateSkills(
 
     for (const [packageName, pkg] of packageEntries) {
       const shortName = (pkg.name ?? packageName).split('/').pop() ?? packageName
+      const singleFile = isSingleFilePackageType(pkg.packageType)
+      const category = singleFile ? PACKAGE_TYPE_TO_CATEGORY[pkg.packageType as string] : undefined
 
-      if (pkg.packageType && pkg.packageType !== 'SKILL') {
+      if (
+        pkg.packageType &&
+        pkg.packageType !== 'SKILL' &&
+        !isSingleFilePackageType(pkg.packageType)
+      ) {
         result.skipped.push({
           name: packageName,
-          reason: `Only skill packages can be migrated (found ${pkg.packageType})`,
+          reason: `Package type ${pkg.packageType} cannot be migrated`,
         })
         continue
       }
 
-      const canonicalPath = getCanonicalSkillPath(projectRoot, shortName, scope)
-      const readPath = resolveReadPath(projectRoot, shortName, pkg.agents, scope)
+      const canonicalPath =
+        singleFile && category
+          ? getCanonicalFilePath(projectRoot, shortName, category, scope)
+          : getCanonicalSkillPath(projectRoot, shortName, scope)
+
+      const readPath =
+        singleFile && category
+          ? resolveReadPath(projectRoot, shortName, pkg.agents, scope, category)
+          : resolveReadPath(projectRoot, shortName, pkg.agents, scope)
 
       if (!readPath) {
-        result.skipped.push({ name: packageName, reason: 'No local skill files found' })
+        result.skipped.push({
+          name: packageName,
+          reason: singleFile ? 'No local package file found' : 'No local skill files found',
+        })
         continue
       }
 
@@ -131,25 +218,44 @@ export async function migrateSkills(
         continue
       }
 
-      const existingSkillPaths = getExistingSkillPaths(projectRoot, shortName, pkg.agents, scope)
-      const unmanagedConflicts = findAgentSkillPlacementConflicts(
-        projectRoot,
-        shortName,
-        pkg.agents,
-        scope
-      )
+      if (!singleFile) {
+        const existingSkillPaths = getExistingSkillPaths(projectRoot, shortName, pkg.agents, scope)
+        const unmanagedConflicts = findAgentSkillPlacementConflicts(
+          projectRoot,
+          shortName,
+          pkg.agents,
+          scope
+        )
 
-      const conflictingPaths = new Set(
-        unmanagedConflicts.map((conflict) => conflict.path).filter((path) => path !== readPath)
-      )
-      const distinctPaths = new Set(existingSkillPaths.filter((path) => path !== canonicalPath))
+        const conflictingPaths = new Set(
+          unmanagedConflicts.map((conflict) => conflict.path).filter((path) => path !== readPath)
+        )
+        const distinctPaths = new Set(existingSkillPaths.filter((path) => path !== canonicalPath))
 
-      if (conflictingPaths.size > 0 || distinctPaths.size > 1) {
-        result.skipped.push({
-          name: packageName,
-          reason: 'Found multiple existing skill directories; migrate this package manually',
-        })
-        continue
+        if (conflictingPaths.size > 0 || distinctPaths.size > 1) {
+          result.skipped.push({
+            name: packageName,
+            reason: 'Found multiple existing skill directories; migrate this package manually',
+          })
+          continue
+        }
+      } else if (category) {
+        const existingPaths = getExistingFilePaths(
+          projectRoot,
+          shortName,
+          pkg.agents,
+          category,
+          scope
+        )
+        const distinctPaths = new Set(existingPaths.filter((path) => path !== canonicalPath))
+
+        if (distinctPaths.size > 1) {
+          result.skipped.push({
+            name: packageName,
+            reason: 'Found multiple existing files; migrate this package manually',
+          })
+          continue
+        }
       }
 
       if (options.dryRun) {
@@ -165,25 +271,42 @@ export async function migrateSkills(
         spinner.text = `Migrating ${packageName}...`
 
         mkdirSync(dirname(canonicalPath), { recursive: true })
-        cpSync(readPath, canonicalPath, { recursive: true, dereference: true })
-        rmSync(readPath, { recursive: true, force: true })
-        createAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
+
+        if (singleFile && category) {
+          copyFileSync(readPath, canonicalPath)
+          unlinkSync(readPath)
+          createFileSymlinks(projectRoot, shortName, category, pkg.agents, scope)
+        } else {
+          cpSync(readPath, canonicalPath, { recursive: true, dereference: true })
+          rmSync(readPath, { recursive: true, force: true })
+          createAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
+        }
 
         updateManifestAndLockfile(projectRoot, scope, (currentManifest, currentLockfile) => {
           const manifestEntry = currentManifest.packages[packageName]
           const lockfileEntry = currentLockfile.packages[packageName]
 
-          if (manifestEntry?.source.type === 'local' && manifestEntry.source.path === readPath) {
+          // For single-file packages, source.path is the parent directory,
+          // not the full file path, so also compare against dirname(readPath).
+          const isLocalMatch = (sourcePath: string) =>
+            sourcePath === readPath || (singleFile && sourcePath === dirname(readPath))
+
+          // Single-file packages store the directory in source.path (filename
+          // lives in entryFile), so point to the canonical directory rather
+          // than the full file path.
+          const newSourcePath = singleFile ? dirname(canonicalPath) : canonicalPath
+
+          if (manifestEntry?.source.type === 'local' && isLocalMatch(manifestEntry.source.path)) {
             manifestEntry.source = {
               ...manifestEntry.source,
-              path: canonicalPath,
+              path: newSourcePath,
             }
           }
 
-          if (lockfileEntry?.source.type === 'local' && lockfileEntry.source.path === readPath) {
+          if (lockfileEntry?.source.type === 'local' && isLocalMatch(lockfileEntry.source.path)) {
             lockfileEntry.source = {
               ...lockfileEntry.source,
-              path: canonicalPath,
+              path: newSourcePath,
             }
           }
 
@@ -196,6 +319,14 @@ export async function migrateSkills(
         restoreFilesystemBackup(backup)
         cleanupBackup(backup)
         rmSync(canonicalPath, { recursive: true, force: true })
+
+        // Clean up any symlinks that were partially created before the error
+        if (singleFile && category) {
+          removeFileSymlinks(projectRoot, shortName, category, pkg.agents, scope)
+        } else {
+          removeAgentSymlinks(projectRoot, shortName, pkg.agents, scope)
+        }
+
         result.skipped.push({
           name: packageName,
           reason: error instanceof Error ? error.message : String(error),
@@ -205,9 +336,13 @@ export async function migrateSkills(
 
     spinner.stop()
 
+    if (silent) {
+      return result
+    }
+
     if (jsonMode) {
       outputSuccess(result)
-      return
+      return result
     }
 
     if (result.migrated.length > 0) {
@@ -225,7 +360,12 @@ export async function migrateSkills(
         process.stdout.write(`  ${chalk.dim('\u2013')} ${item.name} ${chalk.dim(item.reason)}\n`)
       }
     }
+
+    return result
   } catch (error) {
+    if (silent) {
+      throw error
+    }
     const { code, message } = extractError(error, 'MIGRATE_FAILED')
     if (jsonMode) {
       outputError(code, message)
@@ -239,7 +379,9 @@ export async function migrateSkills(
 export function registerMigrateCommand(program: Command): void {
   program
     .command('migrate [name]')
-    .description('Move managed skills into canonical storage and replace agent paths with symlinks')
+    .description(
+      'Move managed packages into canonical storage and replace agent paths with symlinks'
+    )
     .option('-y, --yes', 'Accept migration prompts non-interactively')
     .option('--global', 'Migrate globally installed packages')
     .option('--dry-run', 'Show what would be migrated without making changes')

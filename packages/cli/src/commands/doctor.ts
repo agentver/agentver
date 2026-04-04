@@ -30,7 +30,7 @@ import { resolvePlacementPath, type Scope } from '../utils/paths.js'
 
 type CheckStatus = DoctorCheck['status']
 
-type FixableDoctorCheck = DoctorCheck & {
+export type FixableDoctorCheck = DoctorCheck & {
   fix?: () => string | null
 }
 
@@ -57,7 +57,7 @@ function writeEmptyManifest(manifestRoot: string): void {
   mkdirSync(manifestRoot, { recursive: true })
   writeFileSync(
     join(manifestRoot, MANIFEST_FILE),
-    JSON.stringify({ version: STORAGE_SCHEMA_VERSION, packages: {} }, null, 2) + '\n'
+    `${JSON.stringify({ version: STORAGE_SCHEMA_VERSION, packages: {} }, null, 2)}\n`
   )
 }
 
@@ -65,7 +65,7 @@ function writeEmptyLockfile(lockfileRoot: string): void {
   mkdirSync(lockfileRoot, { recursive: true })
   writeFileSync(
     join(lockfileRoot, LOCKFILE_FILE),
-    JSON.stringify({ version: STORAGE_SCHEMA_VERSION, packages: {} }, null, 2) + '\n'
+    `${JSON.stringify({ version: STORAGE_SCHEMA_VERSION, packages: {} }, null, 2)}\n`
   )
 }
 
@@ -132,11 +132,11 @@ function repairStorageFile(
     return null // Repair wasn't enough
   }
 
-  writeFileSync(filePath, JSON.stringify(parsed, null, 2) + '\n')
+  writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`)
   return 'Repaired invalid fields'
 }
 
-function checkManifestIntegrity(projectRoot: string, scope: Scope): FixableDoctorCheck {
+export function checkManifestIntegrity(projectRoot: string, scope: Scope): FixableDoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const name = `manifest-integrity${suffix}`
   const label = scopeLabel(scope)
@@ -178,7 +178,7 @@ function checkManifestIntegrity(projectRoot: string, scope: Scope): FixableDocto
   return check(name, 'pass', `Manifest is valid${label}`)
 }
 
-function checkLockfileIntegrity(projectRoot: string, scope: Scope): FixableDoctorCheck {
+export function checkLockfileIntegrity(projectRoot: string, scope: Scope): FixableDoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const name = `lockfile-integrity${suffix}`
   const label = scopeLabel(scope)
@@ -220,7 +220,7 @@ function checkLockfileIntegrity(projectRoot: string, scope: Scope): FixableDocto
   return check(name, 'pass', `Lockfile is valid${label}`)
 }
 
-function checkManifestLockfileSync(projectRoot: string, scope: Scope): FixableDoctorCheck {
+export function checkManifestLockfileSync(projectRoot: string, scope: Scope): FixableDoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const checkName = `manifest-lockfile-sync${suffix}`
   const label = scopeLabel(scope)
@@ -272,8 +272,8 @@ function checkManifestLockfileSync(projectRoot: string, scope: Scope): FixableDo
         delete lockfile.packages[name]
       }
 
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-      writeFileSync(lockfilePath, JSON.stringify(lockfile, null, 2) + '\n')
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+      writeFileSync(lockfilePath, `${JSON.stringify(lockfile, null, 2)}\n`)
 
       const removed = [...inManifestOnly, ...inLockfileOnly]
       return `Removed orphan entries: ${removed.join(', ')}`
@@ -283,7 +283,7 @@ function checkManifestLockfileSync(projectRoot: string, scope: Scope): FixableDo
   return check(checkName, 'pass', `Manifest and lockfile are in sync${label}`)
 }
 
-function checkSkillFilesExist(projectRoot: string, scope: Scope): DoctorCheck {
+export function checkSkillFilesExist(projectRoot: string, scope: Scope): DoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const checkName = `skill-files-exist${suffix}`
   const label = scopeLabel(scope)
@@ -313,7 +313,7 @@ function checkSkillFilesExist(projectRoot: string, scope: Scope): DoctorCheck {
   return check(checkName, 'pass', `All ${entries.length} skill directories present${label}`)
 }
 
-function checkSymlinksValid(projectRoot: string, scope: Scope): DoctorCheck {
+export function checkSymlinksValid(projectRoot: string, scope: Scope): DoctorCheck {
   const suffix = scope === 'global' ? '-global' : ''
   const checkName = `symlinks-valid${suffix}`
   const label = scopeLabel(scope)
@@ -450,7 +450,7 @@ function checkNodeVersion(): DoctorCheck {
   )
 }
 
-function formatCheck(result: DoctorCheck): string {
+export function formatCheck(result: DoctorCheck): string {
   switch (result.status) {
     case 'pass':
       return `  ${chalk.green('✓')} ${result.message}`
