@@ -582,7 +582,7 @@ describe('commands/adopt', () => {
       expect(migrateModule.migrateSkills).toHaveBeenCalledTimes(1)
       expect(migrateModule.migrateSkills).toHaveBeenCalledWith('test-skill', {
         yes: true,
-        global: undefined,
+        global: false,
         dryRun: undefined,
         silent: true,
       })
@@ -605,7 +605,7 @@ describe('commands/adopt', () => {
       expect(migrateModule.migrateSkills).not.toHaveBeenCalled()
     })
 
-    it('passes global flag through to migrateSkills', async () => {
+    it('always passes global: false to migrateSkills (adopt writes to project manifest)', async () => {
       const scannedFile = createScannedFile()
       vi.mocked(agentDefs.scanForSkillFiles).mockReturnValue([scannedFile])
 
@@ -613,7 +613,7 @@ describe('commands/adopt', () => {
 
       expect(migrateModule.migrateSkills).toHaveBeenCalledWith('test-skill', {
         yes: true,
-        global: true,
+        global: false,
         dryRun: undefined,
         silent: true,
       })
@@ -627,7 +627,7 @@ describe('commands/adopt', () => {
 
       expect(migrateModule.migrateSkills).toHaveBeenCalledWith('test-skill', {
         yes: true,
-        global: undefined,
+        global: false,
         dryRun: true,
         silent: true,
       })

@@ -71,20 +71,19 @@ type SkippedEntry = {
 // Phase 1: Discovery
 // ---------------------------------------------------------------------------
 
-function discoverAgents(projectRoot: string, includeGlobal: boolean): AnnotatedAgent[] {
-  const projectAgents = detectInstalledAgents(projectRoot)
-  const seenIds = new Set(projectAgents.map((a) => a.id))
+function discoverAgents(projectRoot: string, scope: Scope): AnnotatedAgent[] {
+  const agents: AnnotatedAgent[] = []
+  const seenIds = new Set<string>()
 
-  const agents: AnnotatedAgent[] = projectAgents.map((a) => ({
-    id: a.id,
-    name: a.name,
-    configPath: a.configPath,
-    scope: 'project' as const,
-  }))
+  if (scope === 'project') {
+    for (const a of detectInstalledAgents(projectRoot)) {
+      agents.push({ id: a.id, name: a.name, configPath: a.configPath, scope: 'project' })
+      seenIds.add(a.id)
+    }
+  }
 
-  if (includeGlobal) {
-    const globalAgents = detectGlobalAgents(homedir())
-    for (const a of globalAgents) {
+  if (scope === 'global') {
+    for (const a of detectGlobalAgents(homedir())) {
       if (!seenIds.has(a.id)) {
         agents.push({ id: a.id, name: a.name, configPath: a.configPath, scope: 'global' })
         seenIds.add(a.id)
@@ -97,17 +96,21 @@ function discoverAgents(projectRoot: string, includeGlobal: boolean): AnnotatedA
 
 function discoverSkills(
   projectRoot: string,
-  includeGlobal: boolean,
+  scope: Scope,
   manifest: ManifestV2
 ): DiscoveredSkill[] {
-  const projectFiles = scanForSkillFiles(projectRoot)
-  const seenPaths = new Set(projectFiles.map((f) => f.path))
+  const allFiles: ScannedFile[] = []
+  const seenPaths = new Set<string>()
 
-  const allFiles: ScannedFile[] = [...projectFiles]
+  if (scope === 'project') {
+    for (const f of scanForSkillFiles(projectRoot)) {
+      allFiles.push(f)
+      seenPaths.add(f.path)
+    }
+  }
 
-  if (includeGlobal) {
-    const globalFiles = scanGlobalSkillFiles(homedir())
-    for (const gf of globalFiles) {
+  if (scope === 'global') {
+    for (const gf of scanGlobalSkillFiles(homedir())) {
       if (!seenPaths.has(gf.path)) {
         allFiles.push(gf)
         seenPaths.add(gf.path)
@@ -443,9 +446,9 @@ async function setupProject(options: SetupOptions): Promise<void> {
     spinner.text = 'Detecting agents and scanning for skills...'
     spinner.start()
 
-    const agents = discoverAgents(projectRoot, options.global ?? false)
+    const agents = discoverAgents(projectRoot, scope)
     const manifest = readManifest(projectRoot, scope)
-    const skills = discoverSkills(projectRoot, options.global ?? false, manifest)
+    const skills = discoverSkills(projectRoot, scope, manifest)
 
     spinner.stop()
 

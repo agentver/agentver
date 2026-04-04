@@ -32,7 +32,7 @@ The tsup config at `packages/cli/tsup.config.ts:16` uses `noExternal: [/@agentve
 - `bun install` completes without errors
 - `packages/cli/dist/agentver.js` exists and starts with `#!/usr/bin/env node`
 - `agentver --version` outputs `0.3.3`
-- `agentver --help` lists all registered commands (adopt, agents, audit, backup, etc.)
+- `agentver --help` lists all registered commands, including `setup` (adopt, agents, audit, backup, setup, etc.)
 
 ## Exact Commands (Copy-Paste Ready)
 

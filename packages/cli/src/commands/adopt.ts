@@ -378,7 +378,7 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
         for (const entry of adopted) {
           await migrateSkills(entry.name, {
             yes: true,
-            global: options.global,
+            global: false,
             dryRun: options.dryRun,
             silent: true,
           })
@@ -428,7 +428,7 @@ export async function adoptSkills(path: string | undefined, options: AdoptOption
       for (const entry of adopted) {
         await migrateSkills(entry.name, {
           yes: true,
-          global: options.global,
+          global: false,
           dryRun: options.dryRun,
           silent: true,
         })
