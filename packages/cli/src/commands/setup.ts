@@ -5,19 +5,37 @@ import chalk from 'chalk'
 import type { Command } from 'commander'
 import prompts from 'prompts'
 import { createSpinner, isJSONMode, outputError, outputSuccess } from '../output.js'
-import { getCredentials, isAuthenticated } from '../registry/auth.js'
+import { getCredentials, isAuthenticated, saveCredentials } from '../registry/auth.js'
 import {
   DEFAULT_PLATFORM_URL,
   getPlatformUrl,
   readConfig,
   writeConfig,
 } from '../registry/config.js'
-import { checkOnline } from '../utils/network.js'
+
+const PLATFORM_CHECK_TIMEOUT_MS = 3_000
 
 type StepResult = {
   name: string
   status: SetupStepStatus
   message: string
+}
+
+async function checkPlatformReachable(platformUrl: string): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), PLATFORM_CHECK_TIMEOUT_MS)
+
+    const response = await fetch(`${platformUrl}/api/v1/health`, {
+      method: 'HEAD',
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+    return response.ok
+  } catch {
+    return false
+  }
 }
 
 async function stepPlatformUrl(): Promise<StepResult> {
@@ -105,7 +123,6 @@ async function stepAuthentication(): Promise<StepResult> {
     return { name: 'authentication', status: 'skip', message: 'Skipped (no key provided)' }
   }
 
-  const { saveCredentials } = await import('../registry/auth.js')
   saveCredentials({ apiKey: apiKey.trim() })
   return { name: 'authentication', status: 'pass', message: 'API key saved' }
 }
@@ -144,7 +161,7 @@ async function stepConnectivity(): Promise<StepResult> {
   }
 
   const spinner = createSpinner('Checking connectivity...').start()
-  const online = await checkOnline()
+  const online = await checkPlatformReachable(platformUrl)
   spinner.stop()
 
   if (online) {
@@ -269,7 +286,7 @@ export function registerSetupCommandJSON(program: Command): void {
 
       // Connectivity
       if (platformUrl) {
-        const online = await checkOnline()
+        const online = await checkPlatformReachable(platformUrl)
         steps.push({
           name: 'connectivity',
           status: online ? 'pass' : 'fail',
@@ -318,5 +335,6 @@ export function registerSetupCommandJSON(program: Command): void {
 
       const result: SetupResult = { steps, completed, failed, skipped: skippedCount }
       outputSuccess(result)
+      process.exit(failed > 0 ? 1 : 0)
     })
 }

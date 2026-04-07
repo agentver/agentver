@@ -19,15 +19,6 @@ vi.mock('../../registry/config.js', () => ({
   getConfigPath: vi.fn().mockReturnValue('/home/testuser/.agentver/config.json'),
 }))
 
-vi.mock('../../registry/client.js', () => ({
-  getRegistryUrl: vi.fn().mockReturnValue('https://app.agentver.com/api/v1'),
-}))
-
-vi.mock('../../utils/network.js', () => ({
-  checkOnline: vi.fn().mockResolvedValue(true),
-  showOfflineError: vi.fn(),
-}))
-
 vi.mock('@agentver/agent-definitions', () => ({
   detectInstalledAgents: vi.fn().mockReturnValue([]),
   detectGlobalAgents: vi.fn().mockReturnValue([]),
@@ -67,14 +58,13 @@ vi.mock('ora', () => {
 // Imports
 // ---------------------------------------------------------------------------
 
-import { detectInstalledAgents } from '@agentver/agent-definitions'
+import { detectGlobalAgents, detectInstalledAgents } from '@agentver/agent-definitions'
 import { createCLIOutputSchema, setupResultSchema } from '@agentver/shared'
 import { Command } from 'commander'
 import prompts from 'prompts'
 import { registerSetupCommand, registerSetupCommandJSON } from '../../commands/setup.js'
-import { isAuthenticated } from '../../registry/auth.js'
+import { getCredentials, isAuthenticated, saveCredentials } from '../../registry/auth.js'
 import { getPlatformUrl, readConfig, writeConfig } from '../../registry/config.js'
-import { checkOnline } from '../../utils/network.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -102,6 +92,14 @@ function captureOutput(): { stdout: string[]; stderr: string[] } {
   return { stdout, stderr }
 }
 
+function stubFetchReachable(): void {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })))
+}
+
+function stubFetchUnreachable(): void {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')))
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -112,16 +110,26 @@ describe('setup command', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // Reset mocks that individual tests may override
+    vi.mocked(isAuthenticated).mockResolvedValue(false)
+    vi.mocked(getCredentials).mockResolvedValue(null)
+    vi.mocked(getPlatformUrl).mockReturnValue(null)
+    vi.mocked(readConfig).mockReturnValue({})
+    vi.mocked(prompts).mockResolvedValue({})
+    vi.mocked(detectInstalledAgents).mockReturnValue([])
+    vi.mocked(detectGlobalAgents).mockReturnValue([])
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
     process.argv = ['node', 'agentver', 'setup']
+    stubFetchReachable()
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   // -------------------------------------------------------------------------
@@ -208,6 +216,56 @@ describe('setup command', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Authentication — saves API key with trimmed value
+  // -------------------------------------------------------------------------
+
+  it('saves API key via saveCredentials when user provides a key', async () => {
+    vi.mocked(prompts)
+      .mockResolvedValueOnce({ url: 'https://app.agentver.com' }) // platform URL
+      .mockResolvedValueOnce({ method: 'apikey' }) // auth method
+      .mockResolvedValueOnce({ apiKey: '  sk-test-key-123  ' }) // API key with whitespace
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'setup'])
+
+    expect(saveCredentials).toHaveBeenCalledWith({ apiKey: 'sk-test-key-123' })
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('API key saved'))
+  })
+
+  // -------------------------------------------------------------------------
+  // Authentication — skips when user provides blank API key
+  // -------------------------------------------------------------------------
+
+  it('skips authentication when user cancels or provides blank API key', async () => {
+    vi.mocked(prompts)
+      .mockResolvedValueOnce({ url: 'https://app.agentver.com' }) // platform URL
+      .mockResolvedValueOnce({ method: 'apikey' }) // auth method
+      .mockResolvedValueOnce({ apiKey: '' }) // empty key
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'setup'])
+
+    expect(saveCredentials).not.toHaveBeenCalled()
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Skipped'))
+  })
+
+  // -------------------------------------------------------------------------
+  // Authentication — skips when user cancels prompt (undefined)
+  // -------------------------------------------------------------------------
+
+  it('skips authentication when user cancels the API key prompt', async () => {
+    vi.mocked(prompts)
+      .mockResolvedValueOnce({ url: 'https://app.agentver.com' }) // platform URL
+      .mockResolvedValueOnce({ method: 'apikey' }) // auth method
+      .mockResolvedValueOnce({}) // cancelled prompt (no apiKey property)
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'setup'])
+
+    expect(saveCredentials).not.toHaveBeenCalled()
+  })
+
+  // -------------------------------------------------------------------------
   // Agent detection — reports found agents
   // -------------------------------------------------------------------------
 
@@ -228,13 +286,38 @@ describe('setup command', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Connectivity — checks the configured platform URL, not registry URL
+  // -------------------------------------------------------------------------
+
+  it('checks the configured platform URL for connectivity', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    vi.mocked(prompts)
+      .mockResolvedValueOnce({ url: 'https://custom-platform.example.com' })
+      .mockResolvedValueOnce({ method: 'skip' })
+
+    // After writing the URL, getPlatformUrl should return it for the connectivity step
+    vi.mocked(getPlatformUrl).mockReturnValue('https://custom-platform.example.com')
+
+    const program = buildProgram()
+    await program.parseAsync(['node', 'agentver', 'setup'])
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://custom-platform.example.com/api/v1/health',
+      expect.objectContaining({ method: 'HEAD' })
+    )
+  })
+
+  // -------------------------------------------------------------------------
   // Connectivity — reports failure when offline
   // -------------------------------------------------------------------------
 
   it('reports connectivity failure when platform is unreachable', async () => {
-    vi.mocked(checkOnline).mockResolvedValue(false)
+    vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
+    stubFetchUnreachable()
     vi.mocked(prompts)
-      .mockResolvedValueOnce({ url: 'https://app.agentver.com' })
+      .mockResolvedValueOnce({ change: false }) // keep existing platform URL
       .mockResolvedValueOnce({ method: 'skip' })
 
     const program = buildProgram()
@@ -264,9 +347,10 @@ describe('setup command', () => {
   // -------------------------------------------------------------------------
 
   it('suggests doctor --fix when there are failed steps', async () => {
-    vi.mocked(checkOnline).mockResolvedValue(false)
+    vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
+    stubFetchUnreachable()
     vi.mocked(prompts)
-      .mockResolvedValueOnce({ url: 'https://app.agentver.com' })
+      .mockResolvedValueOnce({ change: false }) // keep existing platform URL
       .mockResolvedValueOnce({ method: 'skip' })
 
     const program = buildProgram()
@@ -281,17 +365,27 @@ describe('setup command', () => {
 // ---------------------------------------------------------------------------
 
 describe('setup-check command', () => {
+  let processExitSpy: ReturnType<typeof vi.spyOn>
+
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.spyOn(process, 'exit').mockImplementation((() => {
+    vi.mocked(isAuthenticated).mockResolvedValue(false)
+    vi.mocked(getCredentials).mockResolvedValue(null)
+    vi.mocked(getPlatformUrl).mockReturnValue(null)
+    vi.mocked(readConfig).mockReturnValue({})
+    vi.mocked(detectInstalledAgents).mockReturnValue([])
+    vi.mocked(detectGlobalAgents).mockReturnValue([])
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as never)
     vi.spyOn(console, 'log').mockImplementation(() => {})
     process.argv = ['node', 'agentver', 'setup-check']
+    stubFetchReachable()
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('outputs valid JSON matching setupResultSchema', async () => {
@@ -300,7 +394,10 @@ describe('setup-check command', () => {
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    await program.parseAsync(['node', 'agentver', 'setup-check'])
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
 
     const parsed = JSON.parse(stdout.join('')) as Record<string, unknown>
     expect(parsed.success).toBe(true)
@@ -308,12 +405,43 @@ describe('setup-check command', () => {
     expect(outputSchema.safeParse(parsed).success).toBe(true)
   })
 
+  it('exits with code 0 when all steps pass', async () => {
+    vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
+    vi.mocked(isAuthenticated).mockResolvedValue(true)
+    captureOutput()
+
+    const program = buildProgram()
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
+
+    expect(processExitSpy).toHaveBeenCalledWith(0)
+  })
+
+  it('exits with code 1 when any step fails', async () => {
+    vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
+    stubFetchUnreachable()
+    captureOutput()
+
+    const program = buildProgram()
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
   it('reports platform URL as skip when not configured', async () => {
     vi.mocked(getPlatformUrl).mockReturnValue(null)
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    await program.parseAsync(['node', 'agentver', 'setup-check'])
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
 
     const parsed = JSON.parse(stdout.join('')) as {
       data: { steps: Array<{ name: string; status: string }> }
@@ -324,11 +452,13 @@ describe('setup-check command', () => {
 
   it('reports connectivity pass when platform is reachable', async () => {
     vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
-    vi.mocked(checkOnline).mockResolvedValue(true)
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    await program.parseAsync(['node', 'agentver', 'setup-check'])
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
 
     const parsed = JSON.parse(stdout.join('')) as {
       data: { steps: Array<{ name: string; status: string }> }
@@ -339,17 +469,38 @@ describe('setup-check command', () => {
 
   it('reports connectivity fail when platform is unreachable', async () => {
     vi.mocked(getPlatformUrl).mockReturnValue('https://app.agentver.com')
-    vi.mocked(checkOnline).mockResolvedValue(false)
+    stubFetchUnreachable()
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    await program.parseAsync(['node', 'agentver', 'setup-check'])
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
 
     const parsed = JSON.parse(stdout.join('')) as {
       data: { steps: Array<{ name: string; status: string }> }
     }
     const connStep = parsed.data.steps.find((s) => s.name === 'connectivity')
     expect(connStep?.status).toBe('fail')
+  })
+
+  it('checks the configured platform URL, not the registry URL', async () => {
+    vi.mocked(getPlatformUrl).mockReturnValue('https://self-hosted.example.com')
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+    captureOutput()
+
+    const program = buildProgram()
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://self-hosted.example.com/api/v1/health',
+      expect.objectContaining({ method: 'HEAD' })
+    )
   })
 
   it('includes detected agent count in results', async () => {
@@ -360,7 +511,10 @@ describe('setup-check command', () => {
     const { stdout } = captureOutput()
 
     const program = buildProgram()
-    await program.parseAsync(['node', 'agentver', 'setup-check'])
+
+    await expect(program.parseAsync(['node', 'agentver', 'setup-check'])).rejects.toThrow(
+      'process.exit called'
+    )
 
     const parsed = JSON.parse(stdout.join('')) as {
       data: { steps: Array<{ name: string; message: string }> }
