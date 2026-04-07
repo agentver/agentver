@@ -132,7 +132,7 @@ test.describe('auth', () => {
     await page.goto('/sign-up?error=access_denied')
     await page.waitForLoadState('domcontentloaded')
     await expect(signUp.errorMessage).toBeVisible()
-    await expect(signUp.errorMessage).toContainText('You cancelled the sign-up')
+    await expect(signUp.errorMessage).toContainText('You cancelled the sign-in')
   })
 
   test('sign-up page hides social buttons when no providers are configured', async ({ page }) => {
@@ -147,5 +147,7 @@ test.describe('auth', () => {
     const signUp = new SignUpPage(page)
     await signUp.goto()
     await expect(signUp.socialSection).not.toBeVisible()
+    await expect(signUp.githubButton).not.toBeVisible()
+    await expect(signUp.googleButton).not.toBeVisible()
   })
 })

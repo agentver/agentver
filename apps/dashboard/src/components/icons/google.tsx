@@ -1,4 +1,8 @@
-export function GoogleIcon({ className }: { className?: string }) {
+type GoogleIconProps = {
+  className?: string
+}
+
+export function GoogleIcon({ className }: GoogleIconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
       <path

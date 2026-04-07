@@ -6,43 +6,21 @@ import { Label } from '@agentver/ui/components/label'
 import { LogoIcon } from '@agentver/ui/components/logo'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState } from 'react'
-import type { SocialProviders } from '@/app/api/auth/providers/route'
+import { Suspense, useState } from 'react'
 import { GitHubIcon } from '@/components/icons/github'
 import { GoogleIcon } from '@/components/icons/google'
+import { useSocialAuth } from '@/hooks/use-social-auth'
 import { signIn } from '@/lib/auth/client'
-import { sanitiseRedirectUrl } from '@/lib/auth/redirect'
-
-const OAUTH_ERROR_MESSAGES: Record<string, string> = {
-  access_denied: 'You cancelled the sign-in. Please try again.',
-  server_error: 'Something went wrong. Please try again later.',
-}
 
 function SignInContent() {
   const router = useRouter()
+  const { providers, socialLoading, handleSocial, error, setError, redirectUrl } =
+    useSocialAuth('sign-in')
   const searchParams = useSearchParams()
   const passwordReset = searchParams.get('reset') === 'success'
-  const oauthError = searchParams.get('error')
-  const redirectUrl = sanitiseRedirectUrl(searchParams.get('redirect_url'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [socialLoading, setSocialLoading] = useState<'github' | 'google' | null>(null)
-  const [providers, setProviders] = useState<SocialProviders | null>(null)
-
-  useEffect(() => {
-    fetch('/api/auth/providers')
-      .then((res) => res.json())
-      .then((data: SocialProviders) => setProviders(data))
-      .catch(() => setProviders({ github: false, google: false }))
-  }, [])
-
-  useEffect(() => {
-    if (oauthError) {
-      setError(OAUTH_ERROR_MESSAGES[oauthError] ?? 'Sign in failed. Please try again.')
-    }
-  }, [oauthError])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -59,18 +37,6 @@ function SignInContent() {
 
     router.push(redirectUrl)
   }
-
-  async function handleSocial(provider: 'github' | 'google') {
-    setSocialLoading(provider)
-    try {
-      await signIn.social({ provider, callbackURL: redirectUrl })
-    } catch {
-      setError('Failed to start social sign-in. Please try again.')
-      setSocialLoading(null)
-    }
-  }
-
-  const hasSocialProviders = providers !== null && (providers.github || providers.google)
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8">
@@ -134,9 +100,9 @@ function SignInContent() {
           </Button>
         </form>
 
-        {hasSocialProviders && (
-          <>
-            <div className="relative">
+        {providers !== null && (providers.github || providers.google) && (
+          <div data-testid="social-section">
+            <div className="relative mb-6">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-border border-t" />
               </div>
@@ -167,7 +133,7 @@ function SignInContent() {
                 </Button>
               )}
             </div>
-          </>
+          </div>
         )}
 
         <p className="text-center text-muted-foreground text-sm">

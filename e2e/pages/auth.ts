@@ -24,7 +24,7 @@ export class SignInPage {
     this.githubButton = page.getByRole('button', { name: /github/i })
     this.googleButton = page.getByRole('button', { name: /google/i })
     this.errorMessage = page.getByRole('alert')
-    this.socialSection = page.getByText('or continue with')
+    this.socialSection = page.getByTestId('social-section')
   }
 
   async goto() {
@@ -57,7 +57,7 @@ export class SignUpPage {
     this.githubButton = page.getByRole('button', { name: /github/i })
     this.googleButton = page.getByRole('button', { name: /google/i })
     this.errorMessage = page.getByRole('alert')
-    this.socialSection = page.getByText('or continue with')
+    this.socialSection = page.getByTestId('social-section')
   }
 
   async goto() {
