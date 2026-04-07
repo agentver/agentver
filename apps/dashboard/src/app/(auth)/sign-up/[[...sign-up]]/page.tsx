@@ -5,19 +5,20 @@ import { Input } from '@agentver/ui/components/input'
 import { Label } from '@agentver/ui/components/label'
 import { LogoIcon } from '@agentver/ui/components/logo'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { Suspense, useState } from 'react'
-import { signIn, signUp } from '@/lib/auth/client'
-import { sanitiseRedirectUrl } from '@/lib/auth/redirect'
+import { GitHubIcon } from '@/components/icons/github'
+import { GoogleIcon } from '@/components/icons/google'
+import { useSocialAuth } from '@/hooks/use-social-auth'
+import { signUp } from '@/lib/auth/client'
 
 function SignUpContent() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const redirectUrl = sanitiseRedirectUrl(searchParams.get('redirect_url'))
+  const { providers, socialLoading, handleSocial, error, setError, redirectUrl } =
+    useSocialAuth('sign-up')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -34,10 +35,6 @@ function SignUpContent() {
     }
 
     router.push(redirectUrl)
-  }
-
-  async function handleSocial(provider: 'github' | 'google') {
-    await signIn.social({ provider, callbackURL: redirectUrl })
   }
 
   return (
@@ -88,30 +85,52 @@ function SignUpContent() {
             />
           </div>
 
-          {error && <p className="text-destructive text-sm">{error}</p>}
+          {error && (
+            <p role="alert" className="text-destructive text-sm">
+              {error}
+            </p>
+          )}
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Creating account\u2026' : 'Sign up'}
           </Button>
         </form>
 
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-border border-t" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">or continue with</span>
-          </div>
-        </div>
+        {providers !== null && (providers.github || providers.google) && (
+          <div data-testid="social-section">
+            <div className="relative mb-6">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-border border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or continue with</span>
+              </div>
+            </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" onClick={() => handleSocial('github')}>
-            GitHub
-          </Button>
-          <Button variant="outline" onClick={() => handleSocial('google')}>
-            Google
-          </Button>
-        </div>
+            <div className="grid grid-cols-2 gap-3">
+              {providers.github && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleSocial('github')}
+                  disabled={socialLoading !== null}
+                >
+                  <GitHubIcon className="mr-2 h-4 w-4" />
+                  {socialLoading === 'github' ? 'Connecting\u2026' : 'GitHub'}
+                </Button>
+              )}
+              {providers.google && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleSocial('google')}
+                  disabled={socialLoading !== null}
+                >
+                  <GoogleIcon className="mr-2 h-4 w-4" />
+                  {socialLoading === 'google' ? 'Connecting\u2026' : 'Google'}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         <p className="text-center text-muted-foreground text-sm">
           Already have an account?{' '}
