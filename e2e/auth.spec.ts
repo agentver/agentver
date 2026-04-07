@@ -119,6 +119,22 @@ test.describe('auth', () => {
     await expect(signUp.googleButton).toBeVisible()
   })
 
+  test('sign-up page displays OAuth error from query params', async ({ page }) => {
+    await page.route('**/api/auth/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ github: false, google: false }),
+      })
+    )
+
+    const signUp = new SignUpPage(page)
+    await page.goto('/sign-up?error=access_denied')
+    await page.waitForLoadState('domcontentloaded')
+    await expect(signUp.errorMessage).toBeVisible()
+    await expect(signUp.errorMessage).toContainText('You cancelled the sign-up')
+  })
+
   test('sign-up page hides social buttons when no providers are configured', async ({ page }) => {
     await page.route('**/api/auth/providers', (route) =>
       route.fulfill({
