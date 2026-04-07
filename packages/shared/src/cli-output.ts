@@ -344,6 +344,29 @@ export const initResultSchema = z.object({
 
 export type InitResult = z.infer<typeof initResultSchema>
 
+// --- Setup ---
+
+export const setupStepStatusSchema = z.enum(['pass', 'fail', 'skip'])
+
+export type SetupStepStatus = z.infer<typeof setupStepStatusSchema>
+
+export const setupStepSchema = z.object({
+  name: z.string(),
+  status: setupStepStatusSchema,
+  message: z.string(),
+})
+
+export type SetupStep = z.infer<typeof setupStepSchema>
+
+export const setupResultSchema = z.object({
+  steps: z.array(setupStepSchema),
+  completed: z.number(),
+  failed: z.number(),
+  skipped: z.number(),
+})
+
+export type SetupResult = z.infer<typeof setupResultSchema>
+
 export const adoptResultSchema = z.object({
   adopted: z.array(
     z.object({
