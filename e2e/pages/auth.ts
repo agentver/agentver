@@ -11,6 +11,7 @@ export class SignInPage {
   readonly githubButton: Locator
   readonly googleButton: Locator
   readonly errorMessage: Locator
+  readonly socialSection: Locator
 
   constructor(page: Page) {
     this.page = page
@@ -23,6 +24,7 @@ export class SignInPage {
     this.githubButton = page.getByRole('button', { name: /github/i })
     this.googleButton = page.getByRole('button', { name: /google/i })
     this.errorMessage = page.getByRole('alert')
+    this.socialSection = page.getByText('or continue with')
   }
 
   async goto() {
@@ -42,6 +44,7 @@ export class SignUpPage {
   readonly githubButton: Locator
   readonly googleButton: Locator
   readonly errorMessage: Locator
+  readonly socialSection: Locator
 
   constructor(page: Page) {
     this.page = page
@@ -54,6 +57,7 @@ export class SignUpPage {
     this.githubButton = page.getByRole('button', { name: /github/i })
     this.googleButton = page.getByRole('button', { name: /google/i })
     this.errorMessage = page.getByRole('alert')
+    this.socialSection = page.getByText('or continue with')
   }
 
   async goto() {

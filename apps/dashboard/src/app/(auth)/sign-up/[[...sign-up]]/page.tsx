@@ -6,19 +6,43 @@ import { Label } from '@agentver/ui/components/label'
 import { LogoIcon } from '@agentver/ui/components/logo'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import type { SocialProviders } from '@/app/api/auth/providers/route'
+import { GitHubIcon } from '@/components/icons/github'
+import { GoogleIcon } from '@/components/icons/google'
 import { signIn, signUp } from '@/lib/auth/client'
 import { sanitiseRedirectUrl } from '@/lib/auth/redirect'
+
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  access_denied: 'You cancelled the sign-up. Please try again.',
+  server_error: 'Something went wrong. Please try again later.',
+}
 
 function SignUpContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const oauthError = searchParams.get('error')
   const redirectUrl = sanitiseRedirectUrl(searchParams.get('redirect_url'))
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [socialLoading, setSocialLoading] = useState<'github' | 'google' | null>(null)
+  const [providers, setProviders] = useState<SocialProviders | null>(null)
+
+  useEffect(() => {
+    fetch('/api/auth/providers')
+      .then((res) => res.json())
+      .then((data: SocialProviders) => setProviders(data))
+      .catch(() => setProviders({ github: false, google: false }))
+  }, [])
+
+  useEffect(() => {
+    if (oauthError) {
+      setError(OAUTH_ERROR_MESSAGES[oauthError] ?? 'Sign up failed. Please try again.')
+    }
+  }, [oauthError])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -37,8 +61,16 @@ function SignUpContent() {
   }
 
   async function handleSocial(provider: 'github' | 'google') {
-    await signIn.social({ provider, callbackURL: redirectUrl })
+    setSocialLoading(provider)
+    try {
+      await signIn.social({ provider, callbackURL: redirectUrl })
+    } catch {
+      setError('Failed to start social sign-up. Please try again.')
+      setSocialLoading(null)
+    }
   }
+
+  const hasSocialProviders = providers !== null && (providers.github || providers.google)
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8">
@@ -88,30 +120,52 @@ function SignUpContent() {
             />
           </div>
 
-          {error && <p className="text-destructive text-sm">{error}</p>}
+          {error && (
+            <p role="alert" className="text-destructive text-sm">
+              {error}
+            </p>
+          )}
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Creating account\u2026' : 'Sign up'}
           </Button>
         </form>
 
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-border border-t" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">or continue with</span>
-          </div>
-        </div>
+        {hasSocialProviders && (
+          <>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-border border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or continue with</span>
+              </div>
+            </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" onClick={() => handleSocial('github')}>
-            GitHub
-          </Button>
-          <Button variant="outline" onClick={() => handleSocial('google')}>
-            Google
-          </Button>
-        </div>
+            <div className="grid grid-cols-2 gap-3">
+              {providers.github && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleSocial('github')}
+                  disabled={socialLoading !== null}
+                >
+                  <GitHubIcon className="mr-2 h-4 w-4" />
+                  {socialLoading === 'github' ? 'Connecting\u2026' : 'GitHub'}
+                </Button>
+              )}
+              {providers.google && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleSocial('google')}
+                  disabled={socialLoading !== null}
+                >
+                  <GoogleIcon className="mr-2 h-4 w-4" />
+                  {socialLoading === 'google' ? 'Connecting\u2026' : 'Google'}
+                </Button>
+              )}
+            </div>
+          </>
+        )}
 
         <p className="text-center text-muted-foreground text-sm">
           Already have an account?{' '}

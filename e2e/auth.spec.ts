@@ -54,4 +54,82 @@ test.describe('auth', () => {
     await page.goto('/skills')
     await expect(page).toHaveURL(/\/sign-in/)
   })
+
+  test('sign-in page shows social buttons when providers are enabled', async ({ page }) => {
+    await page.route('**/api/auth/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ github: true, google: true }),
+      })
+    )
+
+    const signIn = new SignInPage(page)
+    await signIn.goto()
+    await expect(signIn.socialSection).toBeVisible()
+    await expect(signIn.githubButton).toBeVisible()
+    await expect(signIn.googleButton).toBeVisible()
+  })
+
+  test('sign-in page hides social buttons when no providers are configured', async ({ page }) => {
+    await page.route('**/api/auth/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ github: false, google: false }),
+      })
+    )
+
+    const signIn = new SignInPage(page)
+    await signIn.goto()
+    await expect(signIn.socialSection).not.toBeVisible()
+    await expect(signIn.githubButton).not.toBeVisible()
+    await expect(signIn.googleButton).not.toBeVisible()
+  })
+
+  test('sign-in page displays OAuth error from query params', async ({ page }) => {
+    await page.route('**/api/auth/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ github: false, google: false }),
+      })
+    )
+
+    const signIn = new SignInPage(page)
+    await page.goto('/sign-in?error=access_denied')
+    await page.waitForLoadState('domcontentloaded')
+    await expect(signIn.errorMessage).toBeVisible()
+    await expect(signIn.errorMessage).toContainText('You cancelled the sign-in')
+  })
+
+  test('sign-up page shows social buttons when providers are enabled', async ({ page }) => {
+    await page.route('**/api/auth/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ github: true, google: true }),
+      })
+    )
+
+    const signUp = new SignUpPage(page)
+    await signUp.goto()
+    await expect(signUp.socialSection).toBeVisible()
+    await expect(signUp.githubButton).toBeVisible()
+    await expect(signUp.googleButton).toBeVisible()
+  })
+
+  test('sign-up page hides social buttons when no providers are configured', async ({ page }) => {
+    await page.route('**/api/auth/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ github: false, google: false }),
+      })
+    )
+
+    const signUp = new SignUpPage(page)
+    await signUp.goto()
+    await expect(signUp.socialSection).not.toBeVisible()
+  })
 })
