@@ -57,7 +57,7 @@ RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" bun run turbo b
 # ---------------------------------------------------------------------------
 # Stage 4: runner — slim production image
 # ---------------------------------------------------------------------------
-FROM node:24-slim AS runner
+FROM node:26-slim AS runner
 
 WORKDIR /app
 
