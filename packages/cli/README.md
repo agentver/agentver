@@ -33,6 +33,9 @@ agentver install github.com/owner/repo
 # Install from a subdirectory
 agentver install github.com/owner/repo/path/to/skill
 
+# Install a packaged OpenClaw skill into OpenClaw and Codex
+agentver install github.com/Xquik-dev/tweetclaw/skills/tweetclaw --agent openclaw --agent codex --yes
+
 # Search for skills
 agentver search "code review"
 
